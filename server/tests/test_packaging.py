@@ -135,7 +135,13 @@ class TestMarketplacePins:
     @pytest.mark.parametrize(
         ("env", "branch", "expected"),
         [
-            ({}, "main", pin.DEV),
+            # The default branch is its own phase. It used to fall through to
+            # `dev`, whose rule is "the ref must already be a tag" — which main
+            # cannot satisfy between the release merge and the tag push, so the
+            # window every release passes through reported a hard failure.
+            ({}, "main", pin.MAIN),
+            ({"GITHUB_REF_NAME": "main"}, "", pin.MAIN),
+            ({"GITHUB_REF": "refs/heads/main", "GITHUB_REF_NAME": "main"}, "", pin.MAIN),
             ({}, "feature/algo", pin.DEV),
             ({}, "release/naviscoord-0.2.0", pin.PRETAG),
             ({"GITHUB_REF": "refs/tags/v0.2.0"}, "", pin.TAG),
@@ -143,8 +149,14 @@ class TestMarketplacePins:
             # only GITHUB_HEAD_REF knows where the change came from. This is
             # the case the old branch-name guess could not see.
             ({"GITHUB_HEAD_REF": "release/naviscoord-0.2.0"}, "", pin.PRETAG),
-            ({"GITHUB_REF_NAME": "main"}, "", pin.DEV),
+            # A PR *targeting* main still reports the SOURCE branch, so a
+            # feature PR is dev and not main: GITHUB_HEAD_REF wins over the
+            # checked-out branch precisely so this cannot be confused.
+            ({"GITHUB_HEAD_REF": "feature/algo"}, "main", pin.DEV),
+            # A tag ref beats the branch name that happens to be checked out.
+            ({"GITHUB_REF": "refs/tags/v0.2.0", "GITHUB_REF_NAME": "main"}, "main", pin.TAG),
             ({"NAVISCOORD_RELEASE_VALIDATION": "pretag"}, "main", pin.PRETAG),
+            ({"NAVISCOORD_RELEASE_VALIDATION": "main"}, "feature/algo", pin.MAIN),
             # The override beats even a tag ref, because a human running a
             # release knows something the environment does not.
             ({"NAVISCOORD_RELEASE_VALIDATION": "dev",
@@ -162,9 +174,9 @@ class TestMarketplacePins:
 
     OLD = {"v0.1.0", "v0.1.1", "v0.1.2"}
 
-    @pytest.mark.parametrize(
-        ("phase", "refs", "tags", "available", "ok", "because"),
-        [
+    # Named rather than inlined so the coverage assertion below can read the
+    # same table the parametrisation runs, instead of introspecting the mark.
+    PHASE_CASES = [
             # dev: the ref has to be a tag that exists.
             (pin.DEV, {"v0.1.2"}, OLD, True, True, "ref en el último tag publicado"),
             (pin.DEV, {"v0.2.0"}, OLD, True, False, "ref a un tag inexistente fuera de la candidata"),
@@ -173,26 +185,94 @@ class TestMarketplacePins:
             (pin.PRETAG, {"v0.2.0"}, OLD, True, True, "candidata nombrando su propio tag"),
             (pin.PRETAG, {"v0.1.2"}, OLD, True, False, "candidata que dejó el ref viejo"),
             (pin.PRETAG, {"v0.3.0"}, OLD, True, False, "candidata nombrando otro tag"),
+            # main: the release window is legitimate, and bounded.
+            (pin.MAIN, {"v0.2.0"}, OLD, True, True, "ventana: main nombra su versión sin tag todavía"),
+            (pin.MAIN, {"v0.2.0"}, OLD | {"v0.2.0"}, True, True, "estado estable: tag publicado y nombrado"),
+            (pin.MAIN, {"v0.1.2"}, OLD, True, True, "main con el ref en el último tag publicado"),
+            (pin.MAIN, {"v9.9.9"}, OLD, True, False, "main con un ref que ni existe ni es la versión"),
+            (pin.MAIN, {"v0.2.0"}, set(), False, False, "sin tags leíbles en main"),
             # tag: the tag must exist AND be the one named.
             (pin.TAG, {"v0.2.0"}, OLD | {"v0.2.0"}, True, True, "tag publicado y nombrado"),
             (pin.TAG, {"v0.1.2"}, OLD | {"v0.2.0"}, True, False, "tag creado pero ref viejo"),
             (pin.TAG, {"v0.2.0"}, OLD, True, False, "fase tag sin que el tag exista"),
             # Manifests disagreeing with each other is never acceptable.
             (pin.PRETAG, {"v0.2.0", "v0.1.2"}, OLD, True, False, "manifiestos discrepantes"),
+            (pin.MAIN, {"v0.2.0", "v0.1.2"}, OLD, True, False, "manifiestos discrepantes en main"),
             # No tags fetched: a failure, never a pass and never a skip.
             (pin.DEV, {"v0.1.2"}, set(), False, False, "sin tags leíbles en dev"),
             (pin.TAG, {"v0.2.0"}, set(), False, False, "sin tags leíbles en tag"),
             # …except in the candidate phase, which does not need them.
             (pin.PRETAG, {"v0.2.0"}, set(), False, True, "la candidata no necesita tags"),
-        ],
+    ]
+
+    @pytest.mark.parametrize(
+        ("phase", "refs", "tags", "available", "ok", "because"), PHASE_CASES
     )
     def test_the_rule_holds_in_every_phase(
         self, phase: str, refs: set[str], tags: set[str],
         available: bool, ok: bool, because: str,
     ) -> None:
-        result = pin.verdict(phase, "0.2.0", refs, tags, tags_available=available)
+        # The tag phase additionally requires knowing the tag points at the
+        # checkout; supplied here so these cases isolate the ref rule, and
+        # exercised on its own below.
+        result = pin.verdict(phase, "0.2.0", refs, tags, tags_available=available,
+                             tag_targets_head=True)
         assert result.ok is ok, f"{because}: {result.detail}"
         assert result.detail, "un veredicto sin explicación no sirve de nada"
+
+    def test_every_phase_is_covered_by_the_table(self) -> None:
+        """A phase added without a rule would otherwise be tested by nobody."""
+        covered = {case[0] for case in self.PHASE_CASES}
+        assert covered == set(pin.PHASES), f"fases sin caso: {set(pin.PHASES) - covered}"
+
+    # ------------------------------------------------- el tag y el checkout
+
+    @pytest.mark.parametrize(
+        ("targets_head", "ok", "because"),
+        [
+            (True, True, "el tag apunta al commit que se está construyendo"),
+            (False, False, "el tag existe pero apunta a otro commit"),
+            # Nobody looked. In this phase that is a broken check, not a pass:
+            # the same reasoning that makes an unfetched tag list a failure.
+            (None, False, "no se pudo comprobar a qué commit apunta el tag"),
+        ],
+    )
+    def test_the_tag_phase_requires_the_tag_to_be_the_one_being_built(
+        self, targets_head: bool | None, ok: bool, because: str
+    ) -> None:
+        """Existing and being the commit under test are two different claims.
+
+        A tag build that checks out something else — a re-run pointed at a
+        branch, a workflow_dispatch on the wrong ref — satisfied every
+        assertion about the tag while proving nothing about what that tag
+        publishes.
+        """
+        result = pin.verdict(pin.TAG, "0.2.0", {"v0.2.0"}, {"v0.2.0"},
+                             tags_available=True, tag_targets_head=targets_head)
+        assert result.ok is ok, f"{because}: {result.detail}"
+        assert result.detail
+
+    def test_the_other_phases_do_not_need_the_tag_to_point_anywhere(self) -> None:
+        """Only the tag phase builds a tag; requiring it elsewhere would be noise."""
+        for phase, refs, tags in (
+            (pin.PRETAG, {"v0.2.0"}, self.OLD),
+            (pin.MAIN, {"v0.2.0"}, self.OLD),
+            (pin.DEV, {"v0.1.2"}, self.OLD),
+        ):
+            result = pin.verdict(phase, "0.2.0", refs, tags,
+                                 tags_available=True, tag_targets_head=None)
+            assert result.ok, f"{phase}: {result.detail}"
+
+    def test_the_release_window_says_the_tag_is_still_pending(self) -> None:
+        """The window has to be legible, not merely tolerated.
+
+        `ok` alone would let a future edit turn the window into a silent pass
+        for any missing tag; the message is what tells a human reading the log
+        that the tag is the next step rather than a defect.
+        """
+        result = pin.verdict(pin.MAIN, "0.2.0", {"v0.2.0"}, self.OLD, tags_available=True)
+        assert result.ok
+        assert "todavía no se ha empujado" in result.detail
 
     def test_a_release_commit_would_carry_the_new_ref(self) -> None:
         """Guards the ordering itself, so it cannot regress into prose only.

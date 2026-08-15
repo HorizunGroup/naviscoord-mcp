@@ -128,24 +128,44 @@ tiene que estar ya escrito **antes** de crearlo.
 ```bash
 # 1. Un solo commit con el bump de versión, el CHANGELOG fechado
 #    y los refs de marketplace ya en la versión nueva.
-git add -A && git commit -m "Release 0.2.1"
+git add -A && git commit -m "Release 0.2.2"
 
 # 2. Con el commit hecho, las dos invariantes se comprueban juntas.
 cd server && python -m pytest tests/test_packaging.py -q
 
 # 3. El tag apunta a ESE commit.
-git tag -a v0.2.1 -m "v0.2.1"
+git tag -a v0.2.2 -m "v0.2.2"
 
 # 4. Confirmar que el tag lleva dentro el ref correcto, no el anterior.
-git show v0.2.1:.claude-plugin/marketplace.json | grep '"ref"'
-git show v0.2.1:.agents/plugins/marketplace.json | grep '"ref"'
+git show v0.2.2:.claude-plugin/marketplace.json | grep '"ref"'
+git show v0.2.2:.agents/plugins/marketplace.json | grep '"ref"'
 
 # 5. Y sólo entonces publicarlo.
-git push origin main v0.2.1
+git push origin main v0.2.2
 ```
 
 El paso 4 no es ceremonia: es la comprobación que faltaba, y su ausencia es
 lo que hace plausible publicar un tag que instala la versión anterior.
+
+### La ventana entre el merge y el tag
+
+Entre el paso 1 y el paso 5, `main` declara una versión cuyo tag todavía no
+existe. Es una ventana legítima del proceso y la comprobación del pin la
+nombra —fase `main`, «el tag todavía no se ha publicado»— en vez de fallar.
+Lo que sigue siendo un fallo en `main` es un ref que ni existe como tag ni
+coincide con la versión declarada.
+
+### El CI del tag
+
+Empujar el tag dispara el workflow sobre el propio tag, y ahí la comprobación
+corre en fase `tag`: exige que el tag exista, que apunte al commit que se está
+construyendo y que los manifiestos lo nombren. **Ese run tiene que quedar
+verde antes de publicar el release**; es la única ejecución que demuestra que
+lo que el tag contiene es lo que se va a instalar.
+
+```bash
+gh run list --commit "$(git rev-list -n1 v0.2.2)" --limit 5
+```
 
 ## 8. Artefactos, construidos desde el tag
 
@@ -153,8 +173,8 @@ Construir desde el working tree puede meter en el ZIP cambios que el tag no
 contiene. Sal a una copia limpia del tag y construye ahí:
 
 ```bash
-git worktree add /tmp/release-0.2.1 v0.2.1
-cd /tmp/release-0.2.1 && python scripts/build_artifacts.py
+git worktree add /tmp/release-0.2.2 v0.2.2
+cd /tmp/release-0.2.2 && python scripts/build_artifacts.py
 ```
 
 Adjuntar al release de GitHub, con los nombres que produce el script —no otros:
