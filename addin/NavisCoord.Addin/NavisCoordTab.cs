@@ -29,26 +29,32 @@ namespace NavisCoord
     [RibbonLayout("NavisCoordRibbon.xaml")]
     [RibbonTab("ID_TabNavisCoord")]
     [Command("ID_NavisCoordEstado",
+        Icon = "nc_16.png", LargeIcon = "nc_32.png",
         DisplayName = "Estado del puente",
         ToolTip = "Ver la versión y el estado del puente; iniciarlo o detenerlo si hace falta",
         ExtendedToolTip = "Muestra qué versión de NavisCoord tiene cargada Navisworks en este momento y si el puente está CORRIENDO (con su puerto) o DETENIDO.\n\nConsultar es seguro: primero informa y después pregunta si quieres cambiar el estado, con \"No\" por defecto. El puente arranca solo al abrir Navisworks, así que en condiciones normales basta con mirar y cerrar.")]
     [Command("ID_NavisCoordConfigCoord",
+        Icon = "ncC_16.png", LargeIcon = "ncC_32.png",
         DisplayName = "Configurar coordinación",
         ToolTip = "Crear los search sets y la matriz de clash, y aplicar las reglas del perfil",
         ExtendedToolTip = "Hace lo mismo que \"1. Configurar\" y además aplica las reglas de exclusión del perfil.\n\nSe conserva como botón aparte porque es lo que hacía el botón de este nombre antes de que NavisCoord tuviera pestaña propia; quien ya lo usaba encuentra el mismo comportamiento.")]
     [Command("ID_NavisCoordAuditar",
+        Icon = "nc0_16.png", LargeIcon = "nc0_32.png",
         DisplayName = "0. Auditar modelos",
         ToolTip = "Paso 0 — Auditar los modelos anexados",
         ExtendedToolTip = "Valida ANTES de coordinar: que cada modelo esté co-ubicado con los demás (un modelo publicado sin coordenadas compartidas queda a kilómetros y sus tests dan 0 choques FALSOS), que el nombre traiga la disciplina, y cuántos elementos aporta.\n\nSi reporta un modelo desplazado, el responsable debe corregir coordenadas compartidas y republicar.")]
     [Command("ID_NavisCoordConfigurar",
+        Icon = "nc1_16.png", LargeIcon = "nc1_32.png",
         DisplayName = "1. Configurar",
         ToolTip = "Paso 1 — Crear los search sets y la matriz de clash del perfil",
         ExtendedToolTip = "Crea las carpetas de search sets por disciplina y los clash tests definidos en el perfil, enlazados a esas carpetas.\n\nNo corre nada y respeta lo que ya exista. Úsalo al abrir una coordinación nueva o cuando el perfil cambie.")]
     [Command("ID_NavisCoordCorrer",
+        Icon = "nc2_16.png", LargeIcon = "nc2_32.png",
         DisplayName = "2. Correr tests",
         ToolTip = "Paso 2 — Correr todos los clash tests",
         ExtendedToolTip = "Ejecuta todos los tests de la matriz (igual que Update All de Clash Detective).\n\nNavisworks queda ocupado mientras calcula: según el tamaño del federado puede tardar varios minutos.")]
     [Command("ID_NavisCoordAgrupar",
+        Icon = "nc3_16.png", LargeIcon = "nc3_32.png",
         DisplayName = "3. Agrupar por nivel",
         ToolTip = "Paso 3 — Agrupar los choques de cada test por nivel",
         ExtendedToolTip = "Organiza los resultados de cada test en grupos por nivel, leyendo el nivel de los elementos que chocan — la misma organización con la que se preparan las incidencias.\n\nSolo agrupa lo que esté suelto: lo ya agrupado se respeta, así que se puede repetir tras cada corrida.")]

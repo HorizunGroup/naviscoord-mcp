@@ -125,4 +125,18 @@
           DestinationFolder="$(OutDir)en-US" />
   </Target>
 
+  <!--
+    Los iconos van a la RAÍZ de la salida, sin la carpeta Images: los [Command]
+    los nombran pelados ("nc0_32.png") y Navisworks los resuelve contra la
+    carpeta del plugin. En Images\ están solo como fuente ordenada del repo.
+    Un icono que no se encuentra no da error: el botón sale en blanco.
+  -->
+  <ItemGroup>
+    <RibbonIcon Include="$(MSBuildThisFileDirectory)Images\*.png" />
+  </ItemGroup>
+
+  <Target Name="CopyRibbonIcons" AfterTargets="Build">
+    <Copy SourceFiles="@(RibbonIcon)" DestinationFolder="$(OutDir)" />
+  </Target>
+
 </Project>

@@ -101,6 +101,12 @@ foreach ($f in $found) {
     Copy-Item $layout -Destination $pluginDir -Force
     Copy-Item $layout -Destination (Join-Path $pluginDir "en-US") -Force
 
+    # Los iconos de los botones. Si faltan, la pestaña sale igual pero con los
+    # botones en blanco, así que también se verifican.
+    $icons = Get-ChildItem $outDir -Filter "nc*.png" -File
+    if (-not $icons) { throw "[$v] el build no dejó los iconos (nc*.png) en $outDir" }
+    Copy-Item $icons.FullName -Destination $pluginDir -Force
+
     # Verificación: comprobar lo copiado en disco, no asumir que Copy-Item
     # funcionó.
     $installed = Join-Path $pluginDir "NavisCoord.dll"
