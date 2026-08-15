@@ -22,6 +22,18 @@ now taken from explicit signals, a missing prerequisite is an ERROR rather
 than a skip, and the decision itself is a pure function that can be tested
 against every phase without a repository at all.
 
+The four phases, and what each one is allowed to assert:
+
+* `dev`    — any other branch. The ref must be a tag that already exists.
+* `pretag` — `release/naviscoord-X.Y.Z`. The ref must name the tag this commit
+             is about to receive, which by definition does not exist yet.
+* `main`   — the default branch, including the window between the release
+             merge and the tag push. The ref must be either the declared
+             version or an existing tag; a version whose tag has not landed is
+             reported as that window, not as an error.
+* `tag`    — a `refs/tags/` ref. Strictest: the tag must exist, must point at
+             the commit being built, and must be the one the manifests name.
+
     python scripts/marketplace_pin.py           # check this repository
     python scripts/marketplace_pin.py --explain # and say why
 """
@@ -48,8 +60,13 @@ MANIFESTS = (
 # values of NAVISCOORD_RELEASE_VALIDATION.
 DEV = "dev"
 PRETAG = "pretag"
+MAIN = "main"
 TAG = "tag"
-PHASES = (DEV, PRETAG, TAG)
+PHASES = (DEV, PRETAG, MAIN, TAG)
+
+# The branch a release lands on before it is tagged. Named once, because the
+# phase rule and the phase detection have to agree on it.
+DEFAULT_BRANCH = "main"
 
 
 @dataclass(frozen=True)
@@ -90,6 +107,8 @@ def detect_phase(env: dict[str, str], *, branch: str = "") -> str:
     candidate = (env.get("GITHUB_HEAD_REF") or env.get("GITHUB_REF_NAME") or branch or "").strip()
     if re.fullmatch(r"release/naviscoord-\d+\.\d+\.\d+", candidate):
         return PRETAG
+    if candidate == DEFAULT_BRANCH:
+        return MAIN
     return DEV
 
 
@@ -104,6 +123,7 @@ def verdict(
     tags: set[str],
     *,
     tags_available: bool = True,
+    tag_targets_head: bool | None = None,
 ) -> Verdict:
     """Whether the manifests name the right tag for this phase.
 
@@ -111,6 +131,13 @@ def verdict(
     fetched them". The first is a legitimate state for a young repository; the
     second is a broken check, and it is reported as a failure rather than
     waved through — which is the specific bug this function exists to remove.
+
+    `tag_targets_head` answers a different question that the tag phase used to
+    conflate with the first: not "does the tag exist" but "is the tag the one
+    being built". Both can be true of a checkout that is not the tag's commit,
+    and only the second makes the run evidence about what the tag publishes.
+    `None` means nobody looked, which in the tag phase is itself a failure —
+    for the same reason a missing tag list is.
     """
     if phase not in PHASES:
         return Verdict(False, phase, f"fase desconocida: {phase!r}")
@@ -136,7 +163,39 @@ def verdict(
         if ref != want:
             return Verdict(False, phase,
                            f"el tag {want} existe, así que los manifiestos deben apuntar a él y no a {ref!r}.")
-        return Verdict(True, phase, f"tag {want} publicado y los manifiestos lo nombran.")
+        if tag_targets_head is None:
+            return Verdict(False, phase,
+                           f"fase 'tag' pero no se pudo comprobar a qué commit apunta {want}: "
+                           "haz checkout con tags (fetch-depth: 0 y fetch-tags: true).")
+        if not tag_targets_head:
+            return Verdict(False, phase,
+                           f"el tag {want} existe pero NO apunta al commit del checkout, así que este run "
+                           "no dice nada sobre lo que ese tag publica.")
+        return Verdict(True, phase,
+                       f"tag {want} publicado, apunta a este commit y los manifiestos lo nombran.")
+
+    if phase == MAIN:
+        # The default branch after a release merge and before the tag push.
+        # That window is part of the process, not a mistake, so it is named
+        # rather than failed — but it is the ONLY relaxation: the ref still has
+        # to be either the version this commit declares or a tag that exists.
+        if not tags_available:
+            return Verdict(False, phase,
+                           "fase 'main' pero no se pudieron leer los tags, y la regla habla justamente "
+                           "de tags: haz checkout con tags (fetch-depth: 0 y fetch-tags: true).")
+        if ref == want:
+            if want in tags:
+                return Verdict(True, phase, f"tag {want} publicado y main lo nombra.")
+            return Verdict(True, phase,
+                           f"ventana de release: main ya nombra {want}, que es lo que publicará el tag, "
+                           "y ese tag todavía no se ha empujado.")
+        if ref in tags:
+            return Verdict(True, phase,
+                           f"main mantiene el ref en el tag publicado {ref!r}; la versión declarada "
+                           f"{version} todavía no se ha etiquetado.")
+        return Verdict(False, phase,
+                       f"main apunta a {ref!r}, que ni es un tag existente ({sorted(tags)}) ni la versión "
+                       f"declarada ({want}).")
 
     if phase == PRETAG:
         # The one phase where naming a tag that does not exist yet is correct:
@@ -190,6 +249,33 @@ def local_tags(root: Path = ROOT) -> tuple[set[str], bool]:
     return set(out.split()), True
 
 
+def tag_points_at_head(tag: str, root: Path = ROOT) -> bool | None:
+    """Whether `tag` resolves to the commit currently checked out.
+
+    `None` means the question could not be answered — git unavailable, or the
+    tag not present — and callers must treat that as unknown rather than as a
+    negative, because "no lo pude comprobar" and "no coincide" call for
+    different messages.
+
+    `rev-list -n1` is what peels an annotated tag down to its commit; comparing
+    the tag OBJECT to HEAD would never match for annotated tags, which is every
+    tag this project publishes.
+    """
+    def rev(*args: str) -> str | None:
+        try:
+            out = subprocess.run(["git", "-C", str(root), *args],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        return out or None
+
+    head = rev("rev-parse", "HEAD")
+    target = rev("rev-list", "-n1", tag)
+    if head is None or target is None:
+        return None
+    return head == target
+
+
 def current_branch(root: Path = ROOT) -> str:
     try:
         out = subprocess.run(["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],
@@ -204,8 +290,18 @@ def check(root: Path = ROOT, env: dict[str, str] | None = None) -> Verdict:
     env = dict(os.environ if env is None else env)
     tags, available = local_tags(root)
     phase = detect_phase(env, branch=current_branch(root))
-    return verdict(phase, declared_version(root), declared_refs(root), tags,
-                   tags_available=available)
+    version = declared_version(root)
+
+    # Only asked in the tag phase, and only when the tag is actually there:
+    # anywhere else the answer is not part of the rule, and asking git for a
+    # ref that does not exist would turn a clear "el tag no existe" into a
+    # murkier "no se pudo comprobar".
+    targets_head: bool | None = None
+    if phase == TAG and expected_ref(version) in tags:
+        targets_head = tag_points_at_head(expected_ref(version), root)
+
+    return verdict(phase, version, declared_refs(root), tags,
+                   tags_available=available, tag_targets_head=targets_head)
 
 
 def main() -> int:
@@ -216,11 +312,17 @@ def main() -> int:
     result = check()
     if args.explain:
         tags, available = local_tags()
+        want = expected_ref(declared_version())
         print(f"fase      : {result.phase}")
         print(f"version   : {declared_version()}")
         print(f"refs      : {sorted(declared_refs())}")
         print(f"tags      : {sorted(tags) if available else '(no se pudieron leer)'}")
         print(f"rama      : {current_branch() or '(HEAD desacoplado)'}")
+        print(f"HEAD      : {os.environ.get('GITHUB_SHA') or '(local)'}")
+        if result.phase == TAG:
+            points = tag_points_at_head(want) if want in tags else None
+            print(f"{want} -> HEAD : "
+                  + {True: "sí", False: "NO", None: "(no se pudo comprobar)"}[points])
     print(("ok  " if result.ok else "FALLA ") + result.detail)
     return 0 if result.ok else 1
 

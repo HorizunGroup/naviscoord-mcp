@@ -16,10 +16,21 @@ name: CI
 # Building the real add-in for 2024/2025/2026 is a manual step before a
 # release; see docs/RELEASING.md.
 
+# A release tag used to trigger nothing at all. The suite carries the one rule
+# that is ABOUT tags — does this commit's ref name a tag that exists, and is it
+# the tag being built — and the only moment that question is finally decidable,
+# the push of the tag itself, was the single event the workflow did not listen
+# for. The rule was therefore never executed where it means the most, and a tag
+# could publish a ref nobody had checked.
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
+  # Lets a specific ref be re-checked without pushing anything — the diagnostic
+  # path that did not exist when a tag's CI needed to be inspected after the
+  # fact.
+  workflow_dispatch:
 
 jobs:
   engine:
@@ -181,6 +192,50 @@ jobs:
         # decides whether a tag would publish the right ref, and it must be
         # legible in the log rather than buried in a dot.
         run: python scripts/marketplace_pin.py --explain
+
+      - name: La fase detectada es la que corresponde a este evento
+        # The check above reports the phase it decided on; nothing until now
+        # confirmed that phase was the RIGHT one for the event that started
+        # the run. A tag build that quietly evaluated itself as `dev` would
+        # pass every assertion above and prove nothing about the tag — the
+        # same shape of silent success this whole rule exists to remove.
+        run: |
+          python - <<'PY'
+          import os, sys, pathlib
+          sys.path.insert(0, str(pathlib.Path("scripts").resolve()))
+          import marketplace_pin as pin
+
+          ref   = os.environ.get("GITHUB_REF", "")
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          if ref.startswith("refs/tags/"):
+              expected = pin.TAG
+          elif event == "pull_request":
+              expected = pin.PRETAG if (os.environ.get("GITHUB_HEAD_REF", "")
+                                        .startswith("release/naviscoord-")) else pin.DEV
+          elif os.environ.get("GITHUB_REF_NAME") == pin.DEFAULT_BRANCH:
+              expected = pin.MAIN
+          else:
+              expected = pin.DEV
+
+          got = pin.detect_phase(dict(os.environ))
+          print(f"evento={event} ref={ref} head_ref={os.environ.get('GITHUB_HEAD_REF','')}")
+          print(f"fase esperada={expected}  fase detectada={got}")
+          if got != expected:
+              print(f"::error::el run se evaluo en fase '{got}' cuando el evento "
+                    f"corresponde a '{expected}'")
+              raise SystemExit(1)
+
+          # In the tag phase the tag list is the prerequisite of the whole
+          # rule; an empty one here means the checkout did not bring tags and
+          # every tag assertion below would be measuring nothing.
+          if got == pin.TAG:
+              tags, available = pin.local_tags(pathlib.Path("."))
+              if not available or not tags:
+                  print("::error::fase tag sin lista de tags: el checkout no los trajo")
+                  raise SystemExit(1)
+              print(f"tags visibles en el checkout: {sorted(tags)}")
+          print("fase: ok")
+          PY
 
       - name: Validador real de plugins
         run: |

@@ -3,6 +3,40 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
+## [0.2.2] — 2026-08-15
+
+Versión de proceso. El motor y el complemento no cambian de comportamiento:
+sólo se mueven la versión declarada y la procedencia de los artefactos.
+
+### CI
+
+- **El workflow se ejecuta también al publicar un tag `v*`.** Antes sólo
+  corría en `pull_request` y en `push` a `main`, así que la validación que
+  decide si un tag publica el ref correcto nunca llegaba a ejecutarse sobre el
+  propio tag: el momento en que esa pregunta importa era justo el único que no
+  se comprobaba. Se añade además `workflow_dispatch` para poder diagnosticar
+  una referencia concreta sin empujar nada.
+- **Todos los jobs que ejecutan la suite hacen checkout con la lista de tags.**
+  La regla del pin es una pregunta *sobre* tags y `actions/checkout` no trae
+  ninguno por defecto, de modo que `git tag` volvía vacío y la comprobación
+  concluía que el tag no existía cuando sí existía.
+- **La fase `main` deja de ser un caso implícito.** Entre el merge y el tag,
+  `main` declara una versión cuyo tag todavía no se ha publicado; eso es una
+  ventana legítima y acotada del proceso de release, y se reporta como tal en
+  vez de fallar como si fuera un ref inventado. Sigue siendo un fallo que
+  `main` apunte a un ref que ni existe ni es la versión declarada.
+- **En fase `tag` se comprueba que el tag apunte al commit del checkout.** Que
+  el tag exista y que sea el que se está construyendo son dos afirmaciones
+  distintas, y sólo se verificaba la primera.
+- **Ninguna fase puede saltarse.** Un prerequisito ausente —tags ilegibles,
+  `HEAD` desacoplado, tag inexistente en fase tag— es un fallo con el arreglo
+  en el mensaje, nunca un skip: una comprobación que se salta reporta éxito.
+
+### Artefactos
+
+- Reconstruidos como 0.2.2. Mismo contenido funcional que 0.2.1, con la
+  versión y la procedencia actualizadas.
+
 ## [0.2.1] — 2026-08-15
 
 Primera versión pública de NavisCoord.
@@ -105,4 +139,5 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
+[0.2.2]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.2
 [0.2.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.1

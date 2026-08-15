@@ -161,7 +161,7 @@ def selftest() -> int:
         "una línea perfectamente normal",
         "acme corporation no es el marcador",       # separado, no es el token
         "zzqx_ no es el prefijo",                   # prefijo distinto
-        "NavisCoord 0.2.1 MIT",
+        "NavisCoord 0.2.2 MIT",
     ]
     for text in must_hit:
         if not scan_text(text, digests, lengths, set()):
