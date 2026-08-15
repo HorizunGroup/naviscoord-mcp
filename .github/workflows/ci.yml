@@ -36,6 +36,13 @@ jobs:
         mcp: ["<2", ">=2,<3"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # La suite comprueba a qué tag apuntan los manifiestos, y esa
+          # pregunta no se puede responder con una lista de tags incompleta.
+          # El checkout por defecto es superficial y sin tags: `git tag` vuelve
+          # vacío y el pin concluiría que el tag no existe cuando sí existe.
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -57,6 +64,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # La suite comprueba a qué tag apuntan los manifiestos, y esa
+          # pregunta no se puede responder con una lista de tags incompleta.
+          # El checkout por defecto es superficial y sin tags: `git tag` vuelve
+          # vacío y el pin concluiría que el tag no existe cuando sí existe.
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -83,6 +97,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # La suite comprueba a qué tag apuntan los manifiestos, y esa
+          # pregunta no se puede responder con una lista de tags incompleta.
+          # El checkout por defecto es superficial y sin tags: `git tag` vuelve
+          # vacío y el pin concluiría que el tag no existe cuando sí existe.
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -194,6 +215,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # La suite comprueba a qué tag apuntan los manifiestos, y esa
+          # pregunta no se puede responder con una lista de tags incompleta.
+          # El checkout por defecto es superficial y sin tags: `git tag` vuelve
+          # vacío y el pin concluiría que el tag no existe cuando sí existe.
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -278,6 +306,13 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # La suite comprueba a qué tag apuntan los manifiestos, y esa
+          # pregunta no se puede responder con una lista de tags incompleta.
+          # El checkout por defecto es superficial y sin tags: `git tag` vuelve
+          # vacío y el pin concluiría que el tag no existe cuando sí existe.
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
