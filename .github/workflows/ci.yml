@@ -46,7 +46,7 @@ jobs:
         # already had 1.x, and unusable on every machine that did not.
         mcp: ["<2", ">=2,<3"]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # La suite comprueba a qué tag apuntan los manifiestos, y esa
           # pregunta no se puede responder con una lista de tags incompleta.
@@ -74,7 +74,7 @@ jobs:
     name: motor en Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # La suite comprueba a qué tag apuntan los manifiestos, y esa
           # pregunta no se puede responder con una lista de tags incompleta.
@@ -96,7 +96,7 @@ jobs:
     name: lógica del add-in (sin licencia)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: "8.0.x"
@@ -107,7 +107,7 @@ jobs:
     name: wheel, sdist e instalación limpia
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # La suite comprueba a qué tag apuntan los manifiestos, y esa
           # pregunta no se puede responder con una lista de tags incompleta.
@@ -164,7 +164,7 @@ jobs:
     name: manifiestos y coherencia de versiones
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Tags and full history, because the marketplace pin is a rule ABOUT
           # tags. Without them `git tag` came back empty, the check could not
@@ -286,7 +286,7 @@ jobs:
     name: higiene pública
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # La suite comprueba a qué tag apuntan los manifiestos, y esa
           # pregunta no se puede responder con una lista de tags incompleta.
@@ -377,7 +377,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # La suite comprueba a qué tag apuntan los manifiestos, y esa
           # pregunta no se puede responder con una lista de tags incompleta.
