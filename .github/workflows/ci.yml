@@ -54,7 +54,7 @@ jobs:
           # vacío y el pin concluiría que el tag no existe cuando sí existe.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
       - name: Instalar
@@ -82,7 +82,7 @@ jobs:
           # vacío y el pin concluiría que el tag no existe cuando sí existe.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Instalar
@@ -115,7 +115,7 @@ jobs:
           # vacío y el pin concluiría que el tag no existe cuando sí existe.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Herramienta de build
@@ -172,7 +172,7 @@ jobs:
           # reporting success for every run since it was written.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -294,7 +294,7 @@ jobs:
           # vacío y el pin concluiría que el tag no existe cuando sí existe.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
@@ -385,7 +385,7 @@ jobs:
           # vacío y el pin concluiría que el tag no existe cuando sí existe.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
