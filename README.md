@@ -41,14 +41,7 @@ Autodesk assemblies.
 
 ## Compatibility
 
-| Navisworks | Add-in package | Verification |
-|---|---:|---|
-| 2024 | Yes | Tested with the live Navisworks API |
-| 2025 | Yes | Builds against the 2025 API; live run not yet verified |
-| 2026 | Yes | Tested with the live Navisworks API |
-
-Each Navisworks version requires its own add-in build. Download the package
-that matches the installed version.
+Autodesk Navisworks Manage 2024, 2025, and 2026.
 
 ## Install
 
