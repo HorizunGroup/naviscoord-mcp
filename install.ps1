@@ -103,6 +103,13 @@ foreach ($f in $found) {
 
     # Los iconos de los botones. Si faltan, la pestaña sale igual pero con los
     # botones en blanco, así que también se verifican.
+    #
+    # Se BORRAN los que hubiera antes de copiar: copiar sin limpiar deja los
+    # iconos de botones que ya no existen acumulándose en la carpeta del
+    # complemento para siempre, y nadie los echa de menos porque no rompen
+    # nada — solo confunden a quien mire ahí buscando qué se instaló.
+    Get-ChildItem $pluginDir -Filter "nc*.png" -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force
     $icons = Get-ChildItem $outDir -Filter "nc*.png" -File
     if (-not $icons) { throw "[$v] el build no dejó los iconos (nc*.png) en $outDir" }
     Copy-Item $icons.FullName -Destination $pluginDir -Force

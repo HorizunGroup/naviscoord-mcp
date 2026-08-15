@@ -10,8 +10,13 @@
   con el namespace WPF por defecto, la pestana no aparece y NO hay error: se
   cae en silencio. Si algun dia deja de salir, sospecha primero de este archivo.
 
-  Los Id de los botones coinciden uno a uno con los [Command] de RibbonTab.cs,
-  y el Id del tab con su [RibbonTab]. Un Id que no cuadre = boton muerto.
+  Un solo boton, a proposito. Los otros cinco (auditar, configurar, correr,
+  agrupar) duplicaban herramientas MCP que ya hacen lo mismo; el flujo se pide
+  desde el cliente. Aqui queda lo unico que el cliente no puede responderse
+  solo: si el puente esta arriba y que version esta cargada.
+
+  El Id del boton coincide con el [Command] de NavisCoordTab.cs, y el Id del
+  tab con su [RibbonTab]. Un Id que no cuadre = boton muerto.
 
   El archivo va SUELTO junto al DLL y ademas en la subcarpeta de idioma
   (en-US); el csproj lo copia a los dos sitios e install.ps1 los instala.
@@ -35,44 +40,6 @@
                             Size="Large"
                             ShowText="True"
                             Text="Estado del puente"
-                            Orientation="Vertical"/>
-                <RibbonSeparator x:Uid="NavisCoordSep_Estado"/>
-                <local:NWRibbonButton x:Uid="NavisCoordBtn_ConfigCoord" Id="ID_NavisCoordConfigCoord"
-                            Size="Large"
-                            ShowText="True"
-                            Text="Configurar coordinaci&#243;n"
-                            Orientation="Vertical"/>
-            </RibbonPanelSource>
-        </RibbonPanel>
-
-        <RibbonPanel x:Uid="NavisCoordPanel_Preparacion">
-            <RibbonPanelSource x:Uid="NavisCoordPanelSource_Preparacion" Title="Preparaci&#243;n">
-                <local:NWRibbonButton x:Uid="NavisCoordBtn_0" Id="ID_NavisCoordAuditar"
-                            Size="Large"
-                            ShowText="True"
-                            Text="0. Auditar modelos"
-                            Orientation="Vertical"/>
-                <RibbonSeparator x:Uid="NavisCoordSep_0"/>
-                <local:NWRibbonButton x:Uid="NavisCoordBtn_1" Id="ID_NavisCoordConfigurar"
-                            Size="Large"
-                            ShowText="True"
-                            Text="1. Configurar"
-                            Orientation="Vertical"/>
-            </RibbonPanelSource>
-        </RibbonPanel>
-
-        <RibbonPanel x:Uid="NavisCoordPanel_Ejecucion">
-            <RibbonPanelSource x:Uid="NavisCoordPanelSource_Ejecucion" Title="Ejecuci&#243;n">
-                <local:NWRibbonButton x:Uid="NavisCoordBtn_2" Id="ID_NavisCoordCorrer"
-                            Size="Large"
-                            ShowText="True"
-                            Text="2. Correr tests"
-                            Orientation="Vertical"/>
-                <RibbonSeparator x:Uid="NavisCoordSep_2"/>
-                <local:NWRibbonButton x:Uid="NavisCoordBtn_3" Id="ID_NavisCoordAgrupar"
-                            Size="Large"
-                            ShowText="True"
-                            Text="3. Agrupar por nivel"
                             Orientation="Vertical"/>
             </RibbonPanelSource>
         </RibbonPanel>

@@ -135,7 +135,19 @@
     <RibbonIcon Include="$(MSBuildThisFileDirectory)Images\*.png" />
   </ItemGroup>
 
+  <!--
+    Barre los iconos que hubiera antes de copiar los actuales. El directorio de
+    salida es incremental: un icono que deja de existir en Images\ se queda ahí
+    de una compilación anterior, install.ps1 copia fielmente lo que encuentra y
+    el complemento acaba instalando iconos de botones que ya no existen. El
+    ItemGroup va DENTRO del Target para que el comodín se evalúe al ejecutarlo
+    y no al cargar el proyecto, cuando el directorio aún no se ha llenado.
+  -->
   <Target Name="CopyRibbonIcons" AfterTargets="Build">
+    <ItemGroup>
+      <IconoViejo Include="$(OutDir)nc*.png" />
+    </ItemGroup>
+    <Delete Files="@(IconoViejo)" />
     <Copy SourceFiles="@(RibbonIcon)" DestinationFolder="$(OutDir)" />
   </Target>
 
