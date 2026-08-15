@@ -127,10 +127,10 @@ if ($SelfTest) {
         'Program Files'        = $enc.GetBytes('ref C:\Program Files\Autodesk\x.dll')
     }
     $mustPass = [ordered]@{
-        'binario neutro'       = $enc.GetBytes('NavisCoord 0.2.1 MIT HorizunGroup')
+        'binario neutro'       = $enc.GetBytes('NavisCoord 0.2.2 MIT HorizunGroup')
         'pdb sin ruta'         = $enc.GetBytes('NavisCoord.pdb')
         'PathMap normalizado'  = $enc.GetBytes('/_/addin/NavisCoord.Addin/HttpBridge.cs')
-        'version con sha'      = $enc.GetBytes('0.2.1+0000000000000000000000000000000000000000')
+        'version con sha'      = $enc.GetBytes('0.2.2+0000000000000000000000000000000000000000')
         'texto de licencia'    = $enc.GetBytes('Permission is hereby granted, free of charge')
     }
 

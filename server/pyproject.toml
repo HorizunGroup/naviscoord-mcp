@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "naviscoord"
-version = "0.2.1"
+version = "0.2.2"
 description = "Coordination intelligence for Autodesk Navisworks, exposed over MCP"
 # README, LICENSE and NOTICE all live one level up, at the repository root,
 # and setuptools will not reach outside the project directory for them.
