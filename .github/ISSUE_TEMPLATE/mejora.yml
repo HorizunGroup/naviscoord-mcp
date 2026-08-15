@@ -1,0 +1,56 @@
+name: Proponer una mejora
+description: Falta algo, o algo podría funcionar mejor
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qué problema de coordinación resuelve
+      description: >
+        Empieza por el problema, no por la solución. «Abro una incidencia ACC
+        por piso cuando es el mismo detalle repetido» dice mucho más que
+        «añadid un botón de agrupar».
+    validations:
+      required: true
+
+  - type: textarea
+    id: hoy
+    attributes:
+      label: Cómo lo resuelves hoy
+      placeholder: A mano, revisando el árbol test por test.
+    validations:
+      required: true
+
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Qué propones
+      description: Si tienes una forma concreta en mente, descríbela. Si no, dilo.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: donde
+    attributes:
+      label: Dónde encaja
+      options:
+        - Motor de análisis (puntuación, filtros, causas raíz)
+        - Herramientas MCP
+        - Add-in de Navisworks / cinta
+        - Informes (PDF, handoff, Power BI)
+        - Perfiles
+        - Instalación y empaquetado
+        - No estoy seguro
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: alcance
+    attributes:
+      label: Alcance
+      options:
+        - label: >
+            Entiendo que el criterio de coordinación vive en el **perfil**, no
+            en el código, y que si esto es criterio quizá se resuelva
+            escribiendo un perfil.
+          required: false

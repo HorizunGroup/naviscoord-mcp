@@ -1,0 +1,51 @@
+# Local MCP registration: the paths in it are specific to one machine.
+# Ship .mcp.json.example instead.
+.mcp.json
+
+# Build output
+bin/
+obj/
+# Per-Navisworks-version output produced by installer\Build-Stage.ps1. One
+# folder per version because a DLL compiled against the 2024 API is a
+# different binary from the 2026 one and sharing bin\ makes the last build
+# overwrite the previous one right before it is staged.
+addin/_build/
+*.dll
+*.pdb
+*.user
+*.suo
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Model exports, analysis output and reports. These come from real projects
+# and may carry client geometry, element ids and coordinates — never commit
+# them to a public repository.
+*.nwc
+*.nwd
+*.nwf
+*.rvt
+*.ifc
+*_export.json
+schema*.json
+coordination_handoff.json
+revit_worklist.json
+fct_issues.csv
+brg_issue_elements.csv
+dim_*.csv
+*.pdf
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+installer/stage/
+installer/Output/

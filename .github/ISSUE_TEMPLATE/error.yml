@@ -1,0 +1,85 @@
+name: Reportar un error
+description: Algo no funciona como dice la documentación
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Antes de seguir**: si es una vulnerabilidad de seguridad, cierra esto
+        y usa el reporte privado (ver [SECURITY.md](https://github.com/HorizunGroup/naviscoord-mcp/blob/main/SECURITY.md)).
+
+        **Nunca adjuntes modelos de cliente.** Si el problema depende del
+        contenido del modelo, un nombre de tipo o de familia mínimo que lo
+        reproduzca es suficiente.
+
+  - type: textarea
+    id: que-paso
+    attributes:
+      label: Qué esperabas y qué pasó
+      placeholder: |
+        Esperaba que navis_color_by_priority pintara el tubo.
+        Pintó la viga.
+    validations:
+      required: true
+
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Pasos para reproducirlo
+      placeholder: |
+        1. Abrir el federado
+        2. navis_analyze
+        3. navis_color_by_priority(limit=10)
+    validations:
+      required: true
+
+  - type: textarea
+    id: health
+    attributes:
+      label: Salida de navis_health
+      description: >
+        Completa: trae las versiones de todo. **Anonimiza** la ruta y el título
+        del documento antes de pegarla — los números son lo que importa.
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Últimas líneas de bridge.log
+      description: >
+        `%LOCALAPPDATA%\NavisCoord\bridge.log`. El complemento nunca abre
+        diálogos desde el puente: todo lo escribe ahí. Anonimiza igual.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: navisworks
+    attributes:
+      label: Versión de Navisworks
+      placeholder: "Navisworks Manage 2026, idioma español"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Versión de Python
+      placeholder: "3.12.4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: como
+    attributes:
+      label: Cómo lo instalaste
+      options:
+        - Plugin de Claude Code
+        - Plugin de Codex
+        - .mcp.json a mano
+        - pip install -e desde el repo
+        - Instalador corporativo
+    validations:
+      required: true

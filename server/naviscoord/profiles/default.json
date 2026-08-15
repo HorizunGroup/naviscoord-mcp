@@ -1,0 +1,381 @@
+{
+  "$schema": "naviscoord.profile/v1",
+  "name": "default",
+  "description": "Perfil genérico. Detecta disciplina por categoría del elemento y, como refuerzo, por patrón en el nombre del archivo. Todos los umbrales son editables: este archivo es la única fuente de verdad del criterio de coordinación.",
+  "units": "m",
+
+  "disciplines": {
+    "EST": {
+      "label": "Estructura",
+      "_comment": "Los nombres en español no son adorno: un NWC exportado desde un Revit en español publica sus categorías traducidas, y un perfil solo en inglés no reconoce nada. Verificado contra un modelo real donde salían 'Muros', 'Tubos', 'Uniones de tubo', 'Aparatos eléctricos'.",
+      "categories": [
+        "Structural Framing", "Structural Columns", "Structural Foundations",
+        "Structural Trusses", "Structural Stiffeners", "Floors", "Slabs",
+        "Rebar", "Structural Rebar",
+        "Armazón estructural", "Armazon estructural", "Pilares estructurales",
+        "Cimentaciones estructurales", "Cimentación estructural",
+        "Armaduras estructurales", "Refuerzo estructural", "Suelos",
+        "Vigas", "Columnas", "Cimentacion", "Cimentación", "Losas"
+      ],
+      "file_patterns": ["est", "str", "struct", "estructura"]
+    },
+    "ARQ": {
+      "label": "Arquitectura",
+      "categories": [
+        "Walls", "Ceilings", "Doors", "Windows", "Stairs", "Railings", "Roofs",
+        "Curtain Panels", "Curtain Wall Mullions", "Furniture", "Casework",
+        "Muros", "Techos", "Cielos", "Cielos rasos", "Puertas", "Ventanas",
+        "Escaleras", "Barandillas", "Balaustres", "Cubiertas", "Mobiliario",
+        "Muebles de obra", "Paneles de muro cortina", "Montantes de muro cortina",
+        "Suelo", "Habitaciones", "Modelos genéricos", "Modelos genericos"
+      ],
+      "file_patterns": ["arq", "arch", "ar", "arquitectura"]
+    },
+    "HVAC": {
+      "label": "Aire acondicionado y ventilación",
+      "categories": [
+        "Ducts", "Duct Fittings", "Duct Accessories", "Duct Insulations",
+        "Duct Linings", "Air Terminals", "Mechanical Equipment", "Flex Ducts",
+        "Conductos", "Uniones de conducto", "Accesorios de conducto",
+        "Aislamientos de conducto", "Terminales de aire", "Equipos mecánicos",
+        "Equipos mecanicos", "Conductos flexibles", "Ductos", "Rejillas"
+      ],
+      "file_patterns": ["hvac", "mec", "mech", "aa", "aire", "clima"]
+    },
+    "HID": {
+      "label": "Hidráulica",
+      "_ojo": "En Revit español 'Tubo' es canalización ELÉCTRICA (Conduit) y 'Tubería' es la hidráulica (Pipe). Mapear 'Tubos' aquí mandó 4.147 elementos de un modelo eléctrico real a Hidráulica y le cambió el rol al archivo entero.",
+      "categories": [
+        "Pipes", "Pipe Fittings", "Pipe Accessories", "Pipe Insulations",
+        "Plumbing Fixtures", "Flex Pipes",
+        "Tuberías", "Tuberias", "Uniones de tubería", "Uniones de tuberia",
+        "Accesorios de tubería", "Accesorios de tuberia",
+        "Accesorios de tuberías", "Accesorios de tuberias", "Tramos",
+        "Aislamientos de tubería", "Aparatos sanitarios", "Tuberías flexibles"
+      ],
+      "file_patterns": ["hid", "plum", "hidraulica", "hidráulica", "agua"]
+    },
+    "SAN": {
+      "label": "Sanitaria",
+      "categories": ["Sanitary", "Sanitaria", "Drainage"],
+      "file_patterns": ["san", "sanitaria", "desagu", "drenaje", "alcant"]
+    },
+    "RCI": {
+      "label": "Red contra incendio",
+      "categories": [
+        "Sprinklers", "Fire Protection", "Fire Alarm Devices",
+        "Rociadores", "Dispositivos de alarma de incendios", "Protección contra incendios"
+      ],
+      "file_patterns": ["rci", "fire", "fp", "incendio", "sprink"]
+    },
+    "ELE": {
+      "label": "Eléctrica",
+      "categories": [
+        "Cable Trays", "Cable Tray Fittings", "Conduits", "Conduit Fittings",
+        "Electrical Equipment", "Electrical Fixtures", "Lighting Fixtures",
+        "Lighting Devices", "Data Devices", "Communication Devices",
+        "Bandejas de cables", "Uniones de bandeja de cables",
+        "Tubos", "Uniones de tubo",
+        "Tubos de instalación", "Tubos de instalacion",
+        "Uniones de tubo de instalación", "Equipos eléctricos",
+        "Equipos electricos", "Aparatos eléctricos", "Aparatos electricos",
+        "Luminarias", "Dispositivos de iluminación", "Dispositivos de iluminacion",
+        "Dispositivos de datos", "Dispositivos de comunicación",
+        "Bandejas", "Canalizaciones"
+      ],
+      "file_patterns": ["ele", "elec", "elect", "electrica", "eléctrica", "bt", "mt"]
+    },
+    "OTRO": {
+      "label": "Sin clasificar",
+      "categories": [],
+      "file_patterns": []
+    }
+  },
+
+  "element_nouns": {
+    "_comment": "Cómo nombrar cada elemento en el reporte. Sin esto el texto sale con el nombre del nodo de geometría, que en un export de Revit suele ser el MATERIAL: 'Copper entra 69 mm dentro de Concrete, Cast-in-Place gray'. Nadie en obra habla así, y un reporte que hay que traducir no se lee.",
+    "Pipes": "la tubería",
+    "Pipe Fittings": "el accesorio de tubería",
+    "Pipe Accessories": "la válvula o accesorio",
+    "Flex Pipes": "la tubería flexible",
+    "Plumbing Fixtures": "el aparato sanitario",
+    "Sprinklers": "el rociador",
+    "Ducts": "el ducto",
+    "Duct Fittings": "el accesorio de ducto",
+    "Duct Accessories": "el accesorio de ducto",
+    "Flex Ducts": "el ducto flexible",
+    "Air Terminals": "la rejilla",
+    "Mechanical Equipment": "el equipo mecánico",
+    "Cable Trays": "la bandeja portacables",
+    "Cable Tray Fittings": "el accesorio de bandeja",
+    "Conduits": "la canalización",
+    "Conduit Fittings": "el accesorio de canalización",
+    "Electrical Equipment": "el tablero",
+    "Electrical Fixtures": "el aparato eléctrico",
+    "Lighting Fixtures": "la luminaria",
+    "Structural Framing": "la viga",
+    "Structural Columns": "la columna",
+    "Structural Foundations": "la cimentación",
+    "Structural Trusses": "la cercha",
+    "Structural Rebar": "el refuerzo",
+    "Floors": "la losa",
+    "Walls": "el muro",
+    "Ceilings": "el cielo raso",
+    "Roofs": "la cubierta",
+    "Doors": "la puerta",
+    "Windows": "la ventana",
+    "Stairs": "la escalera",
+    "Railings": "la baranda",
+    "Curtain Panels": "el panel de fachada",
+    "Generic Models": "el elemento genérico",
+
+    "_es": "Las mismas categorías como las publica un Revit en español. Sin ellas el texto sale «Sólido entra 125 mm dentro de Sólido», porque al no encontrar sustantivo cae al nombre del nodo — y en un export de Revit ese nombre es la clase de geometría.",
+    "Tuberías": "la tubería",
+    "Uniones de tubería": "el accesorio de tubería",
+    "Accesorios de tuberías": "el accesorio de tubería",
+    "Aparatos sanitarios": "el aparato sanitario",
+    "Rociadores": "el rociador",
+    "Conductos": "el ducto",
+    "Uniones de conducto": "el accesorio de ducto",
+    "Terminales de aire": "la rejilla",
+    "Rejillas": "la rejilla",
+    "Equipos mecánicos": "el equipo mecánico",
+    "Bandejas de cables": "la bandeja portacables",
+    "Uniones de bandeja de cables": "el accesorio de bandeja",
+    "Tubos": "la canalización",
+    "Uniones de tubo": "el accesorio de canalización",
+    "Equipos eléctricos": "el tablero",
+    "Aparatos eléctricos": "el aparato eléctrico",
+    "Luminarias": "la luminaria",
+    "Dispositivos de iluminación": "el dispositivo de iluminación",
+    "Dispositivos telefónicos": "el dispositivo telefónico",
+    "Estructura": "la viga",
+    "Armazón estructural": "la viga",
+    "Pilares estructurales": "la columna",
+    "Cimentación de estructura": "la cimentación",
+    "Armazón": "la viga",
+    "Suelos": "la losa",
+    "Muros": "el muro",
+    "Techos": "el cielo raso",
+    "Cubiertas": "la cubierta",
+    "Puertas": "la puerta",
+    "Ventanas": "la ventana",
+    "Escaleras": "la escalera",
+    "Barandillas": "la baranda",
+    "Balaustres": "el balaustre",
+    "Modelos genéricos": "el elemento genérico"
+  },
+
+  "non_discipline_categories": {
+    "_comment": "Elementos de referencia y anotación: no pertenecen a ninguna especialidad y no se coordinan. Se excluyen al inferir de qué trata un grupo, porque si no diluyen la señal — en un modelo real 7.043 ejes hundieron la confianza de la eléctrica al 19%.",
+    "names": [
+      "Grids", "Levels", "Reference Planes", "Cameras", "Views", "Sheets",
+      "Rooms", "Areas", "Spaces", "Lines", "Detail Items", "Text Notes",
+      "Dimensions", "Tags", "Imports in Families", "RVT Links", "CAD Links",
+      "Eje", "Ejes", "Niveles", "Planos de referencia", "Cámaras", "Camaras",
+      "Vistas", "Planos", "Habitaciones", "Áreas", "Areas", "Espacios",
+      "Líneas", "Lineas", "Elementos de detalle", "Notas de texto",
+      "Cotas", "Etiquetas", "Importaciones en familias", "Vínculos", "Vinculos"
+    ]
+  },
+
+  "system_keywords": {
+    "RCI": ["sprinkler", "rociador", "fire", "incendio", "rci", "siamesa"],
+    "SAN": ["sanitar", "waste", "vent", "desague", "desagüe", "aguas negras", "aguas lluvias", "storm"],
+    "HID": ["domestic", "potable", "agua fria", "agua caliente", "hot water", "cold water"]
+  },
+
+  "movability": {
+    "_comment": "0.0 = imposible de mover (define el costo del arreglo). 1.0 = trivial. El lado más bajo manda: si un ramal de rociadores choca con una viga, mueve el ramal.",
+    "_criterio": "Orden de prelación de obra (priority of way): manda quien es más difícil de rerutear. Estructura nunca se mueve. Arquitectura define el envolvente y solo cede ante estructura: un muro no se corre para que pase un tubo, el tubo se rutea o se abre un paso formal. Sanitaria va por gravedad y su pendiente es intocable. De ahí hacia abajo, la flexibilidad crece con lo fácil que es rerutear: ducto troncal, tubería, rociadores, y por último canalización eléctrica, que es lo que más se acomoda. Este orden es el mismo para todos los proyectos a propósito: si cada obra lo negocia, dos reportes dejan de ser comparables y la prioridad se vuelve opinión.",
+    "by_discipline": {
+      "EST": 0.05,
+      "ARQ": 0.15,
+      "SAN": 0.25,
+      "HVAC": 0.45,
+      "HID": 0.6,
+      "RCI": 0.8,
+      "ELE": 0.85,
+      "OTRO": 0.5
+    },
+    "by_category": {
+      "Structural Foundations": 0.0,
+      "Structural Columns": 0.02,
+      "Structural Framing": 0.05,
+      "Floors": 0.05,
+      "Walls": 0.15,
+      "Ceilings": 0.35,
+      "Mechanical Equipment": 0.2,
+      "Electrical Equipment": 0.2,
+      "Plumbing Fixtures": 0.15,
+      "Air Terminals": 0.5,
+      "Cable Trays": 0.7,
+      "Sprinklers": 0.85,
+      "Conduits": 0.85
+    },
+    "_gravity_comment": "Sanitaria y drenaje corren por gravedad: la pendiente es intocable aunque el tubo 'se pueda mover'.",
+    "gravity_disciplines": ["SAN"]
+  },
+
+  "criticality_matrix": {
+    "_comment": "Peso 0-1 de lo grave que es que estas dos disciplinas se crucen. Ausente = valor por defecto 0.5.",
+    "EST|HVAC": 0.95,
+    "EST|HID": 0.95,
+    "EST|SAN": 1.0,
+    "EST|RCI": 0.9,
+    "EST|ELE": 0.85,
+    "EST|ARQ": 0.8,
+    "ARQ|HVAC": 0.6,
+    "ARQ|HID": 0.6,
+    "ARQ|SAN": 0.7,
+    "ARQ|RCI": 0.55,
+    "ARQ|ELE": 0.45,
+    "HVAC|HID": 0.5,
+    "HVAC|SAN": 0.65,
+    "HVAC|RCI": 0.5,
+    "HVAC|ELE": 0.45,
+    "HID|SAN": 0.5,
+    "HID|RCI": 0.45,
+    "HID|ELE": 0.5,
+    "SAN|RCI": 0.6,
+    "SAN|ELE": 0.55,
+    "RCI|ELE": 0.4,
+    "EST|EST": 0.7,
+    "HVAC|HVAC": 0.4,
+    "HID|HID": 0.35,
+    "ELE|ELE": 0.3
+  },
+
+  "noise_filter": {
+    "_comment": "Lo que se descarta antes de agrupar. Cada descarte queda contado y auditable: nada desaparece en silencio.",
+    "min_penetration_m": 0.002,
+    "drop_same_element": true,
+    "drop_same_system_fittings": true,
+    "drop_statuses": ["Approved", "Resolved"],
+    "insulation_categories": ["Duct Insulations", "Pipe Insulations", "Duct Linings"],
+    "insulation_penetration_tolerance_m": 0.03,
+    "pass_through_categories": ["Shafts", "Openings", "Generic Models", "Sleeves", "Pasamuros"],
+    "pass_through_keywords": ["sleeve", "pasamuro", "pasatubo", "opening", "shaft", "ducto tecnico", "buiton"],
+
+    "flush_mounted": {
+      "_comment": "Dispositivos empotrados en su anfitrión POR DISEÑO: un tomacorriente va embebido en el muro y una luminaria empotrada penetra el cielo. Geométricamente son interferencias perfectas y sistemáticas — justo lo que un detector de patrones señala con toda confianza — pero no son un problema y sepultan el reporte. Solo aplica dentro de la profundidad del dispositivo: si un tablero entra medio metro en el muro, eso sí hay que mirarlo.",
+      "device_categories": [
+        "Electrical Fixtures", "Lighting Fixtures", "Lighting Devices",
+        "Data Devices", "Telephone Devices", "Fire Alarm Devices",
+        "Communication Devices", "Security Devices", "Nurse Call Devices",
+        "Plumbing Fixtures", "Sprinklers", "Air Terminals",
+        "Electrical Equipment", "Specialty Equipment"
+      ],
+      "host_categories": ["Walls", "Ceilings", "Floors", "Roofs", "Muros", "Cielos", "Losas"],
+      "max_embedment_m": 0.15
+    },
+
+    "architectural_by_design": {
+      "_comment": "Arquitectura consigo misma. Una puerta DEBE estar dentro de su muro, y un muro que sube a losa se toca con el cielo que cuelga por debajo, aunque en obra el cielo muera contra el muro. Geométricamente son traslapes perfectos; como coordinación no son nada. En un proyecto real esto fueron 2.563 de 9.676 cruces — el 26% — sepultando los cruces de instalaciones que sí frenan obra. No se borran: quedan contados en el reporte de ruido como asunto de calidad de modelo, que es lo que son.",
+      "hosted_categories": [
+        "Doors", "Windows", "Curtain Panels", "Curtain Wall Mullions",
+        "Puertas", "Ventanas"
+      ],
+      "hosted_in": ["Walls", "Roofs", "Floors", "Muros"],
+      "host_to_host_categories": ["Walls", "Ceilings", "Floors", "Roofs", "Muros", "Cielos", "Losas"]
+    }
+  },
+
+  "clustering": {
+    "_comment": "eps_m es el radio de agrupación espacial. 0.4 m junta los cruces de un mismo ducto atravesando un rack sin fusionar problemas de vanos distintos.",
+    "eps_m": 0.4,
+    "min_samples": 1,
+    "same_discipline_pair_only": true,
+    "max_cluster_span_m": 6.0
+  },
+
+  "severity": {
+    "_comment": "Pesos de la puntuación 0-100. Suman 1.0. Cada componente aporta una frase al campo 'why'.",
+    "weights": {
+      "penetration": 0.22,
+      "criticality": 0.24,
+      "immovability": 0.20,
+      "cluster_size": 0.18,
+      "congestion": 0.10,
+      "clearance": 0.06
+    },
+    "penetration_ratio_cap": 1.0,
+    "cluster_size_saturation": 25,
+    "congestion_radius_m": 2.5,
+    "congestion_saturation": 4,
+    "_bandas_comentario": "Calibradas contra la distribución real de un proyecto de 3.512 problemas, no elegidas a ojo. CRÍTICO significa una sola cosa: frena obra o cuesta caro rehacerlo — y por eso es una banda estrecha (~4,5%, del orden de 130 problemas), la lista que un coordinador puede atacar en una semana. ALTO cierra antes de la próxima entrega. Juntas son el 10% superior. Una banda que se lleva la mitad del modelo no prioriza nada: solo cambia el nombre del montón.",
+    "priority_bands": {
+      "critical": 75.0,
+      "high": 71.0,
+      "medium": 63.5
+    }
+  },
+
+  "root_cause": {
+    "folding": {
+      "_comment": "Causas donde UNA decisión cierra todos sus problemas: se muestra un representante y los demás se pliegan bajo él, para que el top de la lista sean decisiones distintas y no la misma repetida. Una zona congestionada NO se pliega: son problemas separados que comparten sitio, no arreglo.",
+      "kinds": ["systemic_elevation", "repeated_typology"]
+    },
+    "systemic_elevation": {
+      "_comment": "Un sistema que cruza N elementos duros con un Δz consistente no son N problemas: es una cota mal puesta.",
+      "min_clashes": 6,
+      "max_z_stddev_m": 0.12,
+      "min_confidence": 0.6
+    },
+    "missing_penetration": {
+      "_comment": "MEP atraviesa muro o losa y no hay elemento de paso cerca del punto de cruce.",
+      "host_categories": ["Walls", "Floors", "Roofs", "Muros", "Losas"],
+      "search_radius_m": 1.0
+    },
+    "repeated_typology": {
+      "_comment": "El mismo cruce repitiéndose piso por piso se corrige una vez en el tipo, no N veces en el modelo.",
+      "min_levels": 3,
+      "xy_tolerance_m": 0.5
+    },
+    "congested_zone": {
+      "min_issues": 8,
+      "radius_m": 3.0
+    }
+  },
+
+  "interop": {
+    "_comment": "Lo que permite volver del problema al modelo y cruzarlo con otras herramientas. Sin estas llaves, una interferencia es un callejón sin salida: nadie puede regresar a Revit a arreglarla ni enlazarla con el presupuesto.",
+    "harvest_properties": [
+      "Element Id", "Id", "Type", "Family", "Family and Type",
+      "System Name", "System Type", "System Classification",
+      "Level", "Reference Level", "Nivel", "Layer", "Capa",
+      "Workset", "Size", "Diameter",
+      "Material", "Mark", "Comments"
+    ],
+    "_comment_harvest": "Añade aquí tus parámetros compartidos. Se admite un comodín al final —por ejemplo \"ABC_*\"— para recoger de una vez toda una familia de parámetros de tu organización.",
+    "revit_element_id_keys": ["Element Id", "Id"],
+    "_comment_budget": "Nombre del parámetro que lleva el código de presupuesto en TU estándar. Vacío por defecto porque no existe un nombre universal: sin él, el enlace con el presupuesto sencillamente no se genera.",
+    "budget_code_keys": [],
+    "classification_keys": ["Keynote"],
+    "handoff_schema": "naviscoord.coordination/1"
+  },
+
+  "clash_matrix": {
+    "_comment": "Con qué tipo y tolerancia se enfrenta cada par de disciplinas al generar la suite de tests.",
+    "default_type": "Hard",
+    "default_tolerance_m": 0.001,
+    "pairs": [
+      {"a": "EST", "b": "HVAC", "type": "Hard", "tolerance_m": 0.001},
+      {"a": "EST", "b": "HID", "type": "Hard", "tolerance_m": 0.001},
+      {"a": "EST", "b": "SAN", "type": "Hard", "tolerance_m": 0.001},
+      {"a": "EST", "b": "RCI", "type": "Hard", "tolerance_m": 0.001},
+      {"a": "EST", "b": "ELE", "type": "Hard", "tolerance_m": 0.001},
+      {"a": "ARQ", "b": "HVAC", "type": "Hard", "tolerance_m": 0.005},
+      {"a": "ARQ", "b": "HID", "type": "Hard", "tolerance_m": 0.005},
+      {"a": "ARQ", "b": "SAN", "type": "Hard", "tolerance_m": 0.005},
+      {"a": "ARQ", "b": "RCI", "type": "Hard", "tolerance_m": 0.005},
+      {"a": "ARQ", "b": "ELE", "type": "Hard", "tolerance_m": 0.005},
+      {"a": "HVAC", "b": "HID", "type": "Hard", "tolerance_m": 0.005},
+      {"a": "HVAC", "b": "SAN", "type": "Hard", "tolerance_m": 0.005},
+      {"a": "HVAC", "b": "RCI", "type": "Clearance", "tolerance_m": 0.05},
+      {"a": "HVAC", "b": "ELE", "type": "Clearance", "tolerance_m": 0.05},
+      {"a": "HID", "b": "ELE", "type": "Clearance", "tolerance_m": 0.05},
+      {"a": "RCI", "b": "ELE", "type": "Clearance", "tolerance_m": 0.05}
+    ]
+  }
+}

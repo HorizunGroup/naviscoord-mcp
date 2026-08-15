@@ -1,0 +1,110 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Navisworks Manage 2024-2026 all host .NET Framework 4.8, not .NET 8.
+    Verified against the shipped binaries: Autodesk.Navisworks.Api.dll is
+    v21 (2024) through v23 (2026), every one with TFM
+    .NETFramework,Version=v4.8. Targeting anything else produces a DLL
+    Navisworks silently refuses to load.
+
+    Built once per installed version by install.ps1 (NavisworksDir env var
+    selects which API to compile against), because each release ships its own
+    strong-named API assembly.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>NavisCoord</AssemblyName>
+    <RootNamespace>NavisCoord</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.2.0</Version>
+    <Company>NavisCoord</Company>
+    <Product>NavisCoord Bridge</Product>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+  </PropertyGroup>
+
+  <!--
+    A published DLL must not name the machine that built it.
+
+    Release used to emit a PDB, and the CodeView (RSDS) entry in the PE debug
+    directory carries the PDB's ABSOLUTE path — so every ZIP shipped
+    `C:\Users\<whoever>\...\NavisCoord.pdb` inside the binary. That path also
+    changed with the checkout directory, and because a deterministic build
+    stamps a content hash into the PE header, the whole DLL hashed differently
+    from one clone to the next. One cause, two symptoms: a privacy leak in the
+    artifact and a build nobody could reproduce.
+
+    Release therefore emits no symbols at all. Debug is untouched and still
+    produces a full PDB, which is where local debugging happens anyway.
+
+    PathMap and ContinuousIntegrationBuild are belt and braces: they normalise
+    any source path the compiler would otherwise embed (`[CallerFilePath]`,
+    SourceLink's document map) to a stable `/_/` root, so the output cannot
+    depend on where the repository sits. Deterministic is already the SDK
+    default; it is stated because the reproducibility guarantee rests on it.
+
+    Verified by scripts\Assert-PublicArtifacts.ps1, which the packaging step
+    runs against every DLL before it is allowed into a ZIP.
+  -->
+  <PropertyGroup>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <PathMap>$(MSBuildThisFileDirectory)..\..\=/_/</PathMap>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(NavisworksDir)' == ''">
+    <NavisworksDir>C:\Program Files\Autodesk\Navisworks Manage 2026</NavisworksDir>
+  </PropertyGroup>
+
+  <!--
+    Normalise the separator here rather than at the call site. Passing this
+    property on the command line with a trailing backslash escapes the
+    closing quote, MSBuild receives a mangled path, and every reference fails
+    to resolve with a misleading "type not found" for the whole API.
+
+    Into a SEPARATE property, because a value supplied as `-p:NavisworksDir=…`
+    is an MSBuild *global* property and a project cannot reassign one: the
+    normalisation was silently dropped and the HintPath became
+    "…Navisworks Manage 2026Autodesk.Navisworks.Api.dll", which is precisely
+    the 135-error "type not found" failure this is meant to prevent. Env-var
+    and default callers were unaffected, which is why it went unnoticed. A
+    derived property is never global, so both routes normalise.
+  -->
+  <PropertyGroup>
+    <NavisworksRefDir Condition="HasTrailingSlash('$(NavisworksDir)')">$(NavisworksDir)</NavisworksRefDir>
+    <NavisworksRefDir Condition="!HasTrailingSlash('$(NavisworksDir)')">$(NavisworksDir)\</NavisworksRefDir>
+  </PropertyGroup>
+
+  <!--
+    Private=false everywhere: these assemblies are already loaded in the
+    Navisworks process. Copying them next to the plugin invites the loader to
+    bind a second copy and fail in ways that are painful to diagnose.
+  -->
+  <ItemGroup>
+    <Reference Include="Autodesk.Navisworks.Api">
+      <HintPath>$(NavisworksRefDir)Autodesk.Navisworks.Api.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Autodesk.Navisworks.Clash">
+      <HintPath>$(NavisworksRefDir)Autodesk.Navisworks.Clash.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Autodesk.Navisworks.Automation">
+      <HintPath>$(NavisworksRefDir)Autodesk.Navisworks.Automation.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,53 @@
+NavisCoord
+Copyright (c) 2026 Horizun Group
+
+This product is licensed under the MIT License. See LICENSE for the full text.
+
+--------------------------------------------------------------------------
+Autodesk trademarks and the Navisworks .NET API
+--------------------------------------------------------------------------
+
+NavisCoord is not affiliated with, endorsed by, or sponsored by Autodesk, Inc.
+
+Autodesk, Navisworks, Revit and BIM 360 are trademarks or registered
+trademarks of Autodesk, Inc., and/or its subsidiaries and/or affiliates in
+the USA and/or other countries. They are used here only to identify the
+software this project interoperates with.
+
+The add-in in `addin/` links against the Navisworks .NET API at BUILD time:
+
+  Autodesk.Navisworks.Api.dll
+  Autodesk.Navisworks.Clash.dll
+  Autodesk.Navisworks.Automation.dll
+
+None of those assemblies are redistributed by this project, and none are
+present in this repository or in any artifact it produces. They are resolved
+from a local installation of Autodesk Navisworks Manage, and every project
+reference sets `Private=false` so nothing is copied to the output directory.
+
+Building or running the add-in therefore requires a licensed installation of
+Autodesk Navisworks Manage (2024, 2025 or 2026), obtained from Autodesk under
+Autodesk's own terms. Those terms govern your use of the Autodesk software;
+this project's MIT licence covers only the code in this repository.
+
+--------------------------------------------------------------------------
+Third-party Python dependencies
+--------------------------------------------------------------------------
+
+The analysis engine has no dependencies. The MCP server and the PDF report
+require the following, installed at runtime from PyPI and NOT vendored here:
+
+  mcp        - MIT License        - https://github.com/modelcontextprotocol/python-sdk
+  reportlab  - BSD 3-Clause       - https://www.reportlab.com/
+  Pillow     - MIT-CMU License    - https://python-pillow.org/
+
+Each is distributed by its own authors under its own licence; consult the
+package metadata for the authoritative text.
+
+--------------------------------------------------------------------------
+Distribution of the add-in
+--------------------------------------------------------------------------
+
+This repository ships no installer. The add-in is distributed as one ZIP per
+Navisworks version, built by `scripts/Build-Release.ps1`, containing only
+`NavisCoord.dll`, this NOTICE, the LICENSE and a neutral example profile.

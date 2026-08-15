@@ -1,0 +1,15 @@
+{
+  "_comment": "Copia este archivo a .mcp.json y ajusta las rutas a tu máquina. El .mcp.json real no se versiona porque las rutas son locales.",
+  "_setup": "Desde server/: pip install -e . — después 'command' puede ser simplemente 'python' sin PYTHONPATH.",
+  "_windows": "Si 'python' abre la Microsoft Store en vez de ejecutar, usa la ruta absoluta del intérprete real (python -c \"import sys; print(sys.executable)\").",
+  "mcpServers": {
+    "horizun-navis-mcp": {
+      "command": "python",
+      "args": ["-m", "naviscoord.mcp_server"],
+      "env": {
+        "PYTHONPATH": "RUTA/AL/REPO/server",
+        "PYTHONIOENCODING": "utf-8"
+      }
+    }
+  }
+}

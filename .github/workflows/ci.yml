@@ -1,0 +1,380 @@
+name: CI
+
+# What can and cannot be checked here, and why.
+#
+# The engine is pure Python and runs anywhere, so it is tested on every push
+# across every supported interpreter and both mcp majors.
+#
+# The add-in links against the Navisworks .NET API, which ships only with a
+# licensed Autodesk installation and cannot be redistributed to a runner — so
+# the full add-in is NOT built here. What is built and tested is everything in
+# it that carries no Autodesk reference, which is deliberately most of the
+# logic that ever had a bug: rule precedence, level naming, repeat detection,
+# view purity, the mutation envelope, the job state machine, the path policy,
+# the profile schema, the session store and capabilities.
+#
+# Building the real add-in for 2024/2025/2026 is a manual step before a
+# release; see docs/RELEASING.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  engine:
+    name: motor (py${{ matrix.python }}, mcp${{ matrix.mcp }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+        # Both mcp majors are supported and both must stay supported. Testing
+        # only what a developer happens to have pinned is how mcp 2.0 shipped
+        # a broken fresh install: the code was fine on every machine that
+        # already had 1.x, and unusable on every machine that did not.
+        mcp: ["<2", ">=2,<3"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Instalar
+        run: |
+          cd server
+          pip install -e ".[dev]"
+          pip install "mcp${{ matrix.mcp }}"
+      - name: mcp resuelto
+        run: pip show mcp | head -2
+      - name: Pruebas
+        run: cd server && python -m pytest tests -q
+
+  windows-engine:
+    # The path policy rejects UNC paths, device namespaces, reserved DOS
+    # names and NTFS alternate data streams — every one of which is a Windows
+    # concept, and the platform the tool actually runs on.
+    name: motor en Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar
+        run: |
+          cd server
+          pip install -e ".[dev]"
+      - name: Pruebas
+        run: cd server; python -m pytest tests -q
+
+  addin-logic:
+    name: lógica del add-in (sin licencia)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Pruebas C#
+        run: dotnet run --project addin/NavisCoord.Tests
+
+  packaging:
+    name: wheel, sdist e instalación limpia
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Herramienta de build
+        run: pip install build
+
+      - name: Construir y verificar artefactos
+        # Reads both archives back and asserts LICENSE, NOTICE, the default
+        # profile and the MCP server are inside. A build step that copies
+        # files and trusts the result is how the problem returns.
+        run: python scripts/build_artifacts.py
+
+      - name: Instalar DESDE EL WHEEL, no editable
+        # An editable install hides every packaging defect: the profile used
+        # to live one level above the package and worked only because every
+        # install so far had been editable.
+        run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/python -m pip install --quiet server/dist/*.whl
+
+      - name: El paquete funciona instalado
+        run: |
+          /tmp/clean/bin/python - <<'PY'
+          import naviscoord
+          from naviscoord.profile import Profile
+          from naviscoord.mcp_server import mcp
+          assert Profile.load().name == "default", "el perfil no viajó dentro del paquete"
+          print("naviscoord", naviscoord.__version__, "instalado desde wheel: ok")
+          PY
+
+      - name: Los console scripts existen
+        run: |
+          test -x /tmp/clean/bin/naviscoord
+          test -x /tmp/clean/bin/naviscoord-mcp
+
+      - name: LICENSE y NOTICE llegan a la instalación
+        run: |
+          find /tmp/clean -path "*naviscoord*dist-info*" -name LICENSE | grep -q .
+          find /tmp/clean -path "*naviscoord*dist-info*" -name NOTICE  | grep -q .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: server/dist/*
+
+  manifests:
+    name: manifiestos y coherencia de versiones
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Tags and full history, because the marketplace pin is a rule ABOUT
+          # tags. Without them `git tag` came back empty, the check could not
+          # tell "no tags exist" from "nobody fetched them", and it skipped —
+          # reporting success for every run since it was written.
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Coherencia de versiones y forma de los manifiestos
+        # Same assertions the suite makes, run without installing the package
+        # so a packaging break cannot hide a manifest break.
+        run: |
+          cd server
+          pip install --quiet pytest
+          python -m pytest tests/test_packaging.py -q
+
+      - name: El ref de los marketplaces corresponde a la fase
+        # Run standalone as well as through pytest: this is the check that
+        # decides whether a tag would publish the right ref, and it must be
+        # legible in the log rather than buried in a dot.
+        run: python scripts/marketplace_pin.py --explain
+
+      - name: Validador real de plugins
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude plugin validate . --strict
+
+      - name: Validar el manifiesto del marketplace de agentes
+        run: |
+          mkdir -p /tmp/agents/.claude-plugin
+          cp .agents/plugins/marketplace.json /tmp/agents/.claude-plugin/
+          claude plugin validate /tmp/agents --strict
+
+      - name: Validar el manifiesto del plugin en aislamiento
+        run: |
+          mkdir -p /tmp/plug/.claude-plugin
+          cp .claude-plugin/plugin.json /tmp/plug/.claude-plugin/
+          cp -r skills scripts /tmp/plug/
+          claude plugin validate /tmp/plug --strict
+
+  public-hygiene:
+    # This repository is the PUBLIC half of a product whose other half is a
+    # private overlay. The engine is shared by copying, so the realistic
+    # failure is not malice but a routine port that brings an internal code, a
+    # parameter prefix or a branding string across with it — and once that is
+    # pushed it is public forever.
+    #
+    # The obvious guard is a list of the forbidden words, and it cannot be used
+    # here: the list would publish them, in this file and in every CI log that
+    # echoes the step. So the terms live as salted SHA-256 digests in
+    # .github/markers.denylist and a failure names file and line but never the
+    # value. See scripts/check_markers.py.
+    name: higiene pública
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ningún marcador interno en el árbol
+        run: python scripts/check_markers.py
+
+      - name: El escáner de marcadores detecta lo que dice detectar
+        # Exercised with INVENTED markers. A guard nobody tests is a guard that
+        # quietly stops working, and this one cannot be eyeballed: its list is
+        # a set of digests.
+        run: python scripts/check_markers.py --selftest
+
+      - name: Ninguna ruta personal ni secreto evidente
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=0
+          # C:\Users\<someone> with a real name, not a placeholder.
+          hits=$(grep -rIinE 'C:\\+Users\\+[A-Za-z0-9._-]+' --exclude-dir=.git . \
+                 | grep -viE '<[a-z-]+>|%USERNAME%|\$env:USERNAME|USERPROFILE|tu-usuario' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::ruta personal:"; echo "$hits"; status=1
+          fi
+          hits=$(grep -rIinE 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+                 --exclude-dir=.git . || true)
+          if [ -n "$hits" ]; then
+            echo "::error::posible secreto:"; echo "$hits"; status=1
+          fi
+          exit $status
+
+      - name: Ningún modelo ni export de cliente versionado
+        shell: bash
+        run: |
+          set -uo pipefail
+          hits=$(git ls-files | grep -iE '\.(nwd|nwf|nwc|nwfacc|rvt|rfa|ifc|dwg)$' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::archivos de modelo versionados:"; echo "$hits"; exit 1
+          fi
+          # Anything unexpectedly large is worth a human look before it is
+          # published; the repo is source and documentation only.
+          big=$(git ls-files | while read -r f; do
+                  [ -f "$f" ] && [ "$(stat -c%s "$f")" -gt 2000000 ] && echo "$f $(stat -c%s "$f")"
+                done || true)
+          if [ -n "$big" ]; then
+            echo "::error::archivos >2 MB versionados:"; echo "$big"; exit 1
+          fi
+
+      - name: Los scripts de release son sintácticamente válidos
+        shell: pwsh
+        run: |
+          $bad = 0
+          foreach ($f in Get-ChildItem -Path scripts -Filter *.ps1 -Recurse) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $f.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) {
+              Write-Output "::error::$($f.Name): $($errors[0].Message)"
+              $bad = 1
+            } else {
+              Write-Output "ok  $($f.Name)"
+            }
+          }
+          exit $bad
+
+      - name: El guard de artefactos detecta lo que dice detectar
+        # The add-in is built outside CI, against a licensed Autodesk API, so
+        # the guard that keeps the builder's filesystem out of the published
+        # binary cannot run here on a real DLL. Its DETECTION is exercised
+        # here instead, against synthetic files: a guard nobody tests is a
+        # guard that quietly stops working, which is how the leak it now
+        # catches survived three releases.
+        shell: pwsh
+        run: ./scripts/Assert-PublicArtifacts.ps1 -SelfTest
+
+  launcher:
+    name: launcher en modo degradado
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: El fallback responde en vez de reventar
+        # The degraded server shipped calling a function that had been
+        # deleted, so the one code path whose job is to explain a failure
+        # raised NameError instead. Driven here as a real JSON-RPC
+        # conversation, with NO dependencies installed.
+        shell: bash
+        run: |
+          # The driver goes in a FILE. It used to be fed to `python -` from a
+          # heredoc while the JSON-RPC lines were piped in — two things
+          # claiming the same stdin, so python read the script and the server
+          # then read end-of-file. It answered nothing, every time, on both
+          # runners: the assertion below was measuring the harness rather
+          # than the launcher.
+          cat > degraded_driver.py <<'PY'
+          import sys, pathlib
+          sys.path.insert(0, str(pathlib.Path("scripts").resolve()))
+          import plugin_launcher as L
+          # Exit code 1 is CORRECT here: the degraded server reports failure.
+          sys.exit(L.serve_failure("simulado: runtime ausente"))
+          PY
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize"}' \
+            '{"jsonrpc":"2.0","method":"initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"navis_install_status"}}' \
+          | python degraded_driver.py > degraded.jsonl || true
+          echo "--- respuestas ---"; cat degraded.jsonl
+          python - <<'PY'
+          import json
+          lines = [json.loads(l) for l in open("degraded.jsonl") if l.strip()]
+          assert len(lines) == 3, f"esperaba 3 respuestas (la notificación no lleva), hubo {len(lines)}"
+          assert lines[0]["result"]["serverInfo"]["name"] == "horizun-navis-mcp"
+          assert lines[0]["result"]["serverInfo"]["version"] != "unknown", "no leyó la versión real"
+          assert [t["name"] for t in lines[1]["result"]["tools"]] == ["navis_install_status"]
+          assert lines[2]["result"]["isError"] is True
+          payload = json.loads(lines[2]["result"]["content"][0]["text"])
+          assert "simulado" in payload["detail"]
+          assert "pip install" in payload["arreglo"]
+          print("modo degradado: ok")
+          PY
+
+  # ---------------------------------------------------------------- ci-ok
+  #
+  # One stable name that means "everything passed", and the only check branch
+  # protection should require.
+  #
+  # The alternative is registering all fifteen job names as required, and
+  # thirteen of them carry the matrix inside the name — `motor (py3.10,
+  # mcp<2)` and so on. The day the matrix gains 3.14 or drops an mcp range,
+  # the required check stops existing, nothing ever reports it, and every pull
+  # request blocks on a status that can never arrive. Requiring one aggregate
+  # keeps the matrix free to change without touching repository settings.
+  #
+  # `if: always()` is what makes it meaningful: without it the job is skipped
+  # when a dependency fails, and a skipped required check blocks the PR with
+  # no explanation instead of failing with one.
+  ci-ok:
+    name: ci-ok
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - engine
+      - windows-engine
+      - addin-logic
+      - packaging
+      - manifests
+      - public-hygiene
+      - launcher
+    steps:
+      - name: Todos los jobs requeridos terminaron en success
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A matrix job contributes ONE result: if any leg fails the whole
+          # job is `failure`, and if the matrix produces no legs at all it is
+          # `skipped`. Both are refused below, so a combination that silently
+          # disappears cannot pass for success.
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "resultados de los jobs requeridos: $results"
+          bad=0
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              echo "::error::un job requerido terminó en «$r», no en «success»"
+              bad=1
+            fi
+          done
+          # An empty list would mean the `needs` block lost its dependencies
+          # in an edit, and an aggregate over nothing is vacuously true — the
+          # exact shape of guard that reports success while checking nothing.
+          if [ -z "${results// /}" ]; then
+            echo "::error::ci-ok no recibió ningún resultado; revisa el bloque needs"
+            bad=1
+          fi
+          if [ "$bad" -ne 0 ]; then exit 1; fi
+          echo "ci-ok: todos los jobs requeridos en success"

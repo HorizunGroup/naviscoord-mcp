@@ -1,0 +1,21 @@
+# Normalise to LF in the repository, check out native on each platform.
+# Without this the tree is committed with CRLF from Windows and every Linux
+# contributor sees a whole-file diff on their first edit.
+* text=auto eol=lf
+
+# Windows-only tooling keeps CRLF in the working copy.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.sln text eol=crlf
+*.csproj text eol=crlf
+
+# Never touched.
+*.png binary
+*.jpg binary
+*.pdf binary
+*.nwd binary
+*.nwf binary
+*.nwc binary
+*.rvt binary
+*.dll binary

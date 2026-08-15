@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Vulnerabilidad de seguridad
+    url: https://github.com/HorizunGroup/naviscoord-mcp/security/advisories/new
+    about: NO abras un issue público. Usa el reporte privado — ver SECURITY.md.
+  - name: Duda de uso
+    url: https://github.com/HorizunGroup/naviscoord-mcp/discussions
+    about: Preguntas sobre cómo usar NavisCoord van a Discussions.
+  - name: Problemas de instalación
+    url: https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/INSTALL.md
+    about: Casi todo lo que falla al empezar está documentado aquí.

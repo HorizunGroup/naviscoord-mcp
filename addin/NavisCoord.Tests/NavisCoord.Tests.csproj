@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A console runner rather than a test framework, on purpose. Everything in
+    the addin that can be tested off the UI thread has no NuGet dependencies,
+    and adding xunit here would mean a restore step and a package graph for
+    the sake of assertions that fit in two files. `dotnet run` is the whole
+    test command, and a non-zero exit is the whole failure signal.
+
+    Only the Navisworks-free sources are linked in. That set is deliberately
+    large: rule precedence, level naming, repeat detection, view purity, the
+    mutation envelope, the job state machine, the path policy, the profile
+    schema and the session store are exactly the parts that had bugs, so they
+    were written without a single Autodesk reference in order to be testable
+    on a runner with no licence. Anything that must touch a live Document
+    stays out — unit-testing that would only test the mocks.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>NavisCoord.Tests</AssemblyName>
+    <RootNamespace>NavisCoord.Tests</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!--
+      UiDispatcher is linked in below and it marshals through a WinForms
+      Control. That type is .NET Framework, not Navisworks, so the real
+      dispatcher can be exercised here against a real message pump — which is
+      the only way to prove the timeout actually bounds execution.
+    -->
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="LogicTests.cs" />
+    <Compile Include="Stubs.cs" />
+    <Compile Include="..\NavisCoord.Addin\Json.cs" Link="Json.cs" />
+    <Compile Include="..\NavisCoord.Addin\RulePrecedence.cs" Link="RulePrecedence.cs" />
+    <Compile Include="..\NavisCoord.Addin\CoordinationLogic.cs" Link="CoordinationLogic.cs" />
+    <Compile Include="..\NavisCoord.Addin\MutationContract.cs" Link="MutationContract.cs" />
+    <Compile Include="..\NavisCoord.Addin\JobManager.cs" Link="JobManager.cs" />
+    <Compile Include="..\NavisCoord.Addin\PathPolicy.cs" Link="PathPolicy.cs" />
+    <Compile Include="..\NavisCoord.Addin\ProfileSchema.cs" Link="ProfileSchema.cs" />
+    <Compile Include="..\NavisCoord.Addin\ProfileLocator.cs" Link="ProfileLocator.cs" />
+    <Compile Include="..\NavisCoord.Addin\BodyReader.cs" Link="BodyReader.cs" />
+    <Compile Include="..\NavisCoord.Addin\ProfileStore.cs" Link="ProfileStore.cs" />
+    <Compile Include="..\NavisCoord.Addin\SessionStore.cs" Link="SessionStore.cs" />
+    <Compile Include="..\NavisCoord.Addin\SaveFormats.cs" Link="SaveFormats.cs" />
+    <Compile Include="..\NavisCoord.Addin\Capabilities.cs" Link="Capabilities.cs" />
+    <Compile Include="..\NavisCoord.Addin\UiDispatcher.cs" Link="UiDispatcher.cs" />
+    <Compile Include="..\NavisCoord.Addin\DisciplineVocabulary.cs" Link="DisciplineVocabulary.cs" />
+    <Compile Include="DispatcherTests.cs" />
+    <Compile Include="VocabularyTests.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,66 @@
+[build-system]
+# >=77 because the licence metadata below uses the PEP 639 form (`license` as
+# an SPDX string, `project.license-files`). The older `{ text = "MIT" }` table
+# and `[tool.setuptools] license-files` are both deprecated with a hard
+# removal date of 2027-02-18; saying so in a comment would not have stopped
+# the build breaking on that day.
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "naviscoord"
+version = "0.2.0"
+description = "Coordination intelligence for Autodesk Navisworks, exposed over MCP"
+# README, LICENSE and NOTICE all live one level up, at the repository root,
+# and setuptools will not reach outside the project directory for them.
+# `scripts/build_artifacts.py` copies the three in before building and removes
+# them after; building `server/` directly, without that script, is what
+# produces an sdist with no README and a wheel with no licence.
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE"]
+keywords = ["navisworks", "bim", "clash-detection", "coordination", "mcp"]
+
+# The analysis engine deliberately has NO dependencies: it is pure Python, so
+# it runs anywhere and cannot be broken by a wheel that lags a new release.
+# Only the MCP transport and the PDF need anything.
+dependencies = [
+    # Both majors work: mcp 2.0 renamed FastMCP to MCPServer and moved it to
+    # mcp.server.mcpserver, but kept the surface this server uses, so the
+    # code imports whichever is present. The upper bound stops at <3 because
+    # 2.0 proved a major can remove the entry point outright — an unbounded
+    # requirement is how a fresh install silently breaks.
+    "mcp>=1.9,<3",
+    "reportlab>=4.0,<6",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+naviscoord = "naviscoord.__main__:main"
+naviscoord-mcp = "naviscoord.mcp_server:main"
+
+[tool.setuptools]
+# Every package listed by name. `naviscoord.profiles` carries no code — it is
+# the packaged default profile — but it is named here anyway: leaving it out
+# and relying on the package-data glob alone made setuptools warn that a
+# directory it can see is absent from the configuration, and a build that
+# warns about its own layout is one refactor away from shipping a wheel with
+# no profile in it. That exact failure is why `Profile.load()` is asserted
+# against a wheel install in CI.
+packages = [
+    "naviscoord",
+    "naviscoord.analysis",
+    "naviscoord.profiles",
+]
+include-package-data = true
+
+[tool.setuptools.package-data]
+naviscoord = ["profiles/*.json"]
+"naviscoord.profiles" = ["*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

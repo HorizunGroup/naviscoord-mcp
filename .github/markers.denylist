@@ -1,0 +1,24 @@
+# Marcadores internos prohibidos, como digests SHA-256 salados de su forma
+# normalizada (minusculas, sin espacios al borde), seguidos de su longitud.
+#
+# En texto plano esta lista seria exactamente la fuga que evita: quedaria en
+# el repositorio, en el workflow y en cada log de CI que muestre el paso. Un
+# digest no se puede leer al reves, y un fallo nombra archivo y linea pero
+# nunca el valor.
+#
+# Anadir uno:  python scripts/check_markers.py --add-plain <termino>
+# La longitud viaja porque el escaner necesita saber que prefijos construir.
+#
+# Regla al anadir: el termino tiene que ser DISTINTIVO. Un marcador que
+# colisiona con un identificador publico del producto se convierte en un
+# fallo permanente, y un guard que siempre falla acaba desactivado. Las
+# rutas absolutas de la maquina que compila no se vigilan aqui, sino en
+# scripts/Assert-PublicArtifacts.ps1, que ademas mira dentro de los binarios.
+
+0c39c33cd95aee63fc49d425a14f9f9852025032242cf3df310f2f46e9b08971 7
+39b2176f4e2473b5c2d6d7f12afbdd7a4e4243f8e450e4d3acc1dc2d304229b5 4
+ce081096b16f5e113859bb0ab2408a87c4e8710e0d3216a1f0b3e3e0894210ce 10
+fc36f96fe5df373dda99b9980b5e152fefc4e36fcb5a9923a6acc500598b61c8 19
+c55da3eb44e7f092c72dbdcf691ffa598f55f0bdb42b49b5ad5c1546cc1b4e5e 13
+1173e122bb3f73a90b4e280943ecfeaafc460d3b2ee7905d1f2f2a2004e95ec2 15
+ef83f1487bc96167bd837fb9447582a9000ec0814f858a2ec6802a15fabe9e73 13
