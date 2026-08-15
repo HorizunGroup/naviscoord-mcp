@@ -9,7 +9,7 @@
       "description": "Coordinación inteligente de Autodesk Navisworks: decisiones priorizadas, causas raíz, plan de trabajo e informes.",
       "author": {"name": "HorizunGroup"},
       "category": "development",
-      "source": {"source": "url", "url": "https://github.com/HorizunGroup/naviscoord-mcp.git", "ref": "v0.2.0"},
+      "source": {"source": "url", "url": "https://github.com/HorizunGroup/naviscoord-mcp.git", "ref": "v0.2.1"},
       "homepage": "https://github.com/HorizunGroup/naviscoord-mcp"
     }
   ]

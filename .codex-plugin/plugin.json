@@ -1,6 +1,6 @@
 {
   "name": "naviscoord-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Navisworks desde Codex: interferencias priorizadas y explicadas, causas raíz, matriz de coordinación, plan de trabajo, informe redactado y PDF.",
   "author": {"name": "HorizunGroup", "url": "https://github.com/HorizunGroup"},
   "homepage": "https://github.com/HorizunGroup/naviscoord-mcp",

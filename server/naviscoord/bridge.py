@@ -350,7 +350,7 @@ class Bridge:
         running inside Navisworks — and it answered about a file rather than
         about what is in force, which is the question being asked.
         """
-        self.require("profile/info", since="0.2.0")
+        self.require("profile/info", since="0.2.1")
         return self.call("profile/info")
 
     def profile_load(self, canonical: str, checksum: str) -> dict[str, Any]:
@@ -361,12 +361,12 @@ class Bridge:
         loaded here has to work even when the file lives only on the machine
         running the MCP server.
         """
-        self.require("profile/load", since="0.2.0")
+        self.require("profile/load", since="0.2.1")
         return self.call("profile/load", {"canonical": canonical, "checksum": checksum})
 
     def profile_reset(self) -> dict[str, Any]:
         """Drops the pushed profile; the addin's own default applies again."""
-        self.require("profile/reset", since="0.2.0")
+        self.require("profile/reset", since="0.2.1")
         return self.call("profile/reset")
 
     def census(self, category_sample: int = 20000) -> dict[str, Any]:

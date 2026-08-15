@@ -1,9 +1,9 @@
 """Refuses source that reintroduces a forbidden internal marker.
 
-This repository is the public half of a product whose other half is a private
-overlay. The engine is shared by copying, so the realistic failure is not
-malice but a routine port that carries an internal code, a parameter prefix or
-a branding string across — and once pushed, that is public forever.
+Some identifiers belong to internal deployments and must never appear in this
+repository: project codes, shared-parameter prefixes, deployment-specific
+names. The realistic failure is not malice but a routine copy that carries one
+across — and once pushed, that is public forever.
 
 The obvious guard is a list of the forbidden words. That guard cannot be used
 here, because **the list would itself publish the words**, in the repository,
@@ -161,7 +161,7 @@ def selftest() -> int:
         "una línea perfectamente normal",
         "acme corporation no es el marcador",       # separado, no es el token
         "zzqx_ no es el prefijo",                   # prefijo distinto
-        "NavisCoord 0.2.0 MIT",
+        "NavisCoord 0.2.1 MIT",
     ]
     for text in must_hit:
         if not scan_text(text, digests, lengths, set()):

@@ -29,7 +29,7 @@ prueba que lo comprueba (`test_packaging.py::TestVersionCoherence`).
 
 Un tag es un puntero a un commit, así que el `ref` que quede escrito en ese
 commit es el que el tag publica para siempre. Etiquetar primero y actualizar
-el `ref` después deja `v0.2.0` conteniendo `"ref": "v0.1.2"`: quien instale
+el `ref` después deja `vX.Y.Z` conteniendo el ref anterior: quien instale
 desde el tag nuevo se lleva el código viejo, y el error no se ve hasta que
 alguien compara versiones. **El cambio de `ref` es parte del commit de
 release, no un paso posterior.**
@@ -128,24 +128,24 @@ tiene que estar ya escrito **antes** de crearlo.
 ```bash
 # 1. Un solo commit con el bump de versión, el CHANGELOG fechado
 #    y los refs de marketplace ya en la versión nueva.
-git add -A && git commit -m "Release 0.2.0"
+git add -A && git commit -m "Release 0.2.1"
 
 # 2. Con el commit hecho, las dos invariantes se comprueban juntas.
 cd server && python -m pytest tests/test_packaging.py -q
 
 # 3. El tag apunta a ESE commit.
-git tag -a v0.2.0 -m "v0.2.0"
+git tag -a v0.2.1 -m "v0.2.1"
 
 # 4. Confirmar que el tag lleva dentro el ref correcto, no el anterior.
-git show v0.2.0:.claude-plugin/marketplace.json | grep '"ref"'
-git show v0.2.0:.agents/plugins/marketplace.json | grep '"ref"'
+git show v0.2.1:.claude-plugin/marketplace.json | grep '"ref"'
+git show v0.2.1:.agents/plugins/marketplace.json | grep '"ref"'
 
 # 5. Y sólo entonces publicarlo.
-git push origin main v0.2.0
+git push origin main v0.2.1
 ```
 
 El paso 4 no es ceremonia: es la comprobación que faltaba, y su ausencia es
-lo que hacía plausible publicar un `v0.2.0` que instalaba `v0.1.2`.
+lo que hace plausible publicar un tag que instala la versión anterior.
 
 ## 8. Artefactos, construidos desde el tag
 
@@ -153,8 +153,8 @@ Construir desde el working tree puede meter en el ZIP cambios que el tag no
 contiene. Sal a una copia limpia del tag y construye ahí:
 
 ```bash
-git worktree add /tmp/release-0.2.0 v0.2.0
-cd /tmp/release-0.2.0 && python scripts/build_artifacts.py
+git worktree add /tmp/release-0.2.1 v0.2.1
+cd /tmp/release-0.2.1 && python scripts/build_artifacts.py
 ```
 
 Adjuntar al release de GitHub, con los nombres que produce el script —no otros:

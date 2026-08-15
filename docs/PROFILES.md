@@ -99,11 +99,10 @@ no invalida ningún resultado cacheado, y cambiar un peso sí.
 Los dos lados calculan el **mismo** checksum sobre el mismo perfil. La forma
 canónica está escrita a mano en `naviscoord/profile.py` y reproducida en
 `ProfileSchema.Canonical`, en vez de delegarla a `json.dumps` de un lado y a
-un recorrido propio del otro — que es lo que había hasta 0.2.0, con un
-comentario en cada archivo afirmando que reflejaba al otro. Nunca coincidieron
-para ningún perfil: cada lado solo comparaba su salida consigo misma. El
-vector fijado en `test_profile_sync.py` y en `LogicTests.CanonicalFormTests`
-existe para que eso no pueda repetirse.
+un recorrido propio del otro: dos serializadores distintos no coinciden para
+ningún perfil, y cada lado comparando su salida consigo misma no lo nota
+nunca. El vector fijado en `test_profile_sync.py` y en
+`LogicTests.CanonicalFormTests` existe para que eso no pueda pasar.
 
 Cambiar de perfil descarta el análisis en memoria y los overrides de
 disciplina. Mueve severidad, tolerancias, reglas y filtro de ruido a la vez:
@@ -117,10 +116,10 @@ lo envía al complemento por el puerto autenticado y este lo vuelve a validar
 antes de adoptarlo. A partir de ahí `workflow/rules`, Configurar, los search
 sets, la matriz y los botones de la cinta usan **ese** perfil.
 
-Hasta 0.2.0 no era así: `navis_load_profile` cargaba el perfil solo en el
-servidor MCP y todo lo que corre dentro de Navisworks seguía leyendo su propio
-archivo del disco. Cargar un perfil y correr las reglas aplicaba criterios que
-el llamador acababa de reemplazar, sin decirlo en ninguna parte.
+El error fácil sería instalar el perfil solo en el servidor MCP y dejar que
+todo lo que corre dentro de Navisworks siguiera leyendo su propio archivo del
+disco: cargar un perfil y correr las reglas aplicaría criterios que el
+llamador acaba de reemplazar, sin decirlo en ninguna parte.
 
 Reglas del contrato:
 

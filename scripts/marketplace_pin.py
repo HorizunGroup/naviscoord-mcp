@@ -2,7 +2,7 @@
 
 A tag is a pointer to a commit, so whatever `ref` is written in that commit is
 what the tag publishes forever. Bumping the ref after tagging produces a
-`v0.2.0` that installs `v0.1.2`, and nothing fails until somebody compares
+a tag that installs the previous version, and nothing fails until somebody compares
 versions by hand. Pointing at a tag that does not exist yet breaks every
 install immediately. The correct value therefore depends on which phase the
 repository is in — and the phase has to be *stated*, not guessed.

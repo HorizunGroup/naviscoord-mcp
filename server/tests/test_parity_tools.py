@@ -1,6 +1,6 @@
 """Contract for the four tools that closed the add-in/MCP parity gap.
 
-These routes existed and worked in the add-in for the whole 0.2.0 cycle while
+These routes exist and work in the add-in, and for a while
 no MCP tool could reach them, so the capability list promised something the
 server could not deliver. What is tested here is the half that lives in
 Python: argument validation, capability negotiation, the exact route each

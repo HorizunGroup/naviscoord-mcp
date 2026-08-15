@@ -79,10 +79,11 @@ cannot be automated from inside a running client:
 .\install.ps1
 ```
 
-> Prebuilt add-in packages per Navisworks version are produced by
-> `scripts/Build-Release.ps1`, but **no GitHub release has been published yet**. Until one
-> is, `install.ps1` is the supported path — it needs the .NET SDK and a local
-> Navisworks installation.
+> Prebuilt add-in packages per Navisworks version are attached to each
+> [release](https://github.com/HorizunGroup/naviscoord-mcp/releases): download
+> the ZIP for your version, check it against `SHA256SUMS.txt` and unzip it into
+> the Plugins folder. `install.ps1` builds from source instead, and needs the
+> .NET SDK and a local Navisworks installation.
 
 The bundled `naviscoord-setup` skill diagnoses and repairs both pieces.
 Full detail in [docs/INSTALL.md](docs/INSTALL.md).

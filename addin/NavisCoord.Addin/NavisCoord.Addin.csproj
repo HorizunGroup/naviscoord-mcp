@@ -20,7 +20,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <Company>NavisCoord</Company>
     <Product>NavisCoord Bridge</Product>
     <EnableDefaultNoneItems>false</EnableDefaultNoneItems>

@@ -54,9 +54,11 @@ Descomprime el paquete del complemento de tu versión en:
 %APPDATA%\Autodesk\Navisworks Manage <versión>\Plugins\NavisCoord\
 ```
 
-> Los paquetes por versión se generan con `scripts\Build-Release.ps1`. **No hay
-> releases publicados todavía**; hasta que los haya, la vía compatible es
-> `install.ps1`.
+> Cada [release](https://github.com/HorizunGroup/naviscoord-mcp/releases) trae
+> un ZIP por versión de Navisworks. Descarga el tuyo, compruébalo contra
+> `SHA256SUMS.txt` y descomprímelo en esa carpeta. `install.ps1` compila desde
+> el código en vez de descargar, y para eso necesita el SDK de .NET y una
+> instalación local de Navisworks.
 
 ## Registrar el servidor MCP
 

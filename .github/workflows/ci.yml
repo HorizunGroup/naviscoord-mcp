@@ -180,11 +180,10 @@ jobs:
           claude plugin validate /tmp/plug --strict
 
   public-hygiene:
-    # This repository is the PUBLIC half of a product whose other half is a
-    # private overlay. The engine is shared by copying, so the realistic
-    # failure is not malice but a routine port that brings an internal code, a
-    # parameter prefix or a branding string across with it — and once that is
-    # pushed it is public forever.
+    # Some identifiers belong to internal deployments and must never appear
+    # here: project codes, shared-parameter prefixes, deployment-specific
+    # names. The realistic failure is not malice but a routine copy that
+    # brings one across — and once that is pushed it is public forever.
     #
     # The obvious guard is a list of the forbidden words, and it cannot be used
     # here: the list would publish them, in this file and in every CI log that

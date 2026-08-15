@@ -1,17 +1,18 @@
 """One profile, on both sides of the bridge.
 
-Until 0.2.0 there were two. `navis_load_profile` installed a profile in this
-process; every step that runs inside Navisworks — `workflow/rules`,
-Configurar, the search sets, the clash matrix — went and read
-`naviscoord-profile.json` off the add-in's disk. Both were called "the
-profile", the response carried a `profile_path` field, and a docstring asked
-the reader to notice. Loading a profile and then running the rules applied
-criteria the caller had just replaced, silently, and the result recorded
-nothing about which document had actually been used.
+There must be exactly one, and the failure these tests exist to prevent is
+having two without noticing. A `navis_load_profile` that installs a profile in
+this process only, while every step that runs inside Navisworks —
+`workflow/rules`, Configurar, the search sets, the clash matrix — reads
+`naviscoord-profile.json` off the add-in's disk, gives two things both called
+"the profile". Loading one and then running the rules would apply criteria the
+caller had just replaced, silently, and the result would record nothing about
+which was actually used.
 
-The tests here are about the contract that replaced it: the server sends the
-validated content and its checksum over the authenticated port, the add-in
-installs it for that session, and both ends can be asked what is in force.
+The tests here are about the contract that makes that impossible: the server
+sends the validated content and its checksum over the authenticated port, the
+add-in installs it for that session, and both ends can be asked what is in
+force.
 
 The canonical-form tests matter more than they look. The two checksum
 functions each claimed in a comment to mirror the other and never produced

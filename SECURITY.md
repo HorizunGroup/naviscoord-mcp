@@ -4,8 +4,7 @@
 
 | Versión | Soporte |
 |---|---|
-| 0.2.0 | Sí |
-| 0.1.x | No |
+| 0.2.1 | Sí |
 
 El complemento de Navisworks se soporta contra Navisworks Manage 2024, 2025 y
 2026.

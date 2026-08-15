@@ -843,7 +843,7 @@ def navis_run_rules_workflow(
     `profile_checksum` y `profile_source`, tanto en la vía síncrona como en el
     resultado del job, así que se puede comprobar en vez de suponerlo.
 
-    Hasta 0.2.0 este paso leía SIEMPRE el archivo del complemento e ignoraba
+    Antes este paso leía SIEMPRE el archivo del complemento e ignoraba
     en silencio el perfil cargado por MCP. `navis_profile_info` responde de un
     vistazo si los dos lados coinciden.
     """

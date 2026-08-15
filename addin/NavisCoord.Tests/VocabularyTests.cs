@@ -91,7 +91,7 @@ namespace NavisCoord.Tests
         ///     python scripts/profile_checksums.py
         ///
         /// Both files declare `naviscoord.profile/v1`. `default.json` carried
-        /// the pre-versioning tag until 0.2.0: accepted, but it meant the
+        /// the pre-versioning tag: accepted, but it would mean the
         /// profile the product ships was the one example of the format it was
         /// asking everyone else to stop using.
         /// </remarks>
