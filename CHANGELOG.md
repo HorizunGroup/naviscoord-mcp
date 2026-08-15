@@ -3,6 +3,33 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
+## [Unreleased]
+
+### Added
+
+- Cierre desatendido de documento y aplicación con política explícita de
+  guardado, huella, ensayo previo y verificación del PID.
+
+### Fixed
+
+- El handshake MCP anuncia la versión de NavisCoord, no la de la dependencia
+  `mcp`.
+- Un `session.json` legado con PID muerto ya no se considera una sesión viva;
+  también se detecta la reutilización de PID por hora de creación.
+- Las claves de idempotencia quedan acotadas por operación y documento, y el
+  conteo `failed` refleja unidades afectadas sin inflarse por cada mensaje.
+- README público reducido a instalación, uso, compatibilidad y seguridad; la
+  bitácora de desarrollo dejó de ocupar la portada.
+- Documentación de Codex y multiinstancia alineada con los manifiestos y el
+  registro por proceso actuales.
+- Las acciones de CI quedan fijadas por SHA y Dependabot vigila las
+  dependencias Python y GitHub Actions.
+- El manifiesto de Codex elimina un campo no admitido y su marketplace declara
+  políticas válidas de instalación y autenticación.
+- `navis_exit` usa la ventana principal que expone Navisworks antes de caer en
+  `Process.CloseMainWindow`: las instancias creadas por Automation tienen GUI
+  visible pero `Process.MainWindowHandle=0` y antes no llegaban a cerrarse.
+
 ## [0.2.2] — 2026-08-15
 
 Versión de proceso. El motor y el complemento no cambian de comportamiento:
@@ -139,5 +166,6 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
+[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.2.2...HEAD
 [0.2.2]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.2
 [0.2.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.1

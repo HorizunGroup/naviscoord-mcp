@@ -45,12 +45,54 @@ namespace NavisCoord.Tests
             JobStateMachineTests();
             PathPolicyTests();
             SaveFormatTests();
+            ClosePolicyTests();
+            ExitWindowPolicyTests();
             ProfileSchemaTests();
             CanonicalFormTests();
             ProfileStoreTests();
             BodyLimitTests();
             SessionStoreTests();
             CapabilityTests();
+        }
+
+        private static void ClosePolicyTests()
+        {
+            _section("cierre seguro de documento y aplicación");
+
+            foreach (var value in new[] { ClosePolicy.Save, ClosePolicy.Discard, ClosePolicy.RequireClean })
+            {
+                _eq(string.Empty, ClosePolicy.Problem(value, false), $"«{value}» se acepta sobre un documento limpio");
+            }
+            _eq(string.Empty, ClosePolicy.Problem(ClosePolicy.Save, true),
+                "save permite cerrar un documento modificado después de guardarlo");
+            _eq(string.Empty, ClosePolicy.Problem(ClosePolicy.Discard, true),
+                "discard permite cerrar solo porque la pérdida fue explícita");
+            _check(ClosePolicy.Problem(ClosePolicy.RequireClean, true).Contains("cambios sin guardar"),
+                "require_clean rechaza un documento modificado");
+            _check(ClosePolicy.Problem(string.Empty, false).Contains("no existe una decisión implícita"),
+                "una disposición vacía se rechaza");
+            _check(ClosePolicy.Problem("prompt", false).Contains("debe ser"),
+                "no se acepta una política que pueda abrir un diálogo modal");
+            _eq(ClosePolicy.Discard, ClosePolicy.Normalize("  DISCARD "),
+                "la política se normaliza sin cambiar su significado");
+            _eq(string.Empty, ClosePolicy.SaveIdempotencyKey(string.Empty),
+                "sin clave no se inventa una constante compartida por todos los documentos");
+            _eq("op-123:close-save", ClosePolicy.SaveIdempotencyKey("op-123"),
+                "una clave explícita crea un subpaso estable para el guardado");
+        }
+
+        private static void ExitWindowPolicyTests()
+        {
+            _section("selección de ventana para salir");
+
+            var api = new IntPtr(0x1234);
+            var process = new IntPtr(0x5678);
+            _eq(api, ExitWindowPolicy.PreferredHandle(api, process),
+                "la ventana expuesta por Navisworks gana a la heurística del proceso");
+            _eq(process, ExitWindowPolicy.PreferredHandle(IntPtr.Zero, process),
+                "un lanzamiento interactivo conserva el handle del proceso como fallback");
+            _eq(IntPtr.Zero, ExitWindowPolicy.PreferredHandle(IntPtr.Zero, IntPtr.Zero),
+                "sin ninguna ventana no se inventa un destino para WM_CLOSE");
         }
 
         // ------------------------------------------------------ body limit
@@ -688,6 +730,9 @@ namespace NavisCoord.Tests
             var broken = new MutationResult("document/save");
             broken.Fail("el archivo no existe después de guardar");
             _eq("failed", broken.Status(), "un error sin nada verificado = failed");
+            _eq(1, broken.Failed, "un error cuenta la unidad afectada en el envelope");
+            broken.Fail("otro detalle de la misma unidad");
+            _eq(1, broken.Failed, "varios detalles no inflan el conteo de unidades fallidas");
 
             // The fingerprint joins its parts with a separator, not with "".
             // Without one, two genuinely different documents hash the same:
@@ -744,14 +789,29 @@ namespace NavisCoord.Tests
             _check(replay.ContainsKey("idempotent_replay"), "la respuesta se marca como repetición");
             _check(replay.ContainsKey("note"), "…y explica por qué no se volvió a tocar el documento");
 
+            var scopedA = new Dictionary<string, object>
+            {
+                ["operation"] = "document/save",
+                ["document_fingerprint_before"] = "fp-a",
+                ["status"] = "completed"
+            };
+            IdempotencyLedger.Remember("same-key", scopedA);
+            _check(IdempotencyLedger.TryGet("same-key", "document/save", "fp-a", out _),
+                "la misma operación sobre el mismo documento sí se reproduce");
+            _check(!IdempotencyLedger.TryGet("same-key", "document/save_as", "fp-a", out _),
+                "la misma clave no cruza a otra operación");
+            _check(!IdempotencyLedger.TryGet("same-key", "document/save", "fp-b", out _),
+                "la misma clave no cruza a otro documento");
+
             // Mutating the replay must not corrupt the stored entry.
             replay["applied"] = 999.0;
             IdempotencyLedger.TryGet("k1", out var again);
             _eq(30.0, again["applied"], "el registro guardado es inmune a mutaciones del llamador");
 
             _check(!IdempotencyLedger.TryGet("", out _), "una clave vacía nunca acierta");
+            var beforeEmpty = IdempotencyLedger.Count;
             IdempotencyLedger.Remember("", original);
-            _eq(1, IdempotencyLedger.Count, "una clave vacía no se guarda");
+            _eq(beforeEmpty, IdempotencyLedger.Count, "una clave vacía no se guarda");
 
             for (var i = 0; i < 400; i++)
             {
@@ -900,6 +960,12 @@ namespace NavisCoord.Tests
                 "una clave distinta no acierta");
             _check(JobManager.FindByIdempotencyKey("") == null,
                 "una clave vacía nunca acierta");
+            _check(JobManager.FindByIdempotencyKey(
+                    "clave-repetida", "workflow/configure", "fp-1") == null,
+                "una clave en vuelo no cruza a otra operación");
+            _check(JobManager.FindByIdempotencyKey(
+                    "clave-repetida", "workflow/run", "otro-documento") == null,
+                "una clave en vuelo no cruza a otro documento");
 
             hold.Set();
             WaitUntil(() => original.FinishedUtc.HasValue, 3000);

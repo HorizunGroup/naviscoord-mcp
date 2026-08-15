@@ -139,6 +139,8 @@ class TestCapabilityHonesty:
         backed = {
             "document_save": "document/save",
             "document_save_as": "document/save_as",
+            "document_close": "document/close",
+            "application_exit": "application/exit",
             "workflow_audit_models": "workflow/audit_models",
             "workflow_configure": "workflow/configure",
             "workflow_run": "workflow/run",
@@ -242,6 +244,13 @@ class TestToolWiring:
         tools = mcp_tools()
         assert "STATE.bridge.save(" in tools["navis_save"]
         assert "STATE.bridge.save_as(" in tools["navis_save_as"]
+
+    def test_close_tools_reach_the_bridge(self) -> None:
+        tools = mcp_tools()
+        assert "STATE.bridge.close_document(" in tools["navis_close_document"]
+        assert "STATE.bridge.exit_application(" in tools["navis_exit"]
+        assert "STATE.require_mutable(" in tools["navis_close_document"]
+        assert "resolve(for_mutation=True)" in tools["navis_exit"]
 
     def test_targeting_tools_reach_the_session_layer(self) -> None:
         tools = mcp_tools()

@@ -317,6 +317,21 @@ class TestMarketplacePins:
             assert isinstance(data.get("owner"), dict), manifest
             assert data["owner"].get("name"), manifest
 
+    def test_codex_marketplace_uses_supported_policies(self) -> None:
+        """Codex and Claude use different marketplace schemas.
+
+        Claude ignores this field, but Codex requires it.  Validating the
+        agents marketplace by copying it into a Claude directory therefore
+        proved the wrong host and let the invalid ``NONE`` value ship once.
+        """
+        allowed_install = {"NOT_AVAILABLE", "AVAILABLE", "INSTALLED_BY_DEFAULT"}
+        allowed_auth = {"ON_INSTALL", "ON_USE"}
+        data = read_json(ROOT / ".agents/plugins/marketplace.json")
+        for plugin in data["plugins"]:
+            policy = plugin.get("policy") or {}
+            assert policy.get("installation") in allowed_install, plugin["name"]
+            assert policy.get("authentication") in allowed_auth, plugin["name"]
+
 
 class TestHostSpecificPlaceholders:
     def test_codex_manifest_anchors_to_the_plugin_root(self) -> None:

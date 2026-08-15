@@ -106,6 +106,27 @@ class TestDiscovery:
         assert len(found) == 1
         assert found[0].port == 8781
 
+    def test_dead_legacy_pointer_is_not_treated_as_a_live_session(self) -> None:
+        legacy = sessions.legacy_session_file()
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text(
+            json.dumps({"port": 8781, "token": "x" * 64, "pid": 999_999}),
+            encoding="utf-8",
+        )
+
+        assert sessions.discover() == []
+        report = sessions.summary()
+        assert report["sessions"] == []
+        assert [entry["pid"] for entry in report["stale"]] == [999_999]
+
+    @pytest.mark.skipif(os.name != "nt", reason="comprueba creación de proceso Win32")
+    def test_a_recycled_pid_is_not_the_recorded_process(self, registry: Path) -> None:
+        path = write_session(registry, "recycled", pid=os.getpid())
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["process_started"] = "2100-01-01T00:00:00+00:00"
+        path.write_text(json.dumps(record), encoding="utf-8")
+        assert sessions.discover() == []
+
     def test_env_override_wins(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """The documented escape hatch for a non-interactive deployment."""
         elsewhere = tmp_path / "otro"
@@ -215,6 +236,55 @@ class TestCapabilityNegotiation:
     def test_capability_error_is_a_bridge_error(self) -> None:
         """So existing handlers keep catching it, with a more specific branch."""
         assert issubclass(CapabilityError, BridgeError)
+
+
+class TestExitVerification:
+    def _bridge(self, monkeypatch: pytest.MonkeyPatch) -> Bridge:
+        session = sessions.SessionInfo(
+            session_id="exit-test",
+            port=8781,
+            token="x" * 64,
+            pid=os.getpid(),
+        )
+        bridge = Bridge(session=session)
+        monkeypatch.setattr(bridge, "require", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(bridge, "resolve", lambda **_kwargs: session)
+        monkeypatch.setattr(
+            bridge,
+            "call",
+            lambda *_args, **_kwargs: {
+                "status": "accepted",
+                "exit_requested": True,
+                "application_exit_verified": False,
+            },
+        )
+        return bridge
+
+    def test_exit_is_completed_only_after_the_pid_is_gone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bridge = self._bridge(monkeypatch)
+        monkeypatch.setattr("naviscoord.bridge.is_alive", lambda _session: False)
+        result = bridge.exit_application(
+            "require_clean", "fp", dry_run=False, verify_timeout=0.1
+        )
+        assert result["status"] == "completed"
+        assert result["application_exit_verified"] is True
+        assert result["verification_source"] == "process_liveness"
+
+    def test_a_process_that_stays_open_is_reported_partial(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bridge = self._bridge(monkeypatch)
+        monkeypatch.setattr("naviscoord.bridge.is_alive", lambda _session: True)
+        moments = iter((0.0, 1.0))
+        monkeypatch.setattr("naviscoord.bridge.time.monotonic", lambda: next(moments))
+        result = bridge.exit_application(
+            "discard", "fp", dry_run=False, verify_timeout=0.1
+        )
+        assert result["status"] == "partial"
+        assert result["application_exit_verified"] is False
+        assert "sigue abierto" in result["warnings"][0]
 
 
 class TestDocumentScopedState:

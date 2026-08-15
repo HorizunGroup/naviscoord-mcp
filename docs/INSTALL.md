@@ -73,14 +73,11 @@ El manifiesto usa `${CLAUDE_PLUGIN_ROOT}` para localizar el launcher.
 
 ### Como plugin (Codex)
 
-`.codex-plugin/plugin.json` usa una ruta **relativa** a la raíz del plugin, no
-`${CLAUDE_PLUGIN_ROOT}`: esa variable la define Claude Code y ningún otro
-host, así que ahí quedaría literal en la línea de comandos y el servidor no
-arrancaría.
-
-> **Pendiente de verificación**: la resolución de rutas relativas en un
-> Codex real no se ha comprobado en esta máquina. Si el servidor no arranca,
-> sustituye el argumento por la ruta absoluta al `plugin_launcher.py`.
+Agrega este repositorio como marketplace y habilita el plugin
+`naviscoord-mcp`. Codex instala el paquete en su caché y sustituye
+`${CLAUDE_PLUGIN_ROOT}` por la raíz real del plugin; usar una ruta relativa
+sería incorrecto porque el directorio de trabajo del proceso no está
+garantizado. Este flujo se verificó contra una instalación real de Codex.
 
 ### A mano
 

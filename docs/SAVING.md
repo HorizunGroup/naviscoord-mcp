@@ -8,6 +8,39 @@ alguien guarda. Cerrar Navisworks sin hacerlo descarta una corrida entera de
 veinte minutos. La cinta solo podía pedirlo por favor con un recordatorio;
 eso no es un problema de recordatorio, es una capacidad que faltaba.
 
+## Cerrar sin una decisión de guardado interactiva
+
+`navis_close_document` y `navis_exit` nunca delegan **la decisión de
+guardado** a un cuadro «¿Guardar cambios?». Exigen
+`expected_document_fingerprint`, empiezan con `dry_run=true` y obligan a
+elegir una política:
+
+| `disposition` | Resultado |
+|---|---|
+| `save` | Guarda en la ruta actual, verifica el archivo y solo entonces cierra |
+| `discard` | Descarta los cambios de forma explícita |
+| `require_clean` | Cierra únicamente si el documento ya está limpio |
+
+Un documento sin destino local debe pasar primero por `navis_save_as`; el
+cierre no inventa una ruta ni puede abrir un selector de archivos. La ruta
+`document/close` usa `Application.MainDocument.Clear()` y comprueba que el
+documento activo haya quedado vacío.
+
+`Clear()` publica el cambio de documento a todos los complementos cargados.
+NavisCoord no puede impedir que un complemento de terceros responda a ese
+evento mostrando su propio diálogo. Esto se reprodujo con un complemento de
+gestión de conjuntos instalado en la máquina de pruebas: el documento sí
+quedó vacío, pero el tercero mostró después «No hay plugin que abra (null)».
+Sin ese complemento, la misma operación fue silenciosa. Para coordinación
+desatendida, valida el conjunto real de complementos instalado; si necesitas
+cerrar también la aplicación, prefiere `navis_exit`, que comprueba el PID y
+devuelve `partial` mientras cualquier diálogo mantenga vivo Navisworks.
+
+Para salir de Navisworks, el puente devuelve primero la aceptación y después
+solicita el cierre de la ventana principal. El servidor Python observa el PID:
+solo responde `completed` si el proceso terminó; si otro complemento muestra
+un diálogo o la ventana rechaza el cierre, responde `partial`.
+
 ## Las dos rutas
 
 | Ruta | Herramienta | Qué hace |

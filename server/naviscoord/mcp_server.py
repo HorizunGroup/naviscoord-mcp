@@ -22,6 +22,7 @@ document — not what was attempted.
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 import time
 from collections import Counter
@@ -41,6 +42,7 @@ except ImportError:  # pragma: no cover - exercised by whichever mcp is present
     # whichever they already have.
     from mcp.server.fastmcp import FastMCP as _Server
 
+from . import __version__
 from .analysis import analyze, hotspots
 from .bridge import BridgeError, CapabilityError
 from .interop import write_handoff
@@ -52,7 +54,47 @@ from .sessions import TargetError
 from .sessions import summary as session_summary
 from .state import SessionState, StateError
 
-mcp = _Server("horizun-navis-mcp")
+def _server_with_version() -> Any:
+    """Build the MCP server and stamp NavisCoord's version on the protocol.
+
+    MCP 2 accepts a version in its high-level constructor; MCP 1 does not and
+    leaves the low-level value at ``None``, which makes initialization fall
+    back to the version of the *mcp dependency*.  That made NavisCoord 0.2.2
+    introduce itself as, for example, 1.28.1.  Use each supported API and
+    fail at import time if a future major removes both contracts instead of
+    silently advertising the wrong product again.
+    """
+    parameters = inspect.signature(_Server).parameters
+    server = (
+        _Server("horizun-navis-mcp", version=__version__)
+        if "version" in parameters
+        else _Server("horizun-navis-mcp")
+    )
+    protocol = _protocol_server(server)
+    if protocol is None or not hasattr(protocol, "version"):
+        raise RuntimeError(
+            "La biblioteca MCP instalada no permite declarar la versión de NavisCoord."
+        )
+    if getattr(protocol, "version", "") != __version__:
+        try:
+            protocol.version = __version__
+        except (AttributeError, TypeError) as exc:
+            raise RuntimeError(
+                "La biblioteca MCP instalada rechazó la versión de NavisCoord."
+            ) from exc
+    return server
+
+
+def _protocol_server(server: Any) -> Any:
+    """Low-level protocol server under either supported MCP major."""
+    for name in ("_mcp_server", "_lowlevel_server"):
+        candidate = getattr(server, name, None)
+        if candidate is not None:
+            return candidate
+    return server
+
+
+mcp = _server_with_version()
 
 # When this process imported its code. Anything on disk newer than this is a
 # change the running server has not seen.
@@ -69,8 +111,6 @@ ACCEPTED_PROFILE_SCHEMAS = (PROFILE_SCHEMA, LEGACY_PROFILE_SCHEMA)
 
 
 def _version() -> str:
-    from . import __version__
-
     return __version__
 
 
@@ -1667,6 +1707,67 @@ def navis_save_as(
     if run_async:
         return STATE.bridge.submit_job("document/save_as", payload)
     return STATE.bridge.save_as(path, fingerprint, overwrite=overwrite, dry_run=dry_run)
+
+
+@mcp.tool()
+@_guard
+def navis_close_document(
+    disposition: str,
+    expected_document_fingerprint: str,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Cierra el documento sin dejar una decisión de guardado a un diálogo.
+
+    `disposition` es obligatorio: `save` guarda en la ruta actual antes de
+    cerrar, `discard` descarta los cambios de forma explícita y
+    `require_clean` se niega si queda algo sin guardar. Exige la huella del
+    documento y por defecto solo muestra el plan (`dry_run=true`). Para un
+    archivo sin destino local, usa primero `navis_save_as`.
+    """
+    fingerprint = STATE.require_mutable(expected_document_fingerprint)
+    result = STATE.bridge.close_document(
+        disposition,
+        fingerprint,
+        dry_run=dry_run,
+    )
+    if not dry_run and result.get("status") == "completed":
+        STATE.forget_derived()
+    return result
+
+
+@mcp.tool()
+@_guard
+def navis_exit(
+    disposition: str,
+    expected_document_fingerprint: str,
+    dry_run: bool = True,
+    verify_timeout: float = 15.0,
+) -> dict[str, Any]:
+    """Cierra el documento y sale de Navisworks de forma verificable.
+
+    Usa las mismas disposiciones explícitas de `navis_close_document`. El
+    puente responde antes de solicitar WM_CLOSE y este servidor comprueba que
+    el PID terminó. Si Navisworks sigue abierto —por ejemplo, por un diálogo
+    de otro complemento— devuelve `partial`, nunca un falso `completed`.
+    Con `dry_run=true` no cierra nada.
+    """
+    session = STATE.bridge.resolve(for_mutation=True)
+    fingerprint = ""
+    if session.document_open:
+        fingerprint = STATE.require_mutable(expected_document_fingerprint)
+    elif expected_document_fingerprint.strip():
+        raise StateError(
+            "La instancia elegida no tiene un documento abierto, pero se recibió una huella."
+        )
+    result = STATE.bridge.exit_application(
+        disposition,
+        fingerprint,
+        dry_run=dry_run,
+        verify_timeout=verify_timeout,
+    )
+    if not dry_run and result.get("application_exit_verified"):
+        STATE.forget_derived()
+    return result
 
 
 @mcp.tool()

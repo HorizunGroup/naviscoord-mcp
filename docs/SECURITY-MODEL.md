@@ -116,6 +116,9 @@ criterio en `RepeatSeries.CsvCell` del lado C#.
 - `idempotency_key` colapsa reintentos sin duplicar trabajo.
 - `verified` sale siempre de releer el documento. Un handler que no verificó
   reporta `failed`, no `completed`.
+- Cerrar exige una política explícita (`save`, `discard` o `require_clean`),
+  huella del documento y ensayo previo por defecto. Salir de la aplicación
+  solo se marca `completed` cuando el proceso ya no existe.
 
 ## Lo que este modelo NO cubre
 

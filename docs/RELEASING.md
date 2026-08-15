@@ -1,7 +1,8 @@
 # Guía de release
 
-> **Nada de esto se ha ejecutado todavía.** No hay release publicado por
-> encima de `v0.1.2`. Esta guía es el procedimiento, no un registro.
+Esta guía describe el procedimiento para la siguiente versión; la versión
+vigente y el estado histórico viven en `CHANGELOG.md` y en los releases de
+GitHub, no se duplican aquí.
 
 ## 1. Decidir la versión
 
@@ -119,6 +120,11 @@ completa; el mínimo antes de publicar:
       `navis_target` se rechaza; cerrar una no rompe la otra.
 - [ ] `navis_run(run_async=True)` y comprobar que `navis_health` y
       `navis_job_status` **siguen respondiendo** durante la corrida.
+- [ ] Con cambios sin guardar, comprobar los tres modos de
+      `navis_close_document`: `require_clean` rechaza, `save` persiste y
+      `discard` solo descarta cuando se pidió expresamente.
+- [ ] `navis_exit(dry_run=false)` responde antes de cerrar y solo queda en
+      `completed` cuando el PID de Navisworks desaparece.
 
 ## 7. El commit de release, y el tag encima
 
@@ -126,22 +132,25 @@ El orden importa y no es intercambiable. Todo lo que el tag debe contener
 tiene que estar ya escrito **antes** de crearlo.
 
 ```bash
+VERSION=$(python -c "import sys; sys.path.insert(0, 'server'); import naviscoord; print(naviscoord.__version__)")
+TAG="v${VERSION}"
+
 # 1. Un solo commit con el bump de versión, el CHANGELOG fechado
 #    y los refs de marketplace ya en la versión nueva.
-git add -A && git commit -m "Release 0.2.2"
+git add -A && git commit -m "Release ${VERSION}"
 
 # 2. Con el commit hecho, las dos invariantes se comprueban juntas.
 cd server && python -m pytest tests/test_packaging.py -q
 
 # 3. El tag apunta a ESE commit.
-git tag -a v0.2.2 -m "v0.2.2"
+git tag -a "$TAG" -m "$TAG"
 
 # 4. Confirmar que el tag lleva dentro el ref correcto, no el anterior.
-git show v0.2.2:.claude-plugin/marketplace.json | grep '"ref"'
-git show v0.2.2:.agents/plugins/marketplace.json | grep '"ref"'
+git show "$TAG":.claude-plugin/marketplace.json | grep '"ref"'
+git show "$TAG":.agents/plugins/marketplace.json | grep '"ref"'
 
 # 5. Y sólo entonces publicarlo.
-git push origin main v0.2.2
+git push origin main "$TAG"
 ```
 
 El paso 4 no es ceremonia: es la comprobación que faltaba, y su ausencia es
@@ -164,7 +173,7 @@ verde antes de publicar el release**; es la única ejecución que demuestra que
 lo que el tag contiene es lo que se va a instalar.
 
 ```bash
-gh run list --commit "$(git rev-list -n1 v0.2.2)" --limit 5
+gh run list --commit "$(git rev-list -n1 "$TAG")" --limit 5
 ```
 
 ## 8. Artefactos, construidos desde el tag
@@ -173,8 +182,9 @@ Construir desde el working tree puede meter en el ZIP cambios que el tag no
 contiene. Sal a una copia limpia del tag y construye ahí:
 
 ```bash
-git worktree add /tmp/release-0.2.2 v0.2.2
-cd /tmp/release-0.2.2 && python scripts/build_artifacts.py
+RELEASE_TREE="/tmp/release-${VERSION}"
+git worktree add "$RELEASE_TREE" "$TAG"
+cd "$RELEASE_TREE" && python scripts/build_artifacts.py
 ```
 
 Adjuntar al release de GitHub, con los nombres que produce el script —no otros:
@@ -196,73 +206,35 @@ cd dist && sha256sum -b NavisCoord-*.zip naviscoord-*.whl naviscoord-*.tar.gz > 
 sha256sum -c SHA256SUMS.txt
 ```
 
-> **El build no es reproducible entre carpetas distintas.** Medido: dos clones
-> del mismo commit, compilados en `…\clean\` y `…\clean2\`, producen
-> `NavisCoord.dll` de idéntico tamaño y distinto SHA-256. La diferencia no
-> está en el código: el DLL lleva embebida la ruta absoluta del PDB de la
-> máquina que compiló, y con ella cambia el sello del encabezado PE. Repetir
-> el build **en la misma carpeta** sí da un binario idéntico.
->
-> Dos consecuencias, y conviene no confundirlas:
->
-> 1. Los checksums publicados tienen que ser los del build definitivo desde el
->    tag, nunca los de un ensayo previo hecho en otra ruta.
-> 2. El artefacto publicado **divulga la ruta local de quien lo compiló**
->    (`C:\Users\<usuario>\…`), que es justo lo que el job `higiene pública`
->    prohíbe en el árbol —pero ese job solo mira el código, no el binario, que
->    se construye fuera de CI. Para cerrarlo hay que decidir el modo de
->    depuración del build de Release (`<DebugType>`, o `<PathMap>` +
->    `<ContinuousIntegrationBuild>`); mientras no se decida, es una fuga
->    conocida y no un descuido.
+El build de Release desactiva símbolos, normaliza rutas con `PathMap` y es
+determinista. `Build-Release.ps1` ejecuta `Assert-PublicArtifacts.ps1` antes de
+empaquetar: cualquier ruta de usuario, PDB o raíz absoluta bloquea el ZIP. Aun
+así, los checksums publicados deben salir del build definitivo hecho desde el
+tag, nunca de un ensayo anterior.
 
 ## 9. Después
 
 - Confirmar que `/plugin install naviscoord-mcp` trae el tag nuevo.
 - Confirmar que `docs/INSTALL.md` no promete nada que no esté publicado.
 
-## Configuración externa pendiente
+## Configuración externa de GitHub
 
-Esto **no** está aplicado y no puede aplicarse desde el repositorio. Requiere
-permisos de administración en GitHub y una decisión humana.
+Mantener activos estos controles:
 
-### Bloqueante del release
+- reporte privado de vulnerabilidades;
+- protección de `main` con PR, una aprobación, `ci-ok`, historial actualizado
+  y aplicación también a administradores;
+- ruleset que impide actualizar o borrar tags `v*`;
+- alertas y correcciones de seguridad de Dependabot;
+- secret scanning y push protection.
 
-- [ ] **Reporte privado de vulnerabilidades.** `SECURITY.md` dice que no se
-      abra un issue y manda a la pestaña Security. Publicar con ese canal
-      apagado deja a quien encuentre algo sin la vía que le acabamos de
-      ofrecer, y la alternativa que le queda es el issue público que le
-      pedimos no usar. **No publiques el release sin esto.**
+Discussions permanece apagado deliberadamente: las preguntas de uso tienen su
+propio formulario de Issue. `CODEOWNERS` queda como decisión del equipo; la
+revisión obligatoria ya existe sin asignar propietarios por ruta.
 
-```bash
-# Habilitar
-gh api -X PUT repos/HorizunGroup/naviscoord-mcp/private-vulnerability-reporting
-# Verificar: debe responder {"enabled":true}
-gh api repos/HorizunGroup/naviscoord-mcp/private-vulnerability-reporting
-```
+### Por qué el check requerido es `ci-ok` y no cada job de la matriz
 
-### No bloqueante
-
-- [ ] Protección de rama en `main`: PR obligatorio, `ci-ok` en verde, sin push
-      directo, sin force-push. El único check requerido es **`ci-ok`**; ver
-      abajo por qué no se registran los quince.
-- [ ] Ruleset para tags `v*`: solo mantenedores, sin update ni delete.
-- [ ] Discussions. `SUPPORT.md` manda hoy las dudas de uso a Issues
-      precisamente porque no está habilitado; si se habilita, hay que cambiar
-      esa fila de vuelta.
-
-```bash
-# Habilitar Discussions (opcional)
-gh api -X PATCH repos/HorizunGroup/naviscoord-mcp -F has_discussions=true
-# Verificar ambos estados de una vez
-gh api repos/HorizunGroup/naviscoord-mcp --jq '{has_discussions}'
-gh api repos/HorizunGroup/naviscoord-mcp/private-vulnerability-reporting
-```
-
-- [ ] Decidir si `CODEOWNERS` y revisión obligatoria aplican al equipo.
-
-### Por qué el check requerido es `ci-ok` y no los quince
-
-Trece de los quince nombres de job llevan la matriz dentro (`motor (py3.10,
+Los nombres de varios jobs llevan la matriz dentro (`motor (py3.10,
 mcp<2)` y compañía). Registrarlos como requeridos ata la configuración del
 repositorio a la forma de la matriz: el día que entre Python 3.14 o cambie un
 rango de `mcp`, el check requerido deja de existir, nadie lo reporta nunca y

@@ -49,6 +49,8 @@
     <Compile Include="..\NavisCoord.Addin\ProfileStore.cs" Link="ProfileStore.cs" />
     <Compile Include="..\NavisCoord.Addin\SessionStore.cs" Link="SessionStore.cs" />
     <Compile Include="..\NavisCoord.Addin\SaveFormats.cs" Link="SaveFormats.cs" />
+    <Compile Include="..\NavisCoord.Addin\ClosePolicy.cs" Link="ClosePolicy.cs" />
+    <Compile Include="..\NavisCoord.Addin\ExitWindowPolicy.cs" Link="ExitWindowPolicy.cs" />
     <Compile Include="..\NavisCoord.Addin\Capabilities.cs" Link="Capabilities.cs" />
     <Compile Include="..\NavisCoord.Addin\UiDispatcher.cs" Link="UiDispatcher.cs" />
     <Compile Include="..\NavisCoord.Addin\DisciplineVocabulary.cs" Link="DisciplineVocabulary.cs" />

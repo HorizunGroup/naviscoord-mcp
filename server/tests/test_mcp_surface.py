@@ -3,7 +3,7 @@
 Two failures live here, both of which shipped once and neither of which any
 other test could see:
 
-* All 27 tools registered, listed and described themselves perfectly while
+* All tools registered, listed and described themselves perfectly while
   not one could be called, because the schema came from a wrapper that had
   not preserved its signature.
 * mcp 2.0 removed the entry point the server imports, so a fresh install
@@ -18,7 +18,8 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from naviscoord.mcp_server import mcp
+from naviscoord.mcp_server import _protocol_server, mcp
+from naviscoord import __version__
 
 # Asserted by NAME rather than by count. A count catches "somebody added a
 # tool" — which is not a defect — and misses "somebody removed one", which is
@@ -78,6 +79,8 @@ EXPECTED_TOOLS = {
     # saving
     "navis_save",
     "navis_save_as",
+    "navis_close_document",
+    "navis_exit",
     # ecosystem
     "navis_handoff",
     "navis_save_export",
@@ -128,6 +131,8 @@ def test_mutating_tools_accept_the_fingerprint_guard(tools):
         "navis_group_levels",
         "navis_save",
         "navis_save_as",
+        "navis_close_document",
+        "navis_exit",
     }
     by_name = {t.name: t for t in tools}
     for name in mutating:
@@ -145,7 +150,7 @@ def test_save_as_requires_a_path_and_defaults_to_not_overwriting(tools):
 
 
 def test_no_tool_advertises_the_wrapper_signature(tools):
-    """The regression that made all 27 uncallable.
+    """The regression that made every registered tool uncallable.
 
     A decorator without functools.wraps presents itself as (*args, **kwargs),
     and the schema generator faithfully advertises two literal fields named
@@ -176,3 +181,11 @@ def test_server_runs_on_either_mcp_major():
     assert type(mcp).__name__ in {"FastMCP", "MCPServer"}
     for attribute in ("tool", "run", "list_tools", "call_tool"):
         assert hasattr(mcp, attribute), attribute
+
+
+def test_initialize_reports_naviscoord_version_not_the_mcp_dependency():
+    """The protocol must identify this product, not its transport package."""
+    protocol = _protocol_server(mcp)
+    assert getattr(protocol, "version", None) == __version__
+    options = protocol.create_initialization_options()
+    assert options.server_version == __version__

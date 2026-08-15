@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
@@ -14,10 +15,9 @@ namespace NavisCoord
     /// Loopback HTTP endpoint the MCP server talks to.
     /// </summary>
     /// <remarks>
-    /// Every published Navisworks bridge leaves an unauthenticated HTTP
-    /// listener on localhost, which means any process on the machine —
-    /// including a browser tab hitting the port from a page — can drive the
-    /// user's model. This one requires a session token generated at startup
+    /// An unauthenticated localhost listener would let any process on the
+    /// machine — including a browser tab hitting the port from a page — drive
+    /// the user's model. This listener requires a session token generated at startup
     /// and written to a per-user file with an explicit DACL, so reaching the
     /// bridge requires the ability to read that user's own AppData.
     ///
@@ -39,8 +39,8 @@ namespace NavisCoord
     ///   never touch the document.
     /// * **One session file per instance.** See <see cref="SessionStore"/>.
     ///
-    /// Port 8781 rather than the 8765 the other bridges all picked, so the two
-    /// can coexist while a team migrates.
+    /// The default port is 8781 and the bridge searches a bounded range so
+    /// several Navisworks instances can coexist.
     /// </remarks>
     internal sealed class HttpBridge : IDisposable
     {
@@ -335,7 +335,58 @@ namespace NavisCoord
                 return;
             }
 
+            var exitAfterResponse = string.Equals(route, "application/exit", StringComparison.OrdinalIgnoreCase) &&
+                                    Json.Bool(outcome.Value, "exit_requested", false);
             TryRespond(context, 200, Decorate(outcome.Value, outcome.WaitedMs));
+            if (exitAfterResponse)
+            {
+                // The response stream is closed synchronously above.  Only
+                // now may the process receive WM_CLOSE; doing it in the
+                // handler made the bridge disappear before it could answer.
+                ThreadPool.QueueUserWorkItem(_ => RequestApplicationExit());
+            }
+        }
+
+        private static void RequestApplicationExit()
+        {
+            try
+            {
+                // Process.MainWindowHandle is zero for Navisworks instances
+                // created through the Automation API even while their GUI is
+                // visible.  Navisworks itself exposes the authoritative HWND;
+                // post WM_CLOSE to that window first, then retain the process
+                // API as a fallback for ordinary interactive launches.
+                var process = System.Diagnostics.Process.GetCurrentProcess();
+                var gui = Autodesk.Navisworks.Api.Application.Gui;
+                var window = gui?.MainWindow;
+                var handle = ExitWindowPolicy.PreferredHandle(
+                    window?.Handle ?? IntPtr.Zero,
+                    process.MainWindowHandle);
+                if (handle != IntPtr.Zero && NativeMethods.PostMessage(
+                        handle, NativeMethods.WmClose, IntPtr.Zero, IntPtr.Zero))
+                {
+                    return;
+                }
+
+                if (!process.CloseMainWindow())
+                {
+                    BridgeHost.Log("Navisworks no aceptó la solicitud de cierre de su ventana principal.");
+                }
+            }
+            catch (Exception ex)
+            {
+                BridgeHost.Log("No se pudo solicitar el cierre de Navisworks: " + ex.Message);
+            }
+        }
+
+        private static class NativeMethods
+        {
+            internal const uint WmClose = 0x0010;
+
+            [DllImport("user32.dll", SetLastError = true)]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            internal static extern bool PostMessage(
+                IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
         }
 
         /// <summary>
@@ -514,9 +565,10 @@ namespace NavisCoord
                 : new Dictionary<string, object>();
 
             var key = Json.Str(body, "idempotency_key");
+            var expectedFingerprint = Json.Str(body, "expected_document_fingerprint");
 
             // A finished operation replays from the ledger…
-            if (IdempotencyLedger.TryGet(key, out var cached))
+            if (IdempotencyLedger.TryGet(key, route, expectedFingerprint, out var cached))
             {
                 return new Dictionary<string, object>
                 {
@@ -532,7 +584,7 @@ namespace NavisCoord
             // without this a client that retried during execution got a
             // duplicate submission — refused as a conflict, which is safe but
             // tells the caller the wrong story about what happened.
-            var inFlight = JobManager.FindByIdempotencyKey(key);
+            var inFlight = JobManager.FindByIdempotencyKey(key, route, expectedFingerprint);
             if (inFlight != null)
             {
                 return new Dictionary<string, object>

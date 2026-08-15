@@ -62,6 +62,8 @@ if ($Uninstall) {
     }
     $session = Join-Path $env:LOCALAPPDATA "NavisCoord\session.json"
     if (Test-Path $session) { Remove-Item $session -Force }
+    $sessions = Join-Path $env:LOCALAPPDATA "NavisCoord\sessions"
+    if (Test-Path $sessions) { Remove-Item $sessions -Recurse -Force }
     return
 }
 
@@ -103,4 +105,4 @@ foreach ($f in $found) {
 Write-Host ""
 Write-Host ("Listo para: " + (($found | ForEach-Object { $_.Version }) -join ', '))
 Write-Host "Abre Navisworks; el puente arranca solo (pestaña Add-Ins -> NavisCoord si no)."
-Write-Host "Si abres dos versiones a la vez, cada puente toma su propio puerto y session.json apunta a la última abierta."
+Write-Host "Si abres varias instancias, cada puente publica su propia sesión; elige una con navis_target."
