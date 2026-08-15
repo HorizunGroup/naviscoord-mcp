@@ -21,7 +21,7 @@ Llama `navis_health`.
 - **Responde con la versión de Navisworks** → todo bien, no hay nada que instalar.
 - **Solo existe `navis_install_status`** → falló el runtime de Python. Llámala: dice el intérprete, el destino y el comando exacto de `pip` para arreglarlo a mano.
 - **`No hay respuesta del complemento en Navisworks`** → el runtime está bien, falta el complemento o Navisworks está cerrado. Sigue abajo.
-- **`No encuentro una sesión activa`** → Navisworks está cerrado, o el servidor MCP corre como otro usuario. En ese caso apunta `NAVISCOORD_SESSION` al `session.json` real.
+- **`No encuentro una sesión activa`** → Navisworks está cerrado, o el servidor MCP corre como otro usuario. En ese caso apunta `NAVISCOORD_SESSION` al archivo de esa instancia dentro de `%LOCALAPPDATA%\NavisCoord\sessions\`.
 
 ## Instalar el complemento de Navisworks
 
@@ -53,7 +53,7 @@ Después abre Navisworks: el puente arranca solo. Si no, pestaña **Add-Ins → 
 
 **Cambié de versión de Navisworks y falla la primera llamada.** No debería: el cliente relee la sesión y reintenta una vez. Si persiste, `navis_health` de nuevo; si sigue, el complemento no está instalado en esa versión.
 
-**Dos versiones abiertas a la vez.** Conviven en puertos distintos, pero `session.json` apunta a la última que abrió. Cierra la que no vayas a usar.
+**Dos versiones abiertas a la vez.** Conviven en puertos distintos y cada una publica su propia sesión. Llama `navis_sessions` y elige la instancia con `navis_target`; una mutación ambigua se rechaza en vez de adivinar.
 
 **Cambié código Python del servidor y no se refleja.** El servidor MCP es un subproceso que cargó el código al arrancar. `navis_health` lo reporta en `server.code_newer_on_disk`; reinicia el cliente para cargarlo.
 

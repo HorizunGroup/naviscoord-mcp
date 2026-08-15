@@ -70,13 +70,6 @@ namespace NavisCoord
             var operation = saveAs ? "document/save_as" : "document/save";
             var idempotencyKey = Json.Str(payload, "idempotency_key");
 
-            // Consulted, not merely echoed. Saving advertised an
-            // idempotency_key and then ignored it, so a retried save_as wrote
-            // the file a second time — and with overwrite=false the retry
-            // failed with "already exists" against a file the FIRST call had
-            // just written, which reads exactly like the save having failed.
-            if (IdempotencyLedger.TryGet(idempotencyKey, out var replay)) return replay;
-
             var result = new MutationResult(operation)
             {
                 JobId = job?.Id ?? string.Empty,
@@ -103,6 +96,15 @@ namespace NavisCoord
                     ", activo " + result.FingerprintBefore + "). No se guardó nada.");
                 result.FingerprintAfter = result.FingerprintBefore;
                 return result.ToJson();
+            }
+
+            // Scoped to operation + document.  The same caller key reused on
+            // another document must never replay a successful save from the
+            // first and claim the second was written.
+            if (IdempotencyLedger.TryGet(
+                idempotencyKey, operation, result.FingerprintBefore, out var replay))
+            {
+                return replay;
             }
 
             var capability = DocumentContext.SaveCapability(doc);

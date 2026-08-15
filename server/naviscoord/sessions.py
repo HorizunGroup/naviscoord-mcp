@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,7 @@ class SessionInfo:
     document_open: bool = False
     started: str = ""
     heartbeat: str = ""
+    process_started: str = ""
     source_file: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -94,6 +96,7 @@ class SessionInfo:
             "document_fingerprint": self.document_fingerprint,
             "started": self.started,
             "heartbeat": self.heartbeat,
+            "process_started": self.process_started,
             "session_file": self.source_file,
         }
         if include_token:
@@ -117,6 +120,7 @@ class SessionInfo:
             document_open=bool(document.get("open", False)),
             started=str(raw.get("started", "")),
             heartbeat=str(raw.get("heartbeat", raw.get("started", ""))),
+            process_started=str(raw.get("process_started", "")),
             source_file=source,
             raw=raw,
         )
@@ -163,7 +167,15 @@ def discover(include_dead: bool = False) -> list[SessionInfo]:
     # Pre-registry add-in: one shared session.json. Read it so a new server
     # keeps working against an add-in nobody has updated yet.
     legacy = _read_file(legacy_session_file())
-    return [legacy] if legacy else []
+    if legacy is None:
+        return []
+    # The compatibility pointer is not part of the registry, but it still
+    # names a process and must obey the same liveness rule.  A crashed old
+    # add-in can leave this file behind forever; treating it as live made a
+    # fresh client connect to a dead PID and report a bridge failure instead
+    # of the truthful "no active session".  Keep it visible to
+    # ``include_dead`` so navis_sessions can diagnose the stale record.
+    return [legacy] if include_dead or is_alive(legacy) else []
 
 
 def _read_dir(directory: Path, include_dead: bool) -> list[SessionInfo]:
@@ -226,10 +238,20 @@ def is_alive(session: SessionInfo) -> bool:
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         STILL_ACTIVE = 259
         kernel32 = ctypes.windll.kernel32
+        kernel32.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+        kernel32.GetExitCodeProcess.restype = ctypes.c_int
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel32.CloseHandle.restype = ctypes.c_int
         handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, session.pid)
         if not handle:
             return False
         try:
+            if session.process_started and not _same_windows_process(
+                kernel32, handle, session.process_started
+            ):
+                return False
             code = ctypes.c_ulong()
             if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)) == 0:
                 return True
@@ -242,6 +264,53 @@ def is_alive(session: SessionInfo) -> bool:
         # or permission failure never silently deletes a running instance
         # from the registry. Narrow rather than bare, so a genuine bug in
         # this function still surfaces instead of being read as "alive".
+        return True
+
+
+def _same_windows_process(kernel32: Any, handle: Any, recorded: str) -> bool:
+    """Reject a recycled PID by comparing its creation timestamp.
+
+    Session records created before the field existed remain compatible.  If
+    Windows refuses the timestamp query, liveness still falls back to the PID
+    check: inability to prove a mismatch is not evidence that a live bridge
+    died.
+    """
+    try:
+        import ctypes
+
+        class FILETIME(ctypes.Structure):
+            _fields_ = [("low", ctypes.c_uint32), ("high", ctypes.c_uint32)]
+
+        kernel32.GetProcessTimes.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(FILETIME),
+            ctypes.POINTER(FILETIME),
+            ctypes.POINTER(FILETIME),
+            ctypes.POINTER(FILETIME),
+        ]
+        kernel32.GetProcessTimes.restype = ctypes.c_int
+
+        created = FILETIME()
+        exited = FILETIME()
+        kernel = FILETIME()
+        user = FILETIME()
+        if kernel32.GetProcessTimes(
+            handle,
+            ctypes.byref(created),
+            ctypes.byref(exited),
+            ctypes.byref(kernel),
+            ctypes.byref(user),
+        ) == 0:
+            return True
+
+        expected = datetime.fromisoformat(recorded.replace("Z", "+00:00")).timestamp()
+        ticks = (created.high << 32) | created.low
+        actual = (ticks - 116_444_736_000_000_000) / 10_000_000
+        # Filesystem/JSON formatting and Win32 use different precision.  A
+        # two-second window distinguishes process generations without
+        # rejecting a timestamp rounded by an older add-in.
+        return abs(actual - expected) <= 2.0
+    except (OSError, TypeError, ValueError, OverflowError, AttributeError):
         return True
 
 

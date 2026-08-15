@@ -53,8 +53,10 @@ perfil, registro de sesiones y capacidades.
 
 ## Lo que NO puede correr aquí
 
-Requiere Navisworks Manage abierto con un federado real. **Ninguna de estas
-está automatizada, y ninguna se ha ejecutado en esta sesión.**
+Requiere Navisworks Manage abierto con un federado real. Estas comprobaciones
+no están automatizadas y deben repetirse antes de cada release que cambie el
+add-in; la evidencia histórica del final de este documento no sustituye esa
+corrida.
 
 ### Guardado
 
@@ -81,6 +83,20 @@ está automatizada, y ninguna se ha ejecutado en esta sesión.**
 - [ ] Cancelar un `workflow/group_levels` a mitad: reporta `partial` con lo
       verificado.
 - [ ] Cancelar un `workflow/run`: dice que no puede y por qué.
+
+### Cierre y salida
+
+- [x] `navis_close_document(disposition="require_clean")` rechaza un documento
+      modificado sin abrir el cuadro de guardado (Navisworks 2026, 2026-08-15).
+- [x] `disposition="save"` guarda, verifica y deja un documento vacío;
+      `disposition="discard"` solo descarta cuando se pidió explícitamente
+      (Navisworks 2026, 2026-08-15).
+- [x] `navis_exit` entrega primero la respuesta HTTP y después cierra la
+      aplicación; el MCP solo devuelve `completed` al desaparecer el PID.
+- [x] Forzar un diálogo desde otro complemento: la primera implementación de
+      `navis_exit` agotó su plazo y devolvió `partial`, no un éxito falso. El
+      mismo tercero también puede mostrar UI después de `MainDocument.Clear()`;
+      ver [SAVING.md](SAVING.md).
 
 ### Paridad cinta/MCP
 
@@ -193,6 +209,24 @@ compilado. **47 comprobaciones, 0 fallos.**
 Restauración verificada: **29/29 archivos con hash idéntico**, los demás
 plugins de terceros de la máquina intactos, ninguna sesión fantasma, y los
 temporales de la prueba eliminados por ruta literal.
+
+## Guardado, cierre y salida del binario 0.2.3 (2026-08-15)
+
+Navisworks Manage 2026 abierto mediante su API de Automation, con el DLL
+público 0.2.3 cargado desde una carpeta temporal y un sample NWD de Autodesk.
+Los complementos instalados se apartaron por ruta literal y se restauraron al
+terminar; el archivo NWF de salida volvió a la carpeta temporal de la prueba.
+
+| Qué | Evidencia |
+|---|---|
+| `require_clean`, ensayo | `planned`, `would_close_document=true` |
+| Documento modificado | un set real con 9 elementos; `require_clean` devolvió `failed=1` y mantuvo el documento abierto |
+| `discard` | `completed`, `applied=1`, `verified=1`; segunda lectura: `document_open=false` |
+| `save_as` | `.nwf` local escrito y verificado |
+| `save` al cerrar | set real con 9 elementos; guardado anidado `completed/verified=1`; documento vacío después |
+| Diálogo de tercero | con un complemento de gestión de conjuntos cargado apareció «No hay plugin que abra (null)» después de `Clear()`; sin él, la misma ruta quedó silenciosa |
+| `navis_exit`, primera implementación | la instancia Automation tenía `Process.MainWindowHandle=0`; respuesta `partial`, PID todavía vivo —sin éxito falso |
+| `navis_exit`, corregido | `Application.Gui.MainWindow.Handle` + `WM_CLOSE`; `completed`, `application_exit_verified=true`, PID ausente |
 
 ## Cobertura
 

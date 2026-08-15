@@ -44,7 +44,7 @@ namespace NavisCoord
             "viewpoints_save", "appearance_color", "appearance_reset", "selection_set",
             "workflow_audit_models", "workflow_configure", "workflow_run",
             "workflow_group_levels",
-            "document_save", "document_save_as",
+            "document_save", "document_save_as", "document_close", "application_exit",
             "jobs", "sessions", "targeting", "idempotency", "mutation_envelope"
         };
 

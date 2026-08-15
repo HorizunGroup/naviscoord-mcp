@@ -116,7 +116,16 @@ namespace NavisCoord
 
         public MutationResult Fail(string message)
         {
-            if (!string.IsNullOrWhiteSpace(message)) Errors.Add(message);
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                Errors.Add(message);
+                // `failed` counts affected units, not exception messages. A
+                // single unit can produce several verification details, so
+                // never increment blindly; cover every requested unit that
+                // still lacks proof, with one as the minimum for a global
+                // failure that happened before a unit count was available.
+                Failed = Math.Max(Failed, Math.Max(1, Requested - Verified));
+            }
             return this;
         }
 
@@ -192,12 +201,20 @@ namespace NavisCoord
         private static readonly Queue<string> Order = new Queue<string>();
 
         public static bool TryGet(string key, out Dictionary<string, object> cached)
+            => TryGet(key, string.Empty, string.Empty, out cached);
+
+        public static bool TryGet(
+            string key,
+            string operation,
+            string fingerprint,
+            out Dictionary<string, object> cached)
         {
             cached = null;
-            if (string.IsNullOrWhiteSpace(key)) return false;
+            var scope = Scope(key, operation, fingerprint);
+            if (scope.Length == 0) return false;
             lock (Gate)
             {
-                if (!Entries.TryGetValue(key, out var stored)) return false;
+                if (!Entries.TryGetValue(scope, out var stored)) return false;
                 cached = new Dictionary<string, object>(stored)
                 {
                     ["idempotent_replay"] = true,
@@ -211,10 +228,17 @@ namespace NavisCoord
         public static void Remember(string key, Dictionary<string, object> payload)
         {
             if (string.IsNullOrWhiteSpace(key) || payload == null) return;
+            var operation = payload.TryGetValue("operation", out var rawOperation)
+                ? Convert.ToString(rawOperation, System.Globalization.CultureInfo.InvariantCulture)
+                : string.Empty;
+            var fingerprint = payload.TryGetValue("document_fingerprint_before", out var rawFingerprint)
+                ? Convert.ToString(rawFingerprint, System.Globalization.CultureInfo.InvariantCulture)
+                : string.Empty;
+            var scope = Scope(key, operation, fingerprint);
             lock (Gate)
             {
-                if (!Entries.ContainsKey(key)) Order.Enqueue(key);
-                Entries[key] = new Dictionary<string, object>(payload);
+                if (!Entries.ContainsKey(scope)) Order.Enqueue(scope);
+                Entries[scope] = new Dictionary<string, object>(payload);
                 while (Order.Count > Capacity)
                 {
                     var evicted = Order.Dequeue();
@@ -235,6 +259,18 @@ namespace NavisCoord
         public static int Count
         {
             get { lock (Gate) { return Entries.Count; } }
+        }
+
+        private static string Scope(string key, string operation, string fingerprint)
+        {
+            var raw = (key ?? string.Empty).Trim();
+            if (raw.Length == 0) return string.Empty;
+            var op = (operation ?? string.Empty).Trim();
+            var fp = (fingerprint ?? string.Empty).Trim();
+            // Length prefixes make the tuple unambiguous even when a caller's
+            // key contains the separator itself.
+            return raw.Length + ":" + raw + "|" + op.Length + ":" + op +
+                   "|" + fp.Length + ":" + fp;
         }
     }
 }

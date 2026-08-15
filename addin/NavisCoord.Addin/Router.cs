@@ -61,7 +61,9 @@ namespace NavisCoord
                 ["profile/load"] = WorkflowHandlers.ProfileLoad,
                 ["profile/reset"] = WorkflowHandlers.ProfileReset,
                 ["document/save"] = SaveHandlers.Save,
-                ["document/save_as"] = SaveHandlers.SaveAs
+                ["document/save_as"] = SaveHandlers.SaveAs,
+                ["document/close"] = CloseHandlers.CloseDocument,
+                ["application/exit"] = CloseHandlers.ExitApplication
             };
 
             _jobRoutes = new Dictionary<string, Func<Dictionary<string, object>, JobManager.Job, Dictionary<string, object>>>(

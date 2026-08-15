@@ -49,6 +49,9 @@ Reglas:
 - Se sigue escribiendo `session.json` como **puntero de compatibilidad** para
   servidores MCP anteriores al registro. Lleva el PID dueño, y al cerrar solo
   lo borra quien lo escribió; si queda otra instancia viva, se repunta a ella.
+- El puntero de compatibilidad obedece la misma regla de vida: si su PID murió
+  no se usa como sesión activa, aunque el archivo haya quedado tras un cierre
+  abrupto.
 
 ### `target_id`, no PID
 

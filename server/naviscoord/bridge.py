@@ -13,6 +13,7 @@ anywhere Python does.
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import Any
 
 from .sessions import SessionInfo, TargetError, legacy_session_file
 from .sessions import discover as discover_sessions
+from .sessions import is_alive
 from .sessions import select as select_session
 
 DEFAULT_TIMEOUT = 180.0
@@ -334,6 +336,59 @@ class Bridge:
                 **kwargs,
             },
         )
+
+    def close_document(
+        self, disposition: str, expected_fingerprint: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        self.require("document/close", since="0.2.3")
+        return self.call(
+            "document/close",
+            {
+                "disposition": disposition,
+                "expected_document_fingerprint": expected_fingerprint,
+                **kwargs,
+            },
+        )
+
+    def exit_application(
+        self,
+        disposition: str,
+        expected_fingerprint: str,
+        *,
+        dry_run: bool = True,
+        verify_timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        """Ask Navisworks to exit, then verify the process actually ended."""
+        self.require("application/exit", since="0.2.3")
+        session = self.resolve(for_mutation=True)
+        self._session = session
+        result = self.call(
+            "application/exit",
+            {
+                "disposition": disposition,
+                "expected_document_fingerprint": expected_fingerprint,
+                "dry_run": dry_run,
+            },
+        )
+        if dry_run or not result.get("exit_requested"):
+            return result
+
+        deadline = time.monotonic() + max(0.1, min(float(verify_timeout), 60.0))
+        while time.monotonic() < deadline and is_alive(session):
+            time.sleep(0.1)
+
+        exited = not is_alive(session)
+        result["application_exit_verified"] = exited
+        result["verification_source"] = "process_liveness"
+        result["status"] = "completed" if exited else "partial"
+        if not exited:
+            warnings = result.setdefault("warnings", [])
+            warnings.append(
+                "Navisworks sigue abierto. Puede haber un diálogo de otro complemento o "
+                "la ventana principal rechazó el cierre; no se reporta como completado."
+            )
+        self.invalidate()
+        return result
 
     # --------------------------------------------------------- workflow
 

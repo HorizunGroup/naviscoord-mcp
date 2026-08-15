@@ -242,13 +242,18 @@ namespace NavisCoord
         /// purpose: their answer lives in the ledger, which carries the actual
         /// result rather than just an id.
         /// </remarks>
-        public static Job FindByIdempotencyKey(string key)
+        public static Job FindByIdempotencyKey(
+            string key, string operation = "", string fingerprint = "")
         {
             if (string.IsNullOrWhiteSpace(key)) return null;
             lock (Gate)
             {
                 return Jobs.Values.FirstOrDefault(j =>
                     string.Equals(j.IdempotencyKey, key, StringComparison.Ordinal) &&
+                    (string.IsNullOrWhiteSpace(operation) ||
+                     string.Equals(j.Operation, operation, StringComparison.OrdinalIgnoreCase)) &&
+                    (string.IsNullOrWhiteSpace(fingerprint) ||
+                     DocumentFingerprint.Matches(fingerprint, j.DocumentFingerprint)) &&
                     (j.State == Queued || j.State == Running || j.State == Verifying));
             }
         }

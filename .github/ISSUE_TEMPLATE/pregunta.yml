@@ -1,0 +1,43 @@
+name: Pregunta de uso
+description: Ayuda para configurar o usar NavisCoord
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        No adjuntes modelos ni publiques nombres de clientes o proyectos.
+        Para una vulnerabilidad usa el reporte privado indicado en SECURITY.md.
+
+  - type: textarea
+    id: objetivo
+    attributes:
+      label: Qué quieres conseguir
+      description: Describe el resultado, no solo el comando que intentaste.
+      placeholder: Quiero analizar los clash tests del documento abierto y generar un PDF.
+    validations:
+      required: true
+
+  - type: textarea
+    id: intentos
+    attributes:
+      label: Qué intentaste
+      description: Incluye las herramientas llamadas y el mensaje recibido.
+    validations:
+      required: true
+
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto técnico anonimizado
+      description: Versión de Navisworks, Python, cliente MCP y salida pertinente de navis_health.
+      placeholder: Navisworks Manage 2026; Python 3.12; Codex; documento y rutas anonimizados.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacidad
+    attributes:
+      label: Privacidad
+      options:
+        - label: Anonimicé rutas, títulos, clientes y proyectos; no adjunté modelos.
+          required: true

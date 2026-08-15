@@ -1,6 +1,6 @@
 {
   "name": "naviscoord-mcp",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Navisworks desde Codex: interferencias priorizadas y explicadas, causas raíz, matriz de coordinación, plan de trabajo, informe redactado y PDF.",
   "author": {"name": "HorizunGroup", "url": "https://github.com/HorizunGroup"},
   "homepage": "https://github.com/HorizunGroup/naviscoord-mcp",
@@ -8,7 +8,6 @@
   "license": "MIT",
   "keywords": ["navisworks", "bim", "clash-detection", "coordination", "mcp"],
   "skills": "./skills/",
-  "_launcher_note": "CLAUDE_PLUGIN_ROOT es tambien el marcador de raiz de plugin en Codex, no solo en Claude Code: Codex instala en ~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/ y sustituye esa variable. Verificado contra la instalacion local de Codex de esta maquina; ver docs/INSTALL.md. Una ruta relativa NO sirve: se resolveria contra el directorio de trabajo del proceso, que el host no garantiza.",
   "mcpServers": {
     "horizun-navis-mcp": {
       "command": "python",

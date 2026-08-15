@@ -100,7 +100,7 @@ namespace NavisCoord
             }
 
             var key = Json.Str(payload, "idempotency_key");
-            if (IdempotencyLedger.TryGet(key, out var cached)) return cached;
+            if (IdempotencyLedger.TryGet(key, operation, fingerprint, out var cached)) return cached;
 
             ProfileStore.ActiveProfile profile = null;
             if (needsProfile && !TryProfile(out profile, out var problem)) return problem;
