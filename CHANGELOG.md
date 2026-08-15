@@ -5,6 +5,8 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-08-15
+
 ### Added
 
 - Cierre desatendido de documento y aplicación con política explícita de
@@ -29,6 +31,9 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 - `navis_exit` usa la ventana principal que expone Navisworks antes de caer en
   `Process.CloseMainWindow`: las instancias creadas por Automation tienen GUI
   visible pero `Process.MainWindowHandle=0` y antes no llegaban a cerrarse.
+- CI usa las versiones basadas en Node.js 24 de `actions/checkout` y
+  `actions/setup-python`; el release no conserva avisos de la plataforma por
+  acciones obsoletas.
 
 ## [0.2.2] — 2026-08-15
 
