@@ -1,3 +1,4 @@
+using System.Windows.Forms;
 using Autodesk.Navisworks.Api.Plugins;
 
 namespace NavisCoord
@@ -29,8 +30,8 @@ namespace NavisCoord
     [RibbonTab("ID_TabNavisCoord")]
     [Command("ID_NavisCoordEstado",
         DisplayName = "Estado del puente",
-        ToolTip = "Ver la versión y el estado del puente, e iniciarlo o detenerlo",
-        ExtendedToolTip = "Muestra qué versión de NavisCoord tiene cargada Navisworks en este momento y si el puente está CORRIENDO (con su puerto) o DETENIDO.\n\nOJO: además de informar, alterna el estado — si estaba corriendo lo detiene, y el servidor MCP deja de poder conectarse. El puente arranca solo al abrir Navisworks, así que en condiciones normales no hay que tocarlo.")]
+        ToolTip = "Ver la versión y el estado del puente; iniciarlo o detenerlo si hace falta",
+        ExtendedToolTip = "Muestra qué versión de NavisCoord tiene cargada Navisworks en este momento y si el puente está CORRIENDO (con su puerto) o DETENIDO.\n\nConsultar es seguro: primero informa y después pregunta si quieres cambiar el estado, con \"No\" por defecto. El puente arranca solo al abrir Navisworks, así que en condiciones normales basta con mirar y cerrar.")]
     [Command("ID_NavisCoordConfigCoord",
         DisplayName = "Configurar coordinación",
         ToolTip = "Crear los search sets y la matriz de clash, y aplicar las reglas del perfil",
@@ -60,6 +61,12 @@ namespace NavisCoord
                 // El único comando que no es un paso del flujo: no toca el
                 // modelo, solo cuenta qué hay cargado y cómo está.
                 //
+                // Informa PRIMERO y pregunta después. Antes este botón
+                // alternaba el puente de una vez, así que oprimirlo para ver
+                // si estaba vivo lo mataba y el servidor MCP perdía la
+                // conexión. El "No" es el botón por defecto: un Enter
+                // distraído no debe tumbar el puente.
+                //
                 // Con su propio try/catch porque no pasa por WorkflowSteps,
                 // que es quien atrapa por los demás: un fallo al abrir el
                 // puerto (otra instancia lo tiene tomado) subiría hasta
@@ -67,7 +74,19 @@ namespace NavisCoord
                 case "ID_NavisCoordEstado":
                     try
                     {
-                        ConfigurePlugin.Inform(BridgeHost.ToggleReport());
+                        var running = BridgeHost.IsRunning;
+                        var answer = MessageBox.Show(
+                            BridgeHost.StatusReport() + "\n\n" +
+                            (running ? "¿Detener el puente?" : "¿Iniciar el puente?"),
+                            "NavisCoord " + BridgeHost.Version,
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Information,
+                            MessageBoxDefaultButton.Button2);
+
+                        if (answer == DialogResult.Yes)
+                        {
+                            ConfigurePlugin.Inform(running ? BridgeHost.Stop() : BridgeHost.Start());
+                        }
                         return 0;
                     }
                     catch (System.Exception ex)

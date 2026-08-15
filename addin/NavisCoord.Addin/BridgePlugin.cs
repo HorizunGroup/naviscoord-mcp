@@ -52,20 +52,17 @@ namespace NavisCoord
                 : "DETENIDO — el servidor MCP no puede conectarse";
 
         /// <summary>
-        /// Alterna el puente y devuelve el parte completo: versión, estado
-        /// resultante y el detalle de lo que acaba de pasar.
+        /// El parte para una persona: versión cargada y estado actual.
         /// </summary>
         /// <remarks>
-        /// Existe porque el botón antes mandaba el mensaje de Start/Stop a
-        /// <see cref="Log"/> — o sea, a un archivo — y en pantalla no salía
-        /// absolutamente nada: no había forma de saber si el puente estaba
-        /// vivo, ni qué versión estaba cargada, salvo abriendo el log.
+        /// SIN efectos secundarios, a propósito. El botón que enseña esto
+        /// antes alternaba el puente al oprimirlo, así que preguntar "¿está
+        /// corriendo?" lo apagaba y tumbaba la conexión del servidor MCP: la
+        /// única forma de consultarlo era romperlo. Consultar y cambiar son
+        /// dos acciones distintas y aquí solo vive la primera.
         /// </remarks>
-        public static string ToggleReport()
-        {
-            var detail = IsRunning ? Stop() : Start();
-            return $"NavisCoord {Version}\n\nEstado: {StatusLine()}\n\n{detail}";
-        }
+        public static string StatusReport()
+            => $"NavisCoord {Version}\n\nEstado: {StatusLine()}";
 
         /// <summary>
         /// Starts the listener. Must be called from the Navisworks UI thread:
