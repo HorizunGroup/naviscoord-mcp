@@ -92,6 +92,15 @@ foreach ($f in $found) {
     $pdb = [IO.Path]::ChangeExtension($built, ".pdb")
     if (Test-Path $pdb) { Copy-Item $pdb -Destination $pluginDir -Force }
 
+    # El layout de la cinta, a la raíz y a la carpeta del idioma. Sin él el DLL
+    # carga igual y la pestaña simplemente no sale, que es el fallo más caro de
+    # diagnosticar de todo este complemento: no hay error en ninguna parte.
+    $layout = Join-Path $outDir "NavisCoordRibbon.xaml"
+    if (-not (Test-Path $layout)) { throw "[$v] el build no dejó NavisCoordRibbon.xaml en $outDir" }
+    New-Item -ItemType Directory -Force -Path (Join-Path $pluginDir "en-US") | Out-Null
+    Copy-Item $layout -Destination $pluginDir -Force
+    Copy-Item $layout -Destination (Join-Path $pluginDir "en-US") -Force
+
     # Verificación: comprobar lo copiado en disco, no asumir que Copy-Item
     # funcionó.
     $installed = Join-Path $pluginDir "NavisCoord.dll"
@@ -99,10 +108,15 @@ foreach ($f in $found) {
     if ((Get-Item $built).Length -ne (Get-Item $installed).Length) {
         throw "[$v] el DLL instalado no coincide en tamaño con el compilado; la copia quedó incompleta."
     }
-    Write-Host "[$v] instalado: $installed"
+    foreach ($x in @((Join-Path $pluginDir "NavisCoordRibbon.xaml"),
+                     (Join-Path $pluginDir "en-US\NavisCoordRibbon.xaml"))) {
+        if (-not (Test-Path $x)) { throw "[$v] falta el layout de la cinta en $x" }
+    }
+    Write-Host "[$v] instalado: $installed (+ cinta)"
 }
 
 Write-Host ""
 Write-Host ("Listo para: " + (($found | ForEach-Object { $_.Version }) -join ', '))
-Write-Host "Abre Navisworks; el puente arranca solo (pestaña Add-Ins -> NavisCoord si no)."
+Write-Host "Abre Navisworks: verás la pestaña NavisCoord. El puente arranca solo;"
+Write-Host "'Estado del puente' dice la versión cargada y si está corriendo."
 Write-Host "Si abres varias instancias, cada puente publica su propia sesión; elige una con navis_target."

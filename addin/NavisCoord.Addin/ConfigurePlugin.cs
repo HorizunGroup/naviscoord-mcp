@@ -7,11 +7,17 @@ using Autodesk.Navisworks.Api.Plugins;
 namespace NavisCoord
 {
     /// <summary>
-    /// "Configurar coordinación" (Tool add-ins): build the search sets and the
-    /// clash matrix, then apply any residual rules.
+    /// "Configurar coordinación" (pestaña NavisCoord): build the search sets and
+    /// the clash matrix, then apply any residual rules.
     /// </summary>
     /// <remarks>
-    /// The plugin owns three things and nothing else: finding the profile,
+    /// No longer an <c>AddInPlugin</c>: the ribbon entry point moved to
+    /// <see cref="NavisCoordTab"/> so every button of the product sits in one
+    /// tab instead of scattered through Tool add-ins. What it DOES is
+    /// unchanged, and the shared helpers below (<see cref="Inform"/>,
+    /// <see cref="Fail"/>) are still what the workflow steps report through.
+    ///
+    /// This code owns three things and nothing else: finding the profile,
     /// calling <see cref="CoordinationWorkflow"/>, and showing what came back.
     /// The work itself lives in the workflow service so the HTTP routes run
     /// exactly the same code — a button and a tool call cannot disagree about
@@ -26,12 +32,9 @@ namespace NavisCoord
     /// because somebody just clicked, so there is a human present to read them
     /// and no headless flow a modal box could hang.
     /// </remarks>
-    [Plugin("NavisCoord.Configure", "NVCD",
-        DisplayName = "Configurar coordinación",
-        ToolTip = "Crea los search sets por disciplina y la matriz de clash definidos en el perfil")]
-    public sealed class ConfigurePlugin : AddInPlugin
+    public sealed class ConfigurePlugin
     {
-        public override int Execute(params string[] parameters)
+        internal static int Execute()
         {
             try
             {

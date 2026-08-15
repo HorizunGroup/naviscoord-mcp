@@ -4,24 +4,25 @@ using Autodesk.Navisworks.Api.Plugins;
 namespace NavisCoord
 {
     /// <summary>
-    /// The coordination workflow as classic <c>AddInPlugin</c> buttons (Tool
-    /// add-ins), one per step.
+    /// The coordination workflow, one entry point per step.
     /// </summary>
     /// <remarks>
-    /// <c>AddInPlugin</c> rather than a custom ribbon tab on purpose: it always
-    /// renders. A <c>RibbonLayout</c> tab depends on an undocumented XAML
-    /// schema and a matching plugin assembly, and when it fails it fails
-    /// silently — no tab, no error, no clue. These appear under Tool Add-ins on
-    /// every supported Navisworks version with no extra assembly at all.
+    /// These used to be classic <c>AddInPlugin</c> buttons, chosen because they
+    /// always render: a <c>RibbonLayout</c> tab depends on an undocumented XAML
+    /// schema and, when it fails, fails silently — no tab, no error, no clue.
+    /// The cost was that Navisworks piles every <c>AddInPlugin</c> into "Tool
+    /// add-ins" next to third-party exporters, so the product had five buttons
+    /// and no tab of its own.
     ///
-    /// Each button calls the SAME <see cref="CoordinationWorkflow"/> service
-    /// the HTTP routes call, and only renders the result differently. Nothing
-    /// about what a step DOES lives in this file, so a button and a tool call
-    /// cannot drift apart.
+    /// They now hang off <see cref="NavisCoordTab"/>, which is safe to do
+    /// because the XAML schema stopped being a guess: the exact incantation
+    /// that renders on 2024-2026 was measured and is documented in the header
+    /// of NavisCoordRibbon.xaml.
     ///
-    /// Anyone wanting a branded tab of their own can add a ribbon assembly that
-    /// invokes <see cref="WorkflowSteps.Run"/> — there is no need to fork the
-    /// engine to change a logo.
+    /// Each step calls the SAME <see cref="CoordinationWorkflow"/> service the
+    /// HTTP routes call, and only renders the result differently. Nothing about
+    /// what a step DOES lives in this file, so a button and a tool call cannot
+    /// drift apart.
     /// </remarks>
     internal static class WorkflowSteps
     {
@@ -87,39 +88,4 @@ namespace NavisCoord
         }
     }
 
-    [Plugin("NavisCoord.Audit", "NVCD",
-        DisplayName = "NavisCoord 0\nAuditar modelos",
-        ToolTip = "Valida que los modelos anexados estén co-ubicados (no a kilómetros), con nomenclatura y elementos")]
-    public sealed class AuditModelsPlugin : AddInPlugin
-    {
-        public override int Execute(params string[] parameters)
-            => WorkflowSteps.Execute(WorkflowSteps.Audit);
-    }
-
-    [Plugin("NavisCoord.Sets", "NVCD",
-        DisplayName = "NavisCoord 1\nConfigurar",
-        ToolTip = "Crea las carpetas de search sets por disciplina y la matriz de clash definidas en el perfil")]
-    public sealed class ConfigureSetsPlugin : AddInPlugin
-    {
-        public override int Execute(params string[] parameters)
-            => WorkflowSteps.Execute(WorkflowSteps.Configure);
-    }
-
-    [Plugin("NavisCoord.RunTests", "NVCD",
-        DisplayName = "NavisCoord 2\nCorrer tests",
-        ToolTip = "Corre todos los clash tests (equivale a Run All); Navisworks queda ocupado durante la corrida")]
-    public sealed class RunTestsPlugin : AddInPlugin
-    {
-        public override int Execute(params string[] parameters)
-            => WorkflowSteps.Execute(WorkflowSteps.Run);
-    }
-
-    [Plugin("NavisCoord.GroupByLevel", "NVCD",
-        DisplayName = "NavisCoord 3\nAgrupar por nivel",
-        ToolTip = "Agrupa los choques de cada test por nivel, como se preparan las incidencias")]
-    public sealed class GroupByLevelPlugin : AddInPlugin
-    {
-        public override int Execute(params string[] parameters)
-            => WorkflowSteps.Execute(WorkflowSteps.Group);
-    }
 }

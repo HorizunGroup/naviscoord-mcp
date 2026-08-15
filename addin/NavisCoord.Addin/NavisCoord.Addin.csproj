@@ -107,4 +107,22 @@
     <Reference Include="System.Net.Http" />
   </ItemGroup>
 
+  <!--
+    El layout de la cinta viaja SUELTO junto al DLL, no embebido: Navisworks lo
+    lee del disco por el nombre que declara [RibbonLayout], antes de tocar el
+    ensamblado.
+
+    Y va DOS veces. El cargador busca primero la subcarpeta del idioma de la
+    interfaz (en-US) y solo entonces la raíz del plugin; con una sola copia, la
+    pestaña aparece o no según en qué idioma esté instalado Navisworks — un
+    fallo que no se reproduce en la máquina de quien lo compiló. Copiar a los
+    dos sitios cuesta nada y quita esa variable del medio.
+  -->
+  <Target Name="CopyRibbonLayout" AfterTargets="Build">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)NavisCoordRibbon.xaml"
+          DestinationFolder="$(OutDir)" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)NavisCoordRibbon.xaml"
+          DestinationFolder="$(OutDir)en-US" />
+  </Target>
+
 </Project>

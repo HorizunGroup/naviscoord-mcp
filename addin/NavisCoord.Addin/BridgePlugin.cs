@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
 using Autodesk.Navisworks.Api.Plugins;
 
 namespace NavisCoord
@@ -17,6 +18,54 @@ namespace NavisCoord
 
         public static bool IsRunning => _bridge != null && _bridge.IsRunning;
         public static int Port => _bridge?.Port ?? HttpBridge.DefaultPort;
+
+        /// <summary>
+        /// La versión tal como la lee una persona ("0.2.3").
+        /// </summary>
+        /// <remarks>
+        /// Se saca del ensamblado y no de una constante a propósito: lo que
+        /// hay que poder responder es "qué DLL tiene Navisworks cargado en
+        /// este momento", que no siempre es el que está en el repo ni el que
+        /// se acaba de compilar. Una constante se copia y miente; el
+        /// ensamblado no.
+        /// </remarks>
+        public static string Version
+        {
+            get
+            {
+                var asm = typeof(BridgeHost).Assembly;
+                var info = (AssemblyInformationalVersionAttribute)Attribute.GetCustomAttribute(
+                    asm, typeof(AssemblyInformationalVersionAttribute));
+                var raw = info?.InformationalVersion ?? asm.GetName().Version.ToString();
+
+                // Release estampa "0.2.3+<commit>". El hash sirve en un log, no
+                // en un cuadro de diálogo.
+                var plus = raw.IndexOf('+');
+                return plus > 0 ? raw.Substring(0, plus) : raw;
+            }
+        }
+
+        /// <summary>Una línea con lo que un humano necesita: si está arriba y dónde.</summary>
+        public static string StatusLine()
+            => IsRunning
+                ? $"CORRIENDO — escuchando en 127.0.0.1:{Port}"
+                : "DETENIDO — el servidor MCP no puede conectarse";
+
+        /// <summary>
+        /// Alterna el puente y devuelve el parte completo: versión, estado
+        /// resultante y el detalle de lo que acaba de pasar.
+        /// </summary>
+        /// <remarks>
+        /// Existe porque el botón antes mandaba el mensaje de Start/Stop a
+        /// <see cref="Log"/> — o sea, a un archivo — y en pantalla no salía
+        /// absolutamente nada: no había forma de saber si el puente estaba
+        /// vivo, ni qué versión estaba cargada, salvo abriendo el log.
+        /// </remarks>
+        public static string ToggleReport()
+        {
+            var detail = IsRunning ? Stop() : Start();
+            return $"NavisCoord {Version}\n\nEstado: {StatusLine()}\n\n{detail}";
+        }
 
         /// <summary>
         /// Starts the listener. Must be called from the Navisworks UI thread:
@@ -124,26 +173,4 @@ namespace NavisCoord
         }
     }
 
-    /// <summary>
-    /// Ribbon command: start, stop, and show where the session token lives.
-    /// </summary>
-    [Plugin("NavisCoord.Toggle", "HRZN",
-        DisplayName = "NavisCoord",
-        ToolTip = "Iniciar o detener el puente de coordinación NavisCoord")]
-    public sealed class TogglePlugin : AddInPlugin
-    {
-        public override int Execute(params string[] parameters)
-        {
-            try
-            {
-                BridgeHost.Log(BridgeHost.IsRunning ? BridgeHost.Stop() : BridgeHost.Start());
-                return 0;
-            }
-            catch (Exception ex)
-            {
-                BridgeHost.Log("No se pudo cambiar el estado del puente: " + ex.Message);
-                return 1;
-            }
-        }
-    }
 }
