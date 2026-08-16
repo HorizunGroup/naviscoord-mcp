@@ -5,6 +5,33 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cuatro herramientas escribían sin comprobar en qué documento.**
+  `navis_build_sets`, `navis_build_clash_matrix`, `navis_run_tests` y
+  `navis_reset_appearance` no llamaban `require_mutable()`, así que la sesión
+  se resolvía por la vía de lectura — y esa vía, con dos instancias abiertas,
+  **elige la más reciente y no lo dice** (`sessions.py`). No había error: los
+  tests de clash aparecían en el modelo que Navisworks hubiera tocado último.
+  Las cuatro aceptan ahora `expected_document_fingerprint` y devuelven
+  `document_fingerprint_before`, como el resto de las mutaciones. El ensayo
+  también se rechaza: un `dry_run` que cuenta elementos en Torre B es el
+  número que una persona lee antes de aprobar la escritura en Torre A.
+
+### Changed
+
+- **La lista de mutaciones dejó de escribirse a mano.** El test que debía
+  atrapar lo anterior enumeraba nueve herramientas y omitía justo esas
+  cuatro, así que pasaba en verde con el fallo dentro. Ahora el conjunto se
+  deriva de la superficie de escritura que declara el propio complemento —la
+  clase que atiende cada ruta en `Router.cs` y si el paso pasa por
+  `WorkflowHandlers.Mutate`— y lo que no muta se exime por nombre y con el
+  motivo escrito. Una ruta nueva cuenta como mutación hasta que alguien
+  explique por qué no lo es: olvidarse ahora rompe el build en vez de
+  aprobarlo. Se añadió además la comprobación de comportamiento que faltaba:
+  con dos instancias vivas, cada mutación se ejecuta de verdad contra un
+  puente espía y se verifica que **no llegó a llamarlo**.
+
 ## [0.3.0] — 2026-08-16
 
 Menor, no parche: `navis_clash_image` es una herramienta nueva. Ninguna
