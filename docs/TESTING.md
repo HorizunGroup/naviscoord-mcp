@@ -332,6 +332,13 @@ documento va la escritura, no qué contiene.
 Las dos sesiones publicaron `addin_version: 0.3.1.0`, así que lo que se probó
 es el binario del release y no el compilado del árbol.
 
+Una precisión: el DLL ejercitado aquí es anterior al arreglo del veredicto
+—«Falló: sin detalle»— que esta misma corrida destapó y que entró después en
+la 0.3.1. Ese cambio vive en `WorkflowText`, que es presentación y no toca el
+guardia de documento ni ninguna ruta de escritura, así que las filas de abajo
+siguen valiendo; pero el binario que se publique no es, byte a byte, el que
+abrió estas dos instancias.
+
 | Qué | Evidencia |
 |---|---|
 | Dos instancias, huellas distintas | `aa0f784b24a2d27c` (TORRE-A) y `04fbeb130f8945a4` (TORRE-B); `navis_sessions` → `count=2` |
