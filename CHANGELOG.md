@@ -5,6 +5,15 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-08-16
+
+Parche: ninguna herramienta ni ruta cambió de forma, y los argumentos que se
+añaden son opcionales. Sí cambia el comportamiento en un caso concreto y a
+propósito: con dos instancias de Navisworks abiertas, cuatro herramientas que
+antes escribían en la que Navisworks hubiera tocado último ahora se rechazan
+si nadie eligió documento. Una llamada que dependía de esa elección implícita
+falla en vez de acertar por casualidad, que es el punto.
+
 ### Fixed
 
 - **Cuatro herramientas escribían sin comprobar en qué documento.**
@@ -333,7 +342,8 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
-[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.1
 [0.3.0]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.0
 [0.2.3]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.3
 [0.2.2]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.2
