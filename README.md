@@ -41,14 +41,7 @@ Autodesk assemblies.
 
 ## Compatibility
 
-| Navisworks | Add-in package | Verification |
-|---|---:|---|
-| 2024 | Yes | Tested with the live Navisworks API |
-| 2025 | Yes | Builds against the 2025 API; live run not yet verified |
-| 2026 | Yes | Tested with the live Navisworks API |
-
-Each Navisworks version requires its own add-in build. Download the package
-that matches the installed version.
+Autodesk Navisworks Manage 2024, 2025, and 2026.
 
 ## Install
 
@@ -145,8 +138,28 @@ navis_audit_models
 Ask for `navis_capabilities` before relying on a write operation. It reports
 the routes supported by the installed add-in and its contract version.
 
+## Interference images
+
+`navis_pdf_report` puts one page per interference, each with a 3D image
+rendered by Navisworks. Those images are checked before they are published:
+the add-in projects both clashing elements through the camera it actually
+applied, and the server counts the pixels each one painted — the only check
+that can see a wall standing in front of the clash. An image that fails is
+re-shot wider or with the intervening geometry hidden, and discarded with a
+stated reason if it still does not show the problem.
+
+Use `navis_clash_image` to tune the framing on a single issue before spending
+twenty-five renders on a report. Both tools accept the same visual options
+(`camera_mode`, `margin_percent`, `hide_unrelated_geometry`,
+`colorize_by_discipline`, `render_quality`, …), all optional.
+
+See [Interference images](docs/IMAGENES.md) for the option schema, the quality
+metrics returned per image, and the Navisworks API limits behind two of the
+options.
+
 Useful inspection tools include:
 
+- `navis_clash_image` for a single framed interference with its quality metrics.
 - `navis_list_search_sets`, `navis_list_tests`, and `navis_coordination_matrix`.
 - `navis_issue_detail`, `navis_hotspots`, and `navis_decisions`.
 - `navis_jobs`, `navis_job_status`, and `navis_cancel_job`.
@@ -220,6 +233,7 @@ python scripts\build_artifacts.py
 
 - [Installation](docs/INSTALL.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Interference images](docs/IMAGENES.md)
 - [Sessions and targeting](docs/SESSIONS.md)
 - [Long-running jobs](docs/JOBS.md)
 - [Saving documents](docs/SAVING.md)

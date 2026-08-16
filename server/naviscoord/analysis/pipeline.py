@@ -152,6 +152,9 @@ def analyze(
                 elements_b=sorted({c.b.path_id for c in cluster.clashes}),
                 discipline_a=cluster.side_disciplines[0],
                 discipline_b=cluster.side_disciplines[1],
+                representative_clash_id=(
+                    cluster.representative.guid if cluster.representative else ""
+                ),
                 elements_by_discipline=cluster.elements_by_discipline(),
             )
         )

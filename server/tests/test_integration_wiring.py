@@ -348,6 +348,37 @@ class TestParity:
             "la pestaña volvió a ejecutar el flujo; eso vive en las rutas HTTP"
         )
 
+    def test_nothing_of_ours_lands_in_tool_add_ins(self) -> None:
+        """Este complemento no pone NADA en la pestaña «Tool add-ins».
+
+        Esa pestaña no se puede diseñar ni borrar: Navisworks la crea sola para
+        alojar cualquier `AddInPlugin`, y desaparece cuando no queda ninguno.
+        Llegó a tener seis entradas nuestras seguidas, todas empezando por la
+        misma palabra y cada una duplicando una herramienta MCP. Lo nuestro
+        vive en la pestaña propia; el `AutoStart` es `EventWatcherPlugin` y no
+        se muestra.
+
+        Se compara la CLASE BASE, no el texto del archivo: buscar «AddInPlugin»
+        en el fuente también encuentra el AutoStart y hace fallar el test por
+        un botón que no existe.
+        """
+        buttons = []
+        for path in ADDIN.glob("*.cs"):
+            for attribute, base in re.findall(
+                r"\[Plugin\((.*?)\)\]\s*public sealed class \w+\s*:\s*(\w+)",
+                read(path),
+                re.DOTALL,
+            ):
+                if base != "AddInPlugin":
+                    continue
+                shown = re.search(r'DisplayName\s*=\s*"([^"]+)"', attribute)
+                buttons.append(shown.group(1) if shown else "(sin nombre)")
+
+        assert buttons == [], (
+            f"vuelven a aparecer botones en «Tool add-ins»: {buttons}. "
+            "Lo que este complemento ofrece va en su propia pestaña."
+        )
+
     def test_routes_delegate_to_the_same_service(self) -> None:
         handlers = read(ADDIN / "WorkflowHandlers.cs")
         for step in ("AuditModels", "Configure", "RunAll", "GroupByLevel", "ApplyRules"):

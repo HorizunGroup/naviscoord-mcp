@@ -51,6 +51,7 @@ namespace NavisCoord.Tests
 
             LogicTests.Run(Section, Eq, Check, Fail);
             DispatcherTests.Run(Section, Eq, Check);
+            FramingTests.Run(Section, Eq, Check);
             VocabularyTests.Run(Section, Eq, Check);
 
             Console.WriteLine();

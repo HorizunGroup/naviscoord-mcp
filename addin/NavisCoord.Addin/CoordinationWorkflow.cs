@@ -74,7 +74,7 @@ namespace NavisCoord
                 var model = doc.Models[index];
                 var name = model.RootItem?.DisplayName;
                 if (string.IsNullOrWhiteSpace(name)) name = model.SourceFileName ?? "(sin nombre)";
-                name = ConfigurePlugin.DecodeName(name);
+                name = ModelNames.Decode(name);
 
                 var discipline = vocabulary.TokenIn(name);
                 var tally = new Dictionary<string, int>(StringComparer.Ordinal);

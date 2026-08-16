@@ -14,10 +14,17 @@ NavisCoord tiene tres piezas y una regla que las separa.
 
 **La regla: la lógica de negocio vive UNA vez.** Los pasos de coordinación
 (auditar, configurar, correr, agrupar) son servicios del add-in
-(`CoordinationWorkflow`). Los botones de la cinta y las rutas HTTP llaman a
-los mismos métodos; Python tipa, valida, llama y transforma. Dos
-implementaciones de la misma decisión derivan, y la que nadie pulsa deriva en
-silencio.
+(`CoordinationWorkflow`), y las rutas HTTP los llaman; Python tipa, valida,
+llama y transforma. Dos implementaciones de la misma decisión derivan, y la
+que nadie pulsa deriva en silencio.
+
+**La cinta ofrece un solo botón: «Puente - NavisCoord».** Llegó a tener seis,
+uno por paso, en la pestaña «Tool add-ins» — y cada uno hacía exactamente lo
+que ya hacía una herramienta MCP. Un botón que duplica una ruta es la segunda
+implementación de la regla de arriba, con la desventaja de que la prueba de
+paridad solo puede comprobar que ambos llaman al servicio, no que ambos sigan
+haciendo lo mismo cuando alguien toque uno. El botón que queda hace lo único
+que no es una ruta, porque es lo que las habilita: arrancar y parar el puente.
 
 ## Qué hace cada pieza
 
@@ -68,12 +75,15 @@ cada versión (2024=v21, 2025=v22, 2026=v23) por separado.
 | `JobManager.cs` | Máquina de estados de trabajos, progreso honesto |
 | `MutationContract.cs` | Envelope uniforme + huella + idempotencia |
 | `CoordinationWorkflow.cs` | Los cuatro pasos, como servicios |
-| `WorkflowText.cs` | Render a prosa para los diálogos de la cinta |
+| `WorkflowText.cs` | Render a prosa de los resultados de cada paso |
+| `ModelNames.cs` | Decodifica los `%XX` de ACC en los nombres de modelo |
 | `SaveHandlers.cs` | `document/save` y `document/save_as` verificados |
 | `PathPolicy.cs` | Confinamiento de rutas de salida |
 | `ProfileSchema.cs` | Validación estructural del perfil |
 | `RulePrecedence.cs` | Precedencia de reglas y operadores de búsqueda |
 | `CoordinationLogic.cs` | Niveles, series repetidas, pureza de vistas |
+| `ClashFraming.cs` | Cámara por cruce y proyección de las cajas a pantalla |
+| `VisualScope.cs` | Aislar, colorear y **devolverlo todo** tras cada captura |
 
 Los archivos **sin ninguna referencia a Autodesk** están así a propósito: son
 los que tuvieron errores, y son los que `NavisCoord.Tests` compila y prueba en

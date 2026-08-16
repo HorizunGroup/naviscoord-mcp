@@ -65,6 +65,20 @@ class ClashCluster:
         return self.clashes[0].discipline_pair if self.clashes else ("", "")
 
     @property
+    def representative(self) -> Clash | None:
+        """The clash that stands for the cluster: the deepest, hard first.
+
+        One definition, used by everything that has to pick a single member —
+        the side disciplines below and the clash that gets photographed. When
+        those two disagreed, the picture painted side A with the colour of a
+        discipline that belonged to a different clash of the same cluster, and
+        the legend under it was wrong in a way no test could see.
+        """
+        if not self.clashes:
+            return None
+        return max(self.clashes, key=lambda c: (c.penetration_m, c.is_hard))
+
+    @property
     def side_disciplines(self) -> tuple[str, str]:
         """(discipline of side A, discipline of side B), in Navisworks order.
 
@@ -72,9 +86,9 @@ class ClashCluster:
         reading a side out of it is a coin flip. The representative clash is
         the same one the scorer used, so `elements_a` and this agree.
         """
-        if not self.clashes:
+        worst = self.representative
+        if worst is None:
             return ("", "")
-        worst = max(self.clashes, key=lambda c: (c.penetration_m, c.is_hard))
         return (worst.a.discipline, worst.b.discipline)
 
     def elements_by_discipline(self) -> dict[str, list[str]]:

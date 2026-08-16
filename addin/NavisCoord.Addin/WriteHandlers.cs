@@ -336,8 +336,8 @@ namespace NavisCoord
             {
                 // Decodificar %XX de ACC: "-SEÑ-" del perfil debe matchear un
                 // árbol que dice "-SE%C3%91-".
-                var display = ConfigurePlugin.DecodeName(model.RootItem?.DisplayName ?? string.Empty);
-                var source = ConfigurePlugin.DecodeName(model.SourceFileName ?? model.FileName ?? string.Empty);
+                var display = ModelNames.Decode(model.RootItem?.DisplayName ?? string.Empty);
+                var source = ModelNames.Decode(model.SourceFileName ?? model.FileName ?? string.Empty);
                 if (variantes.Any(t =>
                         display.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0 ||
                         source.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0))
