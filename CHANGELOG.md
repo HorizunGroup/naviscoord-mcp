@@ -73,9 +73,9 @@ herramienta ni ruta existente cambió de forma — los argumentos visuales de
   respaldo. Lo que lo cerró fue añadir un contador por cada motivo de descarte:
   un `catch` que continúa sin contar convierte un fallo en un silencio.
 
-  Queda **sin confirmar en vivo** que con eso ya oculte; el arreglo no puede
-  empeorar nada, porque si la consulta al documento también se niega el
-  elemento se salta igual que antes. Ver `docs/TESTING.md`.
+  Confirmado en vivo sobre el mismo cruce: `unreadable` pasó de **140 a 0** y
+  los elementos ocultados de **0 a 136**, con los 154 hermanos repartidos sin
+  residuo entre supervivientes, duplicados y ocultados. Ver `docs/TESTING.md`.
 - La escalera de reintentos ya no gasta un render de Navisworks en aislar
   cuando el aislamiento no oculta nada. En un federado real el complemento
   reporta `hidden_items: 0` tras recorrer 20 ancestros y 3.474 hermanos, así

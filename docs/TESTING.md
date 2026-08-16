@@ -133,14 +133,18 @@ corrida.
       (2026-08-16). De `0,0 % / 0,0 %` rechazado a `1,06 % / 0,81 %` aceptado
       sobre el mismo cruce, con dos causas distintas —proyección ortográfica y
       recorte por sobreexposición— medidas por separado.
-- [ ] `hide_unrelated_geometry`: **causa encontrada y medida**; el arreglo está
-      aplicado pero **falta confirmar en vivo que ahora sí oculta**. Basta una
-      corrida de `navis_clash_image(hide_unrelated_geometry=True)` y leer
-      `visual.hidden_items`.
+- [x] `hide_unrelated_geometry`: **corregido y confirmado en vivo**
+      (2026-08-16, Navisworks Manage 2025, bathcity). El antes y el después,
+      sobre el mismo cruce:
 
-      El arreglo no puede empeorar nada: si la consulta al documento también
-      se niega, devuelve «no sé» y el elemento se salta, que es exactamente lo
-      que pasaba antes.
+      | | antes | después |
+      |---|---|---|
+      | `unreadable` | **140** | **0** |
+      | `hidden_items` | **0** | **136** |
+
+      Los 154 hermanos se reparten ahora sin residuo: 14 supervivientes,
+      4 duplicados y 136 ocultados. La imagen resultante muestra los dos
+      elementos con el contexto fuera, que es lo que el aislamiento promete.
 
       Dos hipótesis cayeron por el camino, y las tumbó la propia
       instrumentación:
