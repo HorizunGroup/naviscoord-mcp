@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<!--
+  Layout de la pestana NavisCoord.
+
+  El esquema no es negociable y no esta documentado por Autodesk; este es el
+  unico que se ha visto renderizar (medido el 2026-08-12 sobre Navisworks
+  Manage 2024-2026): el namespace por defecto es AdWindows y los botones son
+  local:NWRibbonButton de navisworks.gui.roamer. Con un RibbonButton plano, o
+  con el namespace WPF por defecto, la pestana no aparece y NO hay error: se
+  cae en silencio. Si algun dia deja de salir, sospecha primero de este archivo.
+
+  Un solo boton, a proposito. Los otros cinco (auditar, configurar, correr,
+  agrupar) duplicaban herramientas MCP que ya hacen lo mismo; el flujo se pide
+  desde el cliente. Aqui queda lo unico que el cliente no puede responderse
+  solo: si el puente esta arriba y que version esta cargada.
+
+  El Id del boton coincide con el [Command] de NavisCoordTab.cs, y el Id del
+  tab con su [RibbonTab]. Un Id que no cuadre = boton muerto.
+
+  El archivo va SUELTO junto al DLL y ademas en la subcarpeta de idioma
+  (en-US); el csproj lo copia a los dos sitios e install.ps1 los instala.
+
+  Solo ASCII: el cargador puede leerlo como ANSI y destrozar las tildes, asi
+  que los acentos van como entidades XML.
+-->
+<RibbonControl
+    x:Uid="NavisCoordTab" xmlns="clr-namespace:Autodesk.Windows;assembly=AdWindows"
+    xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:adwi="clr-namespace:Autodesk.Internal.Windows;assembly=AdWindows"
+    xmlns:system="clr-namespace:System;assembly=mscorlib"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:Autodesk.Navisworks.Gui.Roamer.AIRLook;assembly=navisworks.gui.roamer">
+
+    <RibbonTab Id="ID_TabNavisCoord" Title="NavisCoord">
+
+        <RibbonPanel x:Uid="NavisCoordPanel_Puente">
+            <RibbonPanelSource x:Uid="NavisCoordPanelSource_Puente" Title="Puente">
+                <local:NWRibbonButton x:Uid="NavisCoordBtn_Estado" Id="ID_NavisCoordEstado"
+                            Size="Large"
+                            ShowText="True"
+                            Text="Estado del puente"
+                            Orientation="Vertical"/>
+            </RibbonPanelSource>
+        </RibbonPanel>
+
+    </RibbonTab>
+
+</RibbonControl>

@@ -316,6 +316,12 @@ class Issue:
     # move stayed grey.
     discipline_a: str = ""
     discipline_b: str = ""
+    # The clash to photograph. `clash_ids[0]` is whichever member the cluster
+    # happened to collect first; `discipline_a`/`discipline_b` describe the
+    # DEEPEST one. Rendering the first and labelling it with the deepest one's
+    # trades put the wrong colour under the wrong pipe on any cluster whose
+    # members ordered differently — a caption that is confidently wrong.
+    representative_clash_id: str = ""
     # path ids grouped by the discipline of the element itself. This is the
     # only reliable answer to "which elements belong to the side that must
     # move": a cluster can hold clashes whose Navisworks A/B order differs,
@@ -373,6 +379,17 @@ class Issue:
         """The side that stays put. Empty when it cannot be identified."""
         return self.elements_of(self.immovable_side)
 
+    def image_clash_id(self) -> str:
+        """The clash to photograph for this issue.
+
+        Falls back to the first member for an Issue built before the
+        representative was recorded, so an older cached analysis still gets a
+        picture instead of no picture.
+        """
+        if self.representative_clash_id:
+            return self.representative_clash_id
+        return self.clash_ids[0] if self.clash_ids else ""
+
     def to_json(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "issue_id": self.issue_id,
@@ -383,6 +400,7 @@ class Issue:
             # from `discipline_pair` and must not try.
             "side_a_discipline": self.discipline_a,
             "side_b_discipline": self.discipline_b,
+            "representative_clash": self.image_clash_id(),
             "clash_count": self.clash_count,
             "severity": round(self.severity, 1),
             "priority": self.priority,

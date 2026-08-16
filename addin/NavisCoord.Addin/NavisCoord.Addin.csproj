@@ -20,7 +20,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>0.2.3</Version>
+    <Version>0.3.0</Version>
     <Company>NavisCoord</Company>
     <Product>NavisCoord Bridge</Product>
     <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
@@ -106,5 +106,49 @@
   <ItemGroup>
     <Reference Include="System.Net.Http" />
   </ItemGroup>
+
+  <!--
+    El layout de la cinta viaja SUELTO junto al DLL, no embebido: Navisworks lo
+    lee del disco por el nombre que declara [RibbonLayout], antes de tocar el
+    ensamblado.
+
+    Y va DOS veces. El cargador busca primero la subcarpeta del idioma de la
+    interfaz (en-US) y solo entonces la raíz del plugin; con una sola copia, la
+    pestaña aparece o no según en qué idioma esté instalado Navisworks — un
+    fallo que no se reproduce en la máquina de quien lo compiló. Copiar a los
+    dos sitios cuesta nada y quita esa variable del medio.
+  -->
+  <Target Name="CopyRibbonLayout" AfterTargets="Build">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)NavisCoordRibbon.xaml"
+          DestinationFolder="$(OutDir)" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)NavisCoordRibbon.xaml"
+          DestinationFolder="$(OutDir)en-US" />
+  </Target>
+
+  <!--
+    Los iconos van a la RAÍZ de la salida, sin la carpeta Images: los [Command]
+    los nombran pelados ("nc0_32.png") y Navisworks los resuelve contra la
+    carpeta del plugin. En Images\ están solo como fuente ordenada del repo.
+    Un icono que no se encuentra no da error: el botón sale en blanco.
+  -->
+  <ItemGroup>
+    <RibbonIcon Include="$(MSBuildThisFileDirectory)Images\*.png" />
+  </ItemGroup>
+
+  <!--
+    Barre los iconos que hubiera antes de copiar los actuales. El directorio de
+    salida es incremental: un icono que deja de existir en Images\ se queda ahí
+    de una compilación anterior, install.ps1 copia fielmente lo que encuentra y
+    el complemento acaba instalando iconos de botones que ya no existen. El
+    ItemGroup va DENTRO del Target para que el comodín se evalúe al ejecutarlo
+    y no al cargar el proyecto, cuando el directorio aún no se ha llenado.
+  -->
+  <Target Name="CopyRibbonIcons" AfterTargets="Build">
+    <ItemGroup>
+      <IconoViejo Include="$(OutDir)nc*.png" />
+    </ItemGroup>
+    <Delete Files="@(IconoViejo)" />
+    <Copy SourceFiles="@(RibbonIcon)" DestinationFolder="$(OutDir)" />
+  </Target>
 
 </Project>

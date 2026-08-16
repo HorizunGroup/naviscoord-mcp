@@ -5,6 +5,101 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-16
+
+Menor, no parche: `navis_clash_image` es una herramienta nueva. Ninguna
+herramienta ni ruta existente cambió de forma — los argumentos visuales de
+`navis_pdf_report` son todos opcionales y una llamada anterior sigue valiendo.
+
+### Added
+
+- **Imágenes de interferencia verificadas.** La cámara de cada cruce se calcula
+  ajustando una caja —el volumen de interferencia más la parte de cada elemento
+  que lo rodea— en vez de multiplicar un número por un factor de zoom, y toda
+  esa aritmética vive en `ClashFraming.cs`, sin referencias a Autodesk, con
+  pruebas en un runner sin licencia. Tres modos: `closeup`, `context` y `plan`.
+- Control de calidad por imagen en dos vías que fallan distinto: el complemento
+  proyecta las ocho esquinas de cada elemento por la cámara **que aplicó** y
+  dice si quedaron en cuadro; el servidor cuenta los píxeles de los colores que
+  pintó, que es lo único que detecta un muro delante del cruce. La que no pasa
+  se repite más abierta o aislando, y si aun así no sirve se descarta contándolo.
+- `navis_clash_image`: una sola interferencia con sus métricas completas, para
+  afinar el encuadre antes de gastar veinticinco renders en un PDF.
+- Opciones visuales en `navis_pdf_report` y `navis_clash_image`: `camera_mode`,
+  `margin_percent`, `min_distance`, `max_distance`, `image_width`,
+  `image_height`, `background_color`, `hide_unrelated_geometry`,
+  `colorize_by_discipline`, `show_clash_marker`, `show_level`, `show_grid`,
+  `render_quality`. Todas opcionales; sin ninguna, el informe sale como antes
+  pero encuadrado. Cada imagen devuelve los parámetros **efectivos**.
+- El informe distingue imágenes pedidas, generadas, fallidas y **descartadas
+  por calidad**, con el motivo de cada descarte; antes las dos últimas
+  compartían un número y mandaban a reiniciar Navisworks por un muro.
+- `VisualScope` captura y restaura cámara, selección, materiales, visibilidad y
+  rejilla alrededor de cada captura, y la respuesta trae el flag de documento
+  modificado antes y después. La visibilidad se restaura **exacta**: solo se
+  ocultan elementos que estaban visibles y se muestran exactamente esos.
+- Nivel y eje resueltos desde la rejilla del modelo con el mismo formateador que
+  usa la barra de estado, porque un `ClashResult` no lleva ninguno de los dos.
+- [docs/IMAGENES.md](docs/IMAGENES.md), incluidos los límites reales del API de
+  Navisworks 2026 comprobados por reflexión: el fondo se escribe y no se lee, y
+  el marcador de choque no se puede provocar sin selección en Clash Detective.
+
+### Changed
+
+- La cinta ofrece **un solo botón**, «Puente - NavisCoord», que arranca y para
+  el puente. Los otros cinco —Configurar coordinación y los cuatro pasos
+  numerados— hacían exactamente lo que ya hacen `navis_configure`,
+  `navis_audit_models`, `navis_run` y `navis_group_levels`, y llenaban la
+  pestaña «Tool add-ins» de entradas que empezaban todas por la misma palabra.
+  `CoordinationWorkflow` no cambia: sigue siendo el servicio que llaman las
+  rutas. `ConfigurePlugin.DecodeName` no era UI y se movió a `ModelNames`,
+  donde el compilador ya no la deja esconderse en un archivo de botones.
+
+### Fixed
+
+- El modo `plan` mira hacia abajo en **perspectiva**, no en ortográfica, y no
+  respeta `min_distance`. El volumen ortográfico es una caja: sobre un plenum
+  metía el forjado y todo lo de arriba delante del cruce, con el velo del
+  contexto multiplicándose capa a capa hasta dejar los dos elementos en **0,0 %
+  del cuadro a cualquier altura de cámara** sobre un federado real. En
+  perspectiva lo que queda detrás de la lente no se dibuja.
+- **`hide_unrelated_geometry`: causa encontrada y atacada.** No ocultaba nada
+  en ningún federado, y la causa no era ninguna de las dos que parecían obvias:
+  `ModelItem.IsHidden` **lanza excepción** sobre la mayoría de lo que devuelve
+  `ancestor.Children` —140 de 154 hermanos en la medición—, así que el `catch`
+  los saltaba en silencio y el aislamiento informaba, con toda razón y sin
+  utilidad, de que no había encontrado nada que ocultar. Ahora se pregunta al
+  documento (`Models.IsHidden`), que sí los resuelve, con la propiedad como
+  respaldo. Lo que lo cerró fue añadir un contador por cada motivo de descarte:
+  un `catch` que continúa sin contar convierte un fallo en un silencio.
+
+  Queda **sin confirmar en vivo** que con eso ya oculte; el arreglo no puede
+  empeorar nada, porque si la consulta al documento también se niega el
+  elemento se salta igual que antes. Ver `docs/TESTING.md`.
+- La escalera de reintentos ya no gasta un render de Navisworks en aislar
+  cuando el aislamiento no oculta nada. En un federado real el complemento
+  reporta `hidden_items: 0` tras recorrer 20 ancestros y 3.474 hermanos, así
+  que ese peldaño devolvía la misma imagen por el mismo precio; ahora se
+  descarta y se abre el encuadre. **Por qué no oculta nada sigue abierto**, con
+  la medición y un contador por motivo en `docs/TESTING.md`.
+- `visual` y `notes` —lo que el complemento reporta haber hecho y qué le salió
+  mal— dejaron de perderse en la capa Python. Llegaban al servidor y no al
+  llamante, así que una investigación en vivo leía `null` mientras la respuesta
+  del complemento traía la explicación.
+- El informe **avisa** cuando deja el documento marcado como modificado. Medido
+  sobre un federado real abierto limpio: `clash/export` no lo ensucia, pero una
+  imagen con color, aislamiento, rejilla y fondo desactivados —de modo que
+  mover la cámara es la única mutación— sí. Navisworks renderiza la vista
+  ACTUAL y no expone cámara fuera de pantalla, así que producir la imagen exige
+  moverla y no hay forma de evitarlo. No se guarda nada, la huella no cambia y
+  la cámara vuelve a su sitio; el aviso lo dice para que nadie se sorprenda con
+  el diálogo de guardar al cerrar.
+- La foto de un problema es la del cruce **representativo** —el de mayor
+  penetración—, que es el mismo del que salen `discipline_a`/`discipline_b`.
+  Antes se fotografiaba `clash_ids[0]` y se etiquetaba con las disciplinas de
+  otro cruce del mismo clúster: la leyenda quedaba mal en cualquier clúster
+  cuyos miembros vinieran en otro orden.
+
 ## [0.2.3] — 2026-08-15
 
 ### Added

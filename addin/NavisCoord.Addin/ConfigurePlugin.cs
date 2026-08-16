@@ -7,61 +7,28 @@ using Autodesk.Navisworks.Api.Plugins;
 namespace NavisCoord
 {
     /// <summary>
-    /// "Configurar coordinación" (Tool add-ins): build the search sets and the
-    /// clash matrix, then apply any residual rules.
+    /// Diálogos y localización del perfil, compartidos por lo que necesite
+    /// hablarle a la persona que está delante.
     /// </summary>
     /// <remarks>
-    /// The plugin owns three things and nothing else: finding the profile,
-    /// calling <see cref="CoordinationWorkflow"/>, and showing what came back.
-    /// The work itself lives in the workflow service so the HTTP routes run
-    /// exactly the same code — a button and a tool call cannot disagree about
-    /// what a step does if there is only one of it.
+    /// Fue el botón "Configurar coordinación" hasta que la cinta se quedó solo
+    /// con el estado del puente: el paso duplicaba <c>navis_configure</c>, que
+    /// hace lo mismo desde el cliente MCP. Lo que ejecutaba vive intacto en
+    /// <see cref="CoordinationWorkflow"/>, al que llaman las rutas HTTP; de
+    /// esta clase sobreviven los helpers, que es lo que de verdad usaban los
+    /// demás.
     ///
-    /// Policy lives in a JSON profile the coordinator edits, not in this
-    /// assembly: discipline codes, search sets, clash pairs and ignore rules
-    /// are all read from it, so adapting NavisCoord to a project is editing
-    /// one file rather than recompiling. See <c>docs/PROFILES.md</c>.
+    /// La política vive en un perfil JSON que edita el coordinador, no en este
+    /// ensamblado: códigos de disciplina, search sets, pares de clash y reglas
+    /// de exclusión se leen de ahí, así que adaptar NavisCoord a un proyecto es
+    /// editar un archivo y no recompilar. Ver <c>docs/PROFILES.md</c>.
     ///
-    /// Unlike the bridge, this code DOES raise dialogs: it only ever runs
-    /// because somebody just clicked, so there is a human present to read them
-    /// and no headless flow a modal box could hang.
+    /// A diferencia del puente, este código SÍ levanta diálogos: solo corre
+    /// porque alguien acaba de hacer clic, así que hay un humano presente para
+    /// leerlos y no hay flujo desatendido que un modal pueda colgar.
     /// </remarks>
-    [Plugin("NavisCoord.Configure", "NVCD",
-        DisplayName = "Configurar coordinación",
-        ToolTip = "Crea los search sets por disciplina y la matriz de clash definidos en el perfil")]
-    public sealed class ConfigurePlugin : AddInPlugin
+    public sealed class ConfigurePlugin
     {
-        public override int Execute(params string[] parameters)
-        {
-            try
-            {
-                var doc = Autodesk.Navisworks.Api.Application.ActiveDocument;
-                if (doc == null || doc.IsClear)
-                {
-                    return Fail("Abre primero el archivo de coordinación con los modelos anexados.");
-                }
-
-                // Through the same store the MCP tools use, so the button and
-                // navis_load_profile cannot end up applying different criteria.
-                var profile = ProfileStore.Active();
-                if (profile == null) return Fail(ProfileLocator.NotFoundMessage());
-
-                var configured = CoordinationWorkflow.Configure(doc, profile);
-                var rules = CoordinationWorkflow.ApplyRules(doc, profile);
-
-                var message = "Configuración aplicada desde:\n" + Origin(profile) +
-                              "\n\n" + WorkflowText.Configure(configured) +
-                              "\nReglas: " + WorkflowText.Rules(rules);
-                BridgeHost.Log(message.Replace("\n", " | "));
-                Inform(message);
-                return 0;
-            }
-            catch (Exception ex)
-            {
-                return Fail("Configurar coordinación falló: " + ex.Message);
-            }
-        }
-
         /// <summary>
         /// Where the profile came from, in one line a coordinator can read.
         /// </summary>

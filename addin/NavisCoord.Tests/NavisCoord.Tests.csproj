@@ -39,6 +39,7 @@
     <Compile Include="Stubs.cs" />
     <Compile Include="..\NavisCoord.Addin\Json.cs" Link="Json.cs" />
     <Compile Include="..\NavisCoord.Addin\RulePrecedence.cs" Link="RulePrecedence.cs" />
+    <Compile Include="..\NavisCoord.Addin\ClashFraming.cs" Link="ClashFraming.cs" />
     <Compile Include="..\NavisCoord.Addin\CoordinationLogic.cs" Link="CoordinationLogic.cs" />
     <Compile Include="..\NavisCoord.Addin\MutationContract.cs" Link="MutationContract.cs" />
     <Compile Include="..\NavisCoord.Addin\JobManager.cs" Link="JobManager.cs" />
@@ -54,7 +55,9 @@
     <Compile Include="..\NavisCoord.Addin\Capabilities.cs" Link="Capabilities.cs" />
     <Compile Include="..\NavisCoord.Addin\UiDispatcher.cs" Link="UiDispatcher.cs" />
     <Compile Include="..\NavisCoord.Addin\DisciplineVocabulary.cs" Link="DisciplineVocabulary.cs" />
+    <Compile Include="..\NavisCoord.Addin\ModelNames.cs" Link="ModelNames.cs" />
     <Compile Include="DispatcherTests.cs" />
+    <Compile Include="FramingTests.cs" />
     <Compile Include="VocabularyTests.cs" />
   </ItemGroup>
 

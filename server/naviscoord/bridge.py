@@ -451,12 +451,29 @@ class Bridge:
         )
 
     def clash_image(
-        self, clash_guid: str, width: int = 900, height: int = 600, style: str = "ScenePlusOverlay"
+        self,
+        clash_guid: str,
+        options: dict[str, Any] | None = None,
+        width: int = 900,
+        height: int = 600,
+        style: str = "ScenePlusOverlay",
     ) -> dict[str, Any]:
-        return self.call(
-            "clash/image",
-            {"clash_guid": clash_guid, "width": width, "height": height, "style": style},
-        )
+        """Renders one clash. `options` carries the framing and visual schema.
+
+        The three positional arguments stay because they are what the first
+        version took, and a saved call that passes them must keep working.
+        `options` is merged over them, so a caller that supplies both gets the
+        richer one — which is the only ordering that lets the defaults move
+        without breaking an old call.
+        """
+        payload: dict[str, Any] = {
+            "clash_guid": clash_guid,
+            "width": width,
+            "height": height,
+            "style": style,
+        }
+        payload.update(options or {})
+        return self.call("clash/image", payload)
 
     def build_sets(self, disciplines: list[dict[str, Any]], prefix: str, dry_run: bool) -> dict[str, Any]:
         return self.call(

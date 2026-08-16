@@ -65,6 +65,7 @@ EXPECTED_TOOLS = {
     "navis_work_plan",
     "navis_coordination_matrix",
     "navis_pdf_report",
+    "navis_clash_image",
     # write-back
     "navis_apply_groups",
     "navis_set_status",
@@ -168,6 +169,23 @@ def test_parameters_survive_the_guard_decorator(tools):
     """A tool with arguments must still declare them after wrapping."""
     analyze = next(t for t in tools if t.name == "navis_analyze")
     assert set(_schema(analyze).get("properties") or {}) == {"tests", "limit", "top"}
+
+
+def test_the_two_imaging_tools_take_the_same_visual_options(tools):
+    """A knob on the report and not on the previewer is a trap.
+
+    `navis_clash_image` exists to tune the framing before spending twenty-five
+    renders on a PDF. If it cannot express what the PDF will do, the preview
+    proves nothing — and that is exactly how `keep_rejected` came to be
+    accepted by one and rejected by the other, mid-investigation.
+    """
+    by_name = {t.name: t for t in tools}
+    report = set(_schema(by_name["navis_pdf_report"]).get("properties") or {})
+    single = set(_schema(by_name["navis_clash_image"]).get("properties") or {})
+
+    visual = report - {"path", "max_issues", "with_images", "overwrite"}
+    missing = sorted(visual - single)
+    assert not missing, f"navis_clash_image no acepta: {missing}"
 
 
 def test_every_tool_carries_a_description(tools):

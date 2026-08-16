@@ -12,9 +12,9 @@ caller sets how many issues get pages.
 
 from __future__ import annotations
 
-import base64
 import io
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -36,6 +36,7 @@ from reportlab.platypus import (
 )
 
 from .analysis.pipeline import AnalysisResult
+from .imaging import Capture, to_hex
 from .matrix import CoordinationMatrix, build_matrix
 from .model import Issue
 from .paths import OutputPolicy
@@ -93,6 +94,7 @@ def build_report(
     document_title: str = "",
     max_issues: int = 25,
     image_fetcher: Callable[[str], bytes | None] | None = None,
+    capture_fetcher: Callable[[Issue], Capture] | None = None,
     overwrite: bool = False,
     output_policy: OutputPolicy | None = None,
 ) -> dict[str, Any]:
@@ -101,6 +103,14 @@ def build_report(
     The destination goes through the output policy before a byte is written:
     the caller of this tool is a model holding a path string, and a report
     writer that honours any path is an arbitrary-file-write primitive.
+
+    Two ways to supply pictures, and the difference is the whole point of this
+    change. `image_fetcher` returns bytes for a clash id and is what the first
+    version took; it still works and its images are embedded unexamined.
+    `capture_fetcher` returns a `Capture`, which carries the frame that was
+    used, the pixels that came back and the verdict on both — so a picture that
+    does not actually show the clash can be counted and explained instead of
+    printed.
     """
     authorised = (output_policy or default_policy()).resolve_file(path, overwrite=overwrite)
     target = authorised.path
@@ -115,16 +125,16 @@ def build_report(
     # destination would leave a half-written PDF there if a render failed
     # halfway, and would lose a race against a concurrent writer.
     with authorised.staged_write() as staging:
-        plan, images_ok, images_failed = _compose(
+        plan, tally = _compose(
             staging, result, profile, matrix, issues, document_title,
-            image_fetcher, st)
+            image_fetcher, capture_fetcher, st)
 
     # Coverage means what the report resolves, not how many pages it has.
     # Counting the detail pages reported "6 of 1.375 (0%)" for a document
     # whose plan accounts for two thirds of the project — technically true
     # and completely misleading about what the reader is holding.
     planned = plan.covered_issues
-    return {
+    payload = {
         "path": str(target),
         "allowed_root": str(authorised.root),
         "overwrote_existing": authorised.existed,
@@ -133,14 +143,95 @@ def build_report(
         "decisions_total": plan.total_issues,
         "tail_not_planned": plan.tail_issues,
         "issue_pages": len(issues),
-        "images_embedded": images_ok,
-        "images_failed": images_failed,
+        "images_embedded": tally.embedded,
+        "images_failed": tally.failed,
         "coverage": (
             f"El plan cubre {planned} de {plan.total_issues} decisiones "
             f"({planned / max(plan.total_issues, 1):.0%}) en {len(plan.packages)} paquetes; "
             f"{len(issues)} llevan página de detalle con imagen."
         ),
     }
+    payload["images"] = tally.to_json()
+    return payload
+
+
+@dataclass
+class ImageTally:
+    """The honest account of what happened to every requested picture.
+
+    Four numbers, not one, because they call for different actions. A render
+    that failed is a bridge or a licence problem; a render that was rejected is
+    a modelling or a framing problem, and reporting both as "images_failed"
+    sent people to restart Navisworks over a wall standing in front of a pipe.
+    """
+
+    requested: int = 0
+    generated: int = 0
+    embedded: int = 0
+    failed: int = 0
+    rejected: int = 0
+    reasons: dict[str, int] = field(default_factory=dict)
+    per_issue: list[dict[str, Any]] = field(default_factory=list)
+
+    def record(self, issue: Issue, capture: Capture | None, embedded: bool) -> None:
+        self.requested += 1
+        if capture is None:
+            self.failed += 1
+            return
+
+        if capture.png is not None:
+            self.generated += 1
+        else:
+            self.failed += 1
+        if embedded:
+            self.embedded += 1
+        elif capture.png is not None:
+            self.rejected += 1
+
+        for reason in capture.verdict.reasons:
+            self.reasons[reason] = self.reasons.get(reason, 0) + 1
+
+        entry = capture.to_json()
+        entry["issue_id"] = issue.issue_id
+        entry["embedded"] = embedded
+        self.per_issue.append(entry)
+
+    def to_json(self) -> dict[str, Any]:
+        payload = {
+            "requested": self.requested,
+            "generated": self.generated,
+            "embedded": self.embedded,
+            "failed": self.failed,
+            "rejected_for_quality": self.rejected,
+            "rejection_reasons": dict(sorted(self.reasons.items())),
+            "per_issue": self.per_issue,
+        }
+        warning = self.document_warning()
+        if warning:
+            payload["document_note"] = warning
+        return payload
+
+    def document_warning(self) -> str:
+        """Said out loud when a clean document ends up marked as modified.
+
+        Not a footnote in a per-image field: whoever ran the report is the
+        person Navisworks will ask about saving when they close it, and they
+        should hear it from here rather than be surprised an hour later.
+        Measured, and unavoidable — see docs/IMAGENES.md.
+        """
+        dirtied = any(
+            (entry.get("document") or {}).get("modified_before") is False
+            and (entry.get("document") or {}).get("modified_after") is True
+            for entry in self.per_issue
+        )
+        if not dirtied:
+            return ""
+        return (
+            "El documento quedó marcado como modificado: renderizar exige mover "
+            "la cámara y Navisworks cuenta eso como un cambio. No se guardó nada, "
+            "la huella del documento no cambió y la cámara volvió a su sitio; "
+            "puedes cerrar sin guardar."
+        )
 
 
 def _compose(
@@ -151,8 +242,9 @@ def _compose(
     issues: list[Issue],
     document_title: str,
     image_fetcher: Callable[[str], bytes | None] | None,
+    capture_fetcher: Callable[[Issue], Capture] | None,
     st,
-) -> tuple[Plan, int, int]:
+) -> tuple[Plan, ImageTally]:
     """Builds the PDF at `target`, a temp file, and reports what went in."""
     doc = SimpleDocTemplate(
         str(target),
@@ -181,26 +273,38 @@ def _compose(
     story.extend(_matrix_section(matrix, profile, st))
     story.append(PageBreak())
 
-    images_ok = 0
-    images_failed = 0
+    tally = ImageTally()
     for index, issue in enumerate(issues):
-        image = None
-        if image_fetcher and issue.clash_ids:
+        image: bytes | None = None
+        capture: Capture | None = None
+
+        if capture_fetcher and issue.clash_ids:
             try:
-                image = image_fetcher(issue.clash_ids[0])
+                capture = capture_fetcher(issue)
+            except Exception as exc:
+                capture = Capture(
+                    clash_guid=issue.image_clash_id(), error=f"{type(exc).__name__}: {exc}"
+                )
+            image = capture.png if capture.accepted else None
+            tally.record(issue, capture, embedded=image is not None)
+        elif image_fetcher and issue.clash_ids:
+            try:
+                image = image_fetcher(issue.image_clash_id())
             except Exception:
                 image = None
+            tally.requested += 1
             if image:
-                images_ok += 1
+                tally.generated += 1
+                tally.embedded += 1
             else:
-                images_failed += 1
+                tally.failed += 1
 
-        story.extend(_issue_page(issue, profile, image, st))
+        story.extend(_issue_page(issue, profile, image, capture, st))
         if index < len(issues) - 1:
             story.append(PageBreak())
 
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
-    return plan, images_ok, images_failed
+    return plan, tally
 
 
 # ------------------------------------------------------------------ cover
@@ -443,7 +547,13 @@ def _matrix_section(matrix: CoordinationMatrix, profile: Profile, st) -> list[An
 # ------------------------------------------------------------ issue page
 
 
-def _issue_page(issue: Issue, profile: Profile, image: bytes | None, st) -> list[Any]:
+def _issue_page(
+    issue: Issue,
+    profile: Profile,
+    image: bytes | None,
+    capture: Capture | None,
+    st,
+) -> list[Any]:
     colour = PRIORITY_COLORS.get(issue.priority, colors.black)
     pair = " × ".join(profile.label(d) for d in issue.discipline_pair if d)
 
@@ -456,21 +566,36 @@ def _issue_page(issue: Issue, profile: Profile, image: bytes | None, st) -> list
                 "#" + colour.hexval()[2:],
             )
             + "  ·  "
-            + escape_markup(issue.issue_id),
+            + escape_markup(issue.issue_id)
+            + "  ·  "
+            + escape_markup(_cell(issue.level) or "sin nivel")
+            + "  ·  severidad "
+            + f"{issue.severity:.0f}",
             st["subtitle"],
         ),
         Paragraph(escape_markup(pair), st["title"]),
     ]
 
+    # The grid reference the addin resolved from the model's own grid system.
+    # A clash result carries no level and no grid of its own, so on a
+    # federation whose elements publish neither this is the only answer to
+    # "where is it" that is not a triple of coordinates.
+    located = _cell((capture.location or {}).get("grid_reference", "")) if capture else ""
+
     facts = [
         ["Ubicación", _cell(issue.level) or f"z = {issue.centroid[2]:.1f} m"],
+    ]
+    if located:
+        facts.append(["Eje / nivel del modelo", located])
+    facts.extend([
         ["Coordenadas", f"X {issue.centroid[0]:.1f}   Y {issue.centroid[1]:.1f}   Z {issue.centroid[2]:.1f}"],
+        ["Disciplinas", _cell(_side_labels(issue, profile))],
         ["Choques agrupados", str(issue.clash_count)],
         ["Penetración máxima", f"{issue.max_penetration_m * 1000:.0f} mm"],
         ["Quién mueve", _cell(profile.label(issue.responsible))],
         ["No se toca", _cell(profile.label(issue.immovable_side))],
         ["Severidad", f"{issue.severity:.0f} / 100"],
-    ]
+    ])
     if issue.folds:
         facts.append(["Cierra además", f"{issue.folds} problemas con la misma causa"])
     if issue.root_cause:
@@ -490,15 +615,23 @@ def _issue_page(issue: Issue, profile: Profile, image: bytes | None, st) -> list
     )
 
     picture: Any = Paragraph(
-        italic("Sin imagen: Navisworks no pudo renderizar este cruce."), st["small"]
+        italic(_no_image_reason(capture)), st["small"]
     )
     if image:
         try:
             picture = Image(io.BytesIO(image), width=140 * mm, height=93 * mm, kind="proportional")
         except Exception:
-            pass
+            picture = Paragraph(
+                italic("Sin imagen: el PNG recibido no se pudo insertar."), st["small"]
+            )
 
-    layout = Table([[fact_table, picture]], colWidths=[122 * mm, 145 * mm])
+    right: list[Any] = [picture]
+    caption = _image_caption(issue, profile, capture)
+    if caption:
+        right.append(Spacer(1, 1.5 * mm))
+        right.append(Paragraph(caption, st["small"]))
+
+    layout = Table([[fact_table, right]], colWidths=[122 * mm, 145 * mm])
     layout.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     flow.append(Spacer(1, 3 * mm))
     flow.append(layout)
@@ -513,6 +646,86 @@ def _issue_page(issue: Issue, profile: Profile, image: bytes | None, st) -> list
     flow.append(Paragraph(escape_markup(issue.suggested_action), st["action"]))
 
     return [KeepTogether(flow)]
+
+
+# -------------------------------------------------------- image chrome
+
+
+#: Why a picture is missing, in words a coordinator can act on. The codes come
+#: from the quality gate; printing them raw would put "side_b_not_visible" in
+#: front of a client.
+_REJECTION_TEXT = {
+    "side_a_out_of_frame": "uno de los elementos quedaba fuera del encuadre",
+    "side_b_out_of_frame": "uno de los elementos quedaba fuera del encuadre",
+    "clash_out_of_frame": "el volumen de interferencia no entraba en el encuadre",
+    "clash_not_contained": "el volumen de interferencia quedaba cortado por el borde",
+    "side_a_too_small": "uno de los elementos salía demasiado pequeño para leerse",
+    "side_b_too_small": "uno de los elementos salía demasiado pequeño para leerse",
+    "side_a_not_visible": "otra geometría tapaba uno de los elementos",
+    "side_b_not_visible": "otra geometría tapaba uno de los elementos",
+    "image_blank": "la vista salía vacía",
+    "image_unreadable": "Navisworks devolvió una imagen ilegible",
+    "render_failed": "Navisworks no pudo renderizar este cruce",
+    "bridge_error": "no hubo respuesta del complemento de Navisworks",
+    "not_attempted": "no se pidió imagen para este problema",
+}
+
+
+def _no_image_reason(capture: Capture | None) -> str:
+    """The sentence that goes where the picture would have been.
+
+    A blank space reads as "the tool forgot". Naming the reason turns a hole
+    into a finding: "otra geometría tapaba uno de los elementos" is something a
+    modeller can go and look at.
+    """
+    if capture is None:
+        return "Sin imagen: Navisworks no pudo renderizar este cruce."
+
+    reasons = capture.verdict.reasons
+    if not reasons:
+        return "Sin imagen: no se solicitó para este problema."
+
+    seen: list[str] = []
+    for reason in reasons:
+        text = _REJECTION_TEXT.get(reason, reason)
+        if text not in seen:
+            seen.append(text)
+    detail = "; ".join(seen)
+    attempts = len(capture.attempts)
+    tail = f" Se intentó {attempts} vez." if attempts == 1 else f" Se intentaron {attempts} encuadres."
+    return f"Sin imagen: {detail}.{tail}"
+
+
+def _image_caption(issue: Issue, profile: Profile, capture: Capture | None) -> str:
+    """The legend under the picture: which colour is which trade.
+
+    Without it a coloured render is decoration. The colours are read back from
+    the capture — the ones the addin reported APPLYING, not the ones that were
+    requested — so the legend cannot describe a palette the picture does not use.
+    """
+    if capture is None or capture.png is None:
+        return ""
+
+    parts = [
+        coloured("■", to_hex(capture.colour_a))
+        + " "
+        + escape_markup(profile.label(issue.discipline_a) or "lado A"),
+        coloured("■", to_hex(capture.colour_b))
+        + " "
+        + escape_markup(profile.label(issue.discipline_b) or "lado B"),
+    ]
+    mode = (capture.options.camera_mode if capture.options else "") or ""
+    if mode:
+        parts.append(escape_markup({"closeup": "primer plano", "context": "contexto",
+                                    "plan": "planta"}.get(mode, mode)))
+    return "  ·  ".join(parts)
+
+
+def _side_labels(issue: Issue, profile: Profile) -> str:
+    """Side A and side B by name, in Navisworks order rather than sorted."""
+    a = profile.label(issue.discipline_a) or "—"
+    b = profile.label(issue.discipline_b) or "—"
+    return f"A: {a}   ·   B: {b}"
 
 
 # ------------------------------------------------------------ escaping
@@ -565,12 +778,9 @@ def _footer(canvas, doc) -> None:
     canvas.restoreState()
 
 
-def decode_image(payload: dict[str, Any]) -> bytes | None:
-    """Turns an addin image response into PNG bytes."""
-    raw = payload.get("base64")
-    if not raw:
-        return None
-    try:
-        return base64.b64decode(raw)
-    except Exception:
-        return None
+# Re-exported: `decode_image` used to live here, and callers import it from
+# this module. It belongs beside the rest of the image handling now, but the
+# name stays reachable where it has always been.
+from .imaging import decode_image  # noqa: E402  (re-export, kept at the tail)
+
+__all__ = ["ImageTally", "build_report", "decode_image"]

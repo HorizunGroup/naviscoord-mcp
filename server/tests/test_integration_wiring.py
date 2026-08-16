@@ -331,10 +331,53 @@ class TestCodexManifest:
 class TestParity:
     """The ribbon and the routes must call the same service, not two copies."""
 
-    def test_buttons_delegate_to_the_workflow_service(self) -> None:
-        buttons = read(ADDIN / "WorkflowButtons.cs")
-        for step in ("AuditModels", "Configure", "RunAll", "GroupByLevel", "ApplyRules"):
-            assert f"CoordinationWorkflow.{step}" in buttons, step
+    def test_the_ribbon_does_not_run_the_workflow(self) -> None:
+        """La cinta dejó de ser un segundo camino: ahora no lleva a ninguno.
+
+        Este test comprobaba que los botones delegaran en el servicio en vez de
+        traer su propia copia. Los cinco botones salieron —cada uno duplicaba
+        una herramienta MCP que hacía lo mismo— y con ellos la pregunta: si la
+        pestaña no ejecuta el flujo, no hay dos caminos que mantener a la par.
+
+        Lo que se vigila ahora es que no vuelvan por la puerta de atrás. La
+        pestaña puede consultar el puente; en el momento en que toque
+        CoordinationWorkflow, vuelve a haber dos rutas hacia el mismo trabajo.
+        """
+        tab = read(ADDIN / "NavisCoordTab.cs")
+        assert "CoordinationWorkflow." not in tab, (
+            "la pestaña volvió a ejecutar el flujo; eso vive en las rutas HTTP"
+        )
+
+    def test_nothing_of_ours_lands_in_tool_add_ins(self) -> None:
+        """Este complemento no pone NADA en la pestaña «Tool add-ins».
+
+        Esa pestaña no se puede diseñar ni borrar: Navisworks la crea sola para
+        alojar cualquier `AddInPlugin`, y desaparece cuando no queda ninguno.
+        Llegó a tener seis entradas nuestras seguidas, todas empezando por la
+        misma palabra y cada una duplicando una herramienta MCP. Lo nuestro
+        vive en la pestaña propia; el `AutoStart` es `EventWatcherPlugin` y no
+        se muestra.
+
+        Se compara la CLASE BASE, no el texto del archivo: buscar «AddInPlugin»
+        en el fuente también encuentra el AutoStart y hace fallar el test por
+        un botón que no existe.
+        """
+        buttons = []
+        for path in ADDIN.glob("*.cs"):
+            for attribute, base in re.findall(
+                r"\[Plugin\((.*?)\)\]\s*public sealed class \w+\s*:\s*(\w+)",
+                read(path),
+                re.DOTALL,
+            ):
+                if base != "AddInPlugin":
+                    continue
+                shown = re.search(r'DisplayName\s*=\s*"([^"]+)"', attribute)
+                buttons.append(shown.group(1) if shown else "(sin nombre)")
+
+        assert buttons == [], (
+            f"vuelven a aparecer botones en «Tool add-ins»: {buttons}. "
+            "Lo que este complemento ofrece va en su propia pestaña."
+        )
 
     def test_routes_delegate_to_the_same_service(self) -> None:
         handlers = read(ADDIN / "WorkflowHandlers.cs")
@@ -399,7 +442,7 @@ class TestParity:
         Their old job was to compute AND format, which is why the MCP server
         could not reuse a single step.
         """
-        for name in ("WorkflowButtons.cs", "ConfigurePlugin.cs"):
+        for name in ("NavisCoordTab.cs", "ConfigurePlugin.cs"):
             source = read(ADDIN / name)
             for banned in ("TestsRunAllTests", "TestsAddCopy", "TestsMove",
                            "TestsEditDisplayName", "new ClashTest", "SelectionSets.AddCopy"):

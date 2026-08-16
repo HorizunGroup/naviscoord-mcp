@@ -26,6 +26,7 @@ claude plugin validate .                     # manifiestos, contra el validador 
 | `test_targeting.py` | Sesiones, targeting, estado por documento, capacidades |
 | `test_packaging.py` | Launcher degradado, runtime, manifiestos, versiones |
 | `test_mcp_surface.py` | Inventario de herramientas y sus esquemas |
+| `test_imaging.py` | Opciones de imagen, control de calidad por píxeles, escalera de reintentos, recuento del PDF |
 
 ### C#
 
@@ -37,7 +38,16 @@ el comando y un exit distinto de cero es la señal.
 Cubre precedencia de reglas, operadores de búsqueda, nombres de nivel, series
 repetidas, pureza de vistas, envelope de mutación, idempotencia, máquina de
 estados de trabajos, política de rutas, formatos de guardado, esquema de
-perfil, registro de sesiones y capacidades.
+perfil, registro de sesiones, capacidades y **el encuadre de las imágenes de
+interferencia** (`FramingTests.cs`).
+
+El encuadre está ahí y no en Python por la misma razón que todo lo demás de
+esa lista: un encuadre malo **no lanza excepción**, renderiza. El único sitio
+donde el fallo es visible son las coordenadas, así que la aritmética se
+escribió sin una sola referencia a Autodesk para poder afirmarlas sin licencia.
+Cada caso es una imagen que salió mal en un modelo real, reducida a los números
+que la produjeron; la aserción recurrente no es «la cámara está a 4,2 m» sino
+«las dos cajas caen dentro de [-1, 1] en pantalla».
 
 ### Lo que se asserta y suele olvidarse
 
@@ -98,12 +108,11 @@ corrida.
       mismo tercero también puede mostrar UI después de `MainDocument.Clear()`;
       ver [SAVING.md](SAVING.md).
 
-### Paridad cinta/MCP
+### Cinta
 
-- [ ] Correr el flujo 0-1-2-3 desde la cinta y como herramientas MCP sobre el
-      mismo modelo, y comparar los conteos.
-- [ ] Comprobar que los diálogos de la cinta siguen leyéndose bien tras el
-      refactor a `WorkflowText`.
+- [ ] Con el complemento instalado, la pestaña «Tool add-ins» muestra
+      **un solo** botón de este producto, «Puente - NavisCoord», y arranca y
+      para el puente. Los seis anteriores duplicaban herramientas MCP.
 
 ### Permisos
 
@@ -112,6 +121,47 @@ corrida.
 - [ ] Aflojar los permisos a mano y comprobar que el aviso aparece en
       `bridge.log`.
 
+### Imágenes de interferencia
+
+- [ ] Repetir la corrida de encuadre sobre un federado distinto al usado en el
+      registro de abajo, y comprobar que ninguna imagen se descarta por
+      `clash_not_contained` con los dos elementos visibles en ella.
+- [ ] `hide_unrelated_geometry` sobre un modelo con importación CAD: comprobar
+      que el aviso `isolation_level_too_wide` aparece en vez de colgar el hilo
+      de UI.
+- [x] Modo `plan` sobre un cruce real de MEP denso: **verificado en píxeles**
+      (2026-08-16). De `0,0 % / 0,0 %` rechazado a `1,06 % / 0,81 %` aceptado
+      sobre el mismo cruce, con dos causas distintas —proyección ortográfica y
+      recorte por sobreexposición— medidas por separado.
+- [ ] `hide_unrelated_geometry`: **causa encontrada y medida**; el arreglo está
+      aplicado pero **falta confirmar en vivo que ahora sí oculta**. Basta una
+      corrida de `navis_clash_image(hide_unrelated_geometry=True)` y leer
+      `visual.hidden_items`.
+
+      El arreglo no puede empeorar nada: si la consulta al documento también
+      se niega, devuelve «no sé» y el elemento se salta, que es exactamente lo
+      que pasaba antes.
+
+      Dos hipótesis cayeron por el camino, y las tumbó la propia
+      instrumentación:
+
+      | Medición | Qué descartó |
+      |---|---|
+      | `items=2 ancestors=20 siblings=3474 hiding=0` | items desprendidos del árbol: uno desprendido no tiene ancestros, y aquí se recorrieron 20 |
+      | `skipped[survivor=14 hidden=0 duplicate=0 null=0 unreadable=140]` | **140 de 154 hermanos ilegibles**: `ModelItem.IsHidden` LANZA sobre lo que devuelve `ancestor.Children` |
+
+      No estaban ocultos ni eran supervivientes: la propiedad por elemento
+      reventaba y el `catch` los saltaba en silencio. La consulta a nivel de
+      documento (`Models.IsHidden`) sí los resuelve, y es la que se usa ahora,
+      con la propiedad como respaldo y `null` —«nadie sabe»— como tercer caso.
+
+      La lección va con el arreglo: **un `catch` que continúa sin contar
+      convierte un fallo en un silencio**. El contador por motivo es lo que
+      cerró esto en una sola corrida después de dos hipótesis equivocadas.
+- [ ] `background_color` con `background_restore_color`: comprobar visualmente
+      que el fondo vuelve al que estaba. No se puede automatizar — el API de
+      2026 escribe el fondo y no lo lee.
+
 ### Corrección del color
 
 - [x] Comprobado dentro de Navisworks 2026 sobre cruces reales (2026-08-14).
@@ -119,6 +169,33 @@ corrida.
 - [ ] Confirmación **visual** de que lo rojo es lo que debe moverse. Sigue
       abierta y no se puede automatizar: la API 2026 no expone ningún getter
       de apariencia, así que el píxel solo lo verifica un ojo humano.
+
+## Imágenes de interferencia, dentro de Navisworks (2026-08-16)
+
+Federado de coordinación real abierto en limpio: 1 documento, 2.701 resultados
+de choque en 13 tests entre disciplinas. **Solo lectura**: no se creó ningún
+set, test ni grupo, y no se guardó nada. El complemento probado es el compilado
+de esta rama, instalado temporalmente en lugar del que había y **restaurado
+verificando el hash** al terminar.
+
+| Qué | Evidencia |
+|---|---|
+| Encuadre | 6 de 6 imágenes aceptadas **al primer intento**; los dos elementos dentro del cuadro y el volumen de interferencia contenido en las seis, por proyección de las ocho esquinas de cada caja |
+| Los dos elementos, en píxeles | lado A entre 4,0 % y 5,7 % del cuadro; lado B entre 0,08 % y 0,40 %, contados por matiz sobre el color que el complemento reportó haber aplicado |
+| Huella del documento | idéntica antes y después (`9acf68b0…`) |
+| Recuento del informe | `requested 6 / generated 6 / embedded 4 / failed 0 / rejected 2`, con `side_b_not_visible` como motivo de los dos descartes, impreso en su página |
+| Encuadre demasiado ancho | corregido: la vecindad crecía 1,5 anchos de cruce por cara. Un cruce de 10 m se encuadraba a **87 m** con el elemento pequeño en el 1,5 % del cuadro; con la fracción correcta, **24 m** |
+| Falso rechazo por velado | corregido: el clasificador por proporción de canales midió un tubo rojo claramente visible en **0,01 %** del cuadro y descartó 6 imágenes buenas. Por matiz: 0,40 %. Piso de saturación medido en el propio render — elementos 0,49/0,58, cielo y contexto 0,15/0,09 |
+| Contención en perspectiva | corregido: la cara cercana de la caja del cruce se salía del cuadro que la aritmética afín aprobaba; daba `clash_not_contained` sobre imágenes correctas y gastaba dos renders de más. Tras el arreglo el informe pasó de 2 a 4 imágenes embebidas de 6 |
+| Aislamiento sobre items desprendidos | corregido: `hide_unrelated_geometry` lanzaba «Only valid for ModelItem in a document» y tiraba la captura entera; ahora salta el item, lo nombra y sigue |
+| Modo `plan` | corregido y verificado: la ortográfica metía el forjado y todo lo de arriba delante del cruce con el velo multiplicándose, y el recorte por sobreexposición perdía el otro lado. `0,0 % / 0,0 %` → `1,06 % / 0,81 %` sobre el mismo cruce |
+| Sobreexposición | corregido: un conducto (245,166,35) renderizado de canto y muy iluminado sale como (255,255,140) —matiz 37° → 60°— y se contaban 7.704 píxeles suyos como fondo. El clasificador modela la exposición hacia adelante |
+| Diagnósticos del complemento | corregido: `visual` y `notes` llegaban al servidor y no al llamante, así que la investigación del aislamiento leía `null` mientras la respuesta traía el motivo |
+| **Documento marcado como modificado** | **no evitable.** Recién abierto `false`; tras `clash/export` `false`; una imagen con color, aislamiento, rejilla y fondo desactivados —única mutación, la cámara— `false` → `true`. Navisworks renderiza la vista actual y no expone cámara fuera de pantalla. Nada se guarda, la huella no cambia y todo se restaura; el informe lo avisa en `images.document_note` |
+
+Lo que **no** se pudo ejercitar en esta corrida: el modo `plan` sobre un cruce
+real devolvió un render sin ninguno de los dos colores mientras los modos en
+perspectiva del mismo cruce salieron bien. Queda en la lista de arriba.
 
 ## Ejecutado dentro de Navisworks (2026-08-14)
 
