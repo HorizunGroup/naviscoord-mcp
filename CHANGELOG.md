@@ -63,6 +63,12 @@ herramienta ni ruta existente cambió de forma — los argumentos visuales de
   contexto multiplicándose capa a capa hasta dejar los dos elementos en **0,0 %
   del cuadro a cualquier altura de cámara** sobre un federado real. En
   perspectiva lo que queda detrás de la lente no se dibuja.
+- La escalera de reintentos ya no gasta un render de Navisworks en aislar
+  cuando el aislamiento no oculta nada. En un federado real el complemento
+  reporta `hidden_items: 0` tras recorrer 20 ancestros y 3.474 hermanos, así
+  que ese peldaño devolvía la misma imagen por el mismo precio; ahora se
+  descarta y se abre el encuadre. **Por qué no oculta nada sigue abierto**, con
+  la medición y un contador por motivo en `docs/TESTING.md`.
 - `visual` y `notes` —lo que el complemento reporta haber hecho y qué le salió
   mal— dejaron de perderse en la capa Python. Llegaban al servidor y no al
   llamante, así que una investigación en vivo leía `null` mientras la respuesta

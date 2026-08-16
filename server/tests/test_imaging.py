@@ -155,7 +155,7 @@ class FakeBridge:
             "framing": outcome.get("framing", {"mode": payload.get("camera_mode")}),
             "location": {"grid_reference": "C-4 : Nivel 3"},
             "document": {"modified_before": False, "modified_after": False},
-            "visual": outcome.get("visual", {"hidden_items": 7, "isolated": False}),
+            "visual": outcome.get("visual", {"hidden_items": 7, "isolated": True}),
             "notes": outcome.get("notes", ["isolation_level_too_wide"]),
             "sides": {
                 "a": {"items": 1, "color": list(outcome.get("colour_a", COLOUR_MOVABLE))},
@@ -539,6 +539,38 @@ class TestCapture:
         assert shot.accepted
         assert len(shot.attempts) == 2
         assert shot.attempts[0].verdict.reasons == ["side_b_not_visible"]
+
+    def test_an_isolation_that_hides_nothing_does_not_get_a_second_render(self) -> None:
+        """Observed on a real federation, and it costs money to ignore.
+
+        The addin reported `hidden_items: 0` after walking 20 ancestors and
+        3,474 siblings, so the occlusion rung changed nothing at all. Repeating
+        it renders the same frame again; the ladder drops that rung and widens
+        instead.
+        """
+        blind = FakeBridge([
+            {"png": render(side_b=None), "visual": {"isolated": False, "hidden_items": 0}},
+            {"png": render(side_b=None), "visual": {"isolated": True, "hidden_items": 0}},
+            {"png": render(), "visual": {"isolated": False, "hidden_items": 0}},
+        ])
+        shot = capture(blind, "guid-blind", ImageOptions())
+
+        assert blind.calls[1]["hide_unrelated_geometry"] is True, "probó a aislar"
+        assert blind.calls[2]["hide_unrelated_geometry"] is False, (
+            "insistió en aislar después de que no ocultara nada"
+        )
+        assert blind.calls[2]["camera_mode"] == "context", "y no abrió el encuadre"
+        assert shot.accepted
+
+    def test_isolation_that_works_is_kept(self) -> None:
+        from naviscoord.imaging import isolation_did_nothing
+
+        assert isolation_did_nothing(
+            ImageOptions(hide_unrelated_geometry=True), {"hidden_items": 0})
+        assert not isolation_did_nothing(
+            ImageOptions(hide_unrelated_geometry=True), {"hidden_items": 12})
+        assert not isolation_did_nothing(
+            ImageOptions(hide_unrelated_geometry=False), {"hidden_items": 0})
 
     def test_a_hopeless_clash_is_rejected_and_explained(self) -> None:
         bridge = FakeBridge([{"png": render(side_b=None)}])

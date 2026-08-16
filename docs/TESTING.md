@@ -133,10 +133,28 @@ corrida.
       (2026-08-16). De `0,0 % / 0,0 %` rechazado a `1,06 % / 0,81 %` aceptado
       sobre el mismo cruce, con dos causas distintas —proyección ortográfica y
       recorte por sobreexposición— medidas por separado.
-- [ ] `hide_unrelated_geometry` sobre un federado de Revit: **abierto**. Sobre
-      uno real reporta `isolation_found_nothing_to_hide` con `hidden_items: 0`;
-      el recorrido de hermanos no encuentra nada que ocultar en esa jerarquía y
-      no se ha averiguado por qué.
+- [ ] `hide_unrelated_geometry` sobre un federado de Revit: **abierto**, y la
+      siguiente corrida en vivo lo cierra de una sola vez.
+
+      Lo medido: `isolation_scan items=2 ancestors=20 siblings=3474 hiding=0`.
+      El recorrido funciona —ve 20 ancestros y 3.474 hermanos— y **descarta
+      los 3.474**. La primera hipótesis (items desprendidos del árbol) quedó
+      refutada por ese mismo conteo: un item desprendido no tiene ancestros.
+
+      Quedan tres motivos posibles, uno por cada `continue` del filtro, y ya
+      hay un contador para cada uno en el complemento; basta correr
+      `navis_clash_image(hide_unrelated_geometry=True)` sobre un federado y
+      leer `notes`:
+
+      | Si domina | Significa |
+      |---|---|
+      | `survivor=` | `survivors` abarca casi todo: alguno de los dos lados está muy arriba del árbol y sus descendientes cubren el modelo |
+      | `hidden=` | ya estaban ocultos; no son nuestros y se respetan |
+      | `duplicate=` | el mismo item llega por varias ramas |
+
+      Mientras tanto la escalera de reintentos **no gasta un render** en ese
+      peldaño: si el complemento reporta `hidden_items: 0`, se descarta el
+      aislamiento y se abre el encuadre en su lugar.
 - [ ] `background_color` con `background_restore_color`: comprobar visualmente
       que el fondo vuelve al que estaba. No se puede automatizar — el API de
       2026 escribe el fondo y no lo lee.

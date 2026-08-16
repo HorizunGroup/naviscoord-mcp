@@ -602,6 +602,23 @@ def judge(
     return verdict
 
 
+def isolation_did_nothing(options: ImageOptions, visual: dict[str, Any]) -> bool:
+    """Whether isolation was asked for and hid not one thing.
+
+    It happens on real models: a federation reported
+    `isolation_found_nothing_to_hide` with `hidden_items: 0` after walking 20
+    ancestors and 3,474 siblings, so every sibling was spared for one of three
+    reasons and the picture came back identical. Why is still open — see
+    docs/TESTING.md — but the ladder must not keep paying a Navisworks render
+    for a rung that demonstrably changes nothing.
+    """
+    if not options.hide_unrelated_geometry:
+        return False
+    if not visual:
+        return False
+    return int(visual.get("hidden_items") or 0) == 0
+
+
 def next_attempt(options: ImageOptions, verdict: Verdict) -> ImageOptions | None:
     """The next thing worth trying, or None when nothing is.
 
@@ -830,6 +847,21 @@ def capture(
             best = (score, png, attempt)
 
         following = next_attempt(attempt_options, verdict)
+
+        # Checked BEFORE giving up, not after. Once isolation has been tried,
+        # `next_attempt` has nothing left to offer for occlusion and returns
+        # None — so a rung that turned out to be a no-op would end the ladder
+        # rather than fall through to the one that still might work.
+        if isolation_did_nothing(attempt_options, result.visual):
+            wider = _widen(attempt_options.camera_mode)
+            following = (
+                None
+                if wider == attempt_options.camera_mode
+                else replace(
+                    attempt_options, hide_unrelated_geometry=False, camera_mode=wider
+                )
+            )
+
         if following is None:
             break
         attempt_options = following
