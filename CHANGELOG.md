@@ -5,6 +5,12 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-16
+
+Menor, no parche: `navis_clash_image` es una herramienta nueva. Ninguna
+herramienta ni ruta existente cambió de forma — los argumentos visuales de
+`navis_pdf_report` son todos opcionales y una llamada anterior sigue valiendo.
+
 ### Added
 
 - **Imágenes de interferencia verificadas.** La cámara de cada cruce se calcula
