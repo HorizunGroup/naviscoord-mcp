@@ -56,9 +56,17 @@
     <Compile Include="..\NavisCoord.Addin\UiDispatcher.cs" Link="UiDispatcher.cs" />
     <Compile Include="..\NavisCoord.Addin\DisciplineVocabulary.cs" Link="DisciplineVocabulary.cs" />
     <Compile Include="..\NavisCoord.Addin\ModelNames.cs" Link="ModelNames.cs" />
+    <!--
+      Presentation only, and it needs nothing but Json.cs: the prose the
+      ribbon shows is the one place where a step that failed can end up
+      described as if nobody knew why.
+    -->
+    <Compile Include="..\NavisCoord.Addin\TextLimits.cs" Link="TextLimits.cs" />
+    <Compile Include="..\NavisCoord.Addin\WorkflowText.cs" Link="WorkflowText.cs" />
     <Compile Include="DispatcherTests.cs" />
     <Compile Include="FramingTests.cs" />
     <Compile Include="VocabularyTests.cs" />
+    <Compile Include="WorkflowTextTests.cs" />
   </ItemGroup>
 
 </Project>

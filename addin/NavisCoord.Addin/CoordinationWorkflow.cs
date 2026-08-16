@@ -786,9 +786,9 @@ namespace NavisCoord
                 {
                     sequence++;
                     if (!IsDefaultClashName(single.DisplayName)) continue;
-                    var a = Truncate(LevelNaming.StripInstanceId(
+                    var a = TextLimits.Truncate(LevelNaming.StripInstanceId(
                         (single.Item1 ?? single.CompositeItem1)?.DisplayName), 28);
-                    var b = Truncate(LevelNaming.StripInstanceId(
+                    var b = TextLimits.Truncate(LevelNaming.StripInstanceId(
                         (single.Item2 ?? single.CompositeItem2)?.DisplayName), 28);
                     if (a.Length == 0 && b.Length == 0) continue;
                     pending.Add(Tuple.Create(single.Guid,
@@ -1038,12 +1038,6 @@ namespace NavisCoord
             {
                 foreach (var child in group.Children) Collect(child, into);
             }
-        }
-
-        internal static string Truncate(string text, int max)
-        {
-            var value = text ?? string.Empty;
-            return value.Length <= max ? value : value.Substring(0, max) + "…";
         }
     }
 }

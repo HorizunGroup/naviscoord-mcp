@@ -5,6 +5,15 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-08-16
+
+Parche: ninguna herramienta ni ruta cambió de forma, y los argumentos que se
+añaden son opcionales. Sí cambia el comportamiento en un caso concreto y a
+propósito: con dos instancias de Navisworks abiertas, cuatro herramientas que
+antes escribían en la que Navisworks hubiera tocado último ahora se rechazan
+si nadie eligió documento. Una llamada que dependía de esa elección implícita
+falla en vez de acertar por casualidad, que es el punto.
+
 ### Fixed
 
 - **Cuatro herramientas escribían sin comprobar en qué documento.**
@@ -32,6 +41,20 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
   identidad de confianza era una alternancia de subcadenas, así que un grupo
   llamado `NotAdministrators` pasaba; ahora el nombre tiene que ser el
   componente completo.
+- **Un paso que fallaba podía decir que no sabía por qué.** El veredicto que
+  cierra el texto de la cinta solo miraba `errors`, así que una corrida que
+  falla con la causa en `warnings` terminaba en «✖ Falló: sin detalle» dos
+  líneas debajo de la frase que daba el detalle. Pasa de verdad: un test de
+  clash con las selecciones vacías no llega a correr, Navisworks lo deja en
+  «New» y `workflow/run` falla —bien— en vez de reportar cero resultados en
+  verde. Ahora el cierre nombra la causa, y las cadenas en blanco dejan de
+  contar como detalle. Salió validando este mismo binario en vivo.
+- `WorkflowText` era presentación pura pero compartía dependencia con la API
+  de Autodesk por un `Truncate` alojado en `CoordinationWorkflow`, así que no
+  se podía compilar en un runner sin licencia y la prosa que lee un
+  coordinador —lo que decide si se fía de una corrida— no tenía ni una
+  prueba. El recorte de cadenas se mudó a `TextLimits`, el texto entró al
+  runner de C# y sus comprobaciones pasaron de 622 a 630.
 - La tabla de versiones soportadas de `SECURITY.md` decía 0.2.2, tres
   releases atrás, y el pie de enlaces del changelog seguía en `v0.2.2`: los
   encabezados `## [0.3.0]` y `## [0.2.3]` se publicaban como corchetes
@@ -333,7 +356,8 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
-[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.1
 [0.3.0]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.0
 [0.2.3]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.3
 [0.2.2]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.2
