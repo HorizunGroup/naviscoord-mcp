@@ -319,6 +319,52 @@ terminar; el archivo NWF de salida volvió a la carpeta temporal de la prueba.
 | `navis_exit`, primera implementación | la instancia Automation tenía `Process.MainWindowHandle=0`; respuesta `partial`, PID todavía vivo —sin éxito falso |
 | `navis_exit`, corregido | `Application.Gui.MainWindow.Handle` + `WM_CLOSE`; `completed`, `application_exit_verified=true`, PID ausente |
 
+## Guardia de documento del binario 0.3.1 (2026-08-16)
+
+Navisworks Manage 2026 lanzado dos veces desde disco, cada instancia con su
+documento. El DLL instalado se respaldó con `Smoke-AddinSwap.ps1 -Mode Backup`,
+se sustituyó por el de `dist\addin\2026\` y se restauró al terminar: 21
+archivos con hash idéntico, 0 discrepancias. Los modelos son los avatares que
+Navisworks trae (`Dummy01`, `Construction Worker 01`), copiados a una carpeta
+temporal — ningún modelo de cliente participó, y lo que se mide aquí es a qué
+documento va la escritura, no qué contiene.
+
+Las dos sesiones publicaron `addin_version: 0.3.1.0`, así que lo que se probó
+es el binario del release y no el compilado del árbol.
+
+| Qué | Evidencia |
+|---|---|
+| Dos instancias, huellas distintas | `aa0f784b24a2d27c` (TORRE-A) y `04fbeb130f8945a4` (TORRE-B); `navis_sessions` → `count=2` |
+| La vía de lectura elige sola | sin target, `navis_current_target` resolvió a la instancia **más reciente** y lo advirtió en `note` |
+| Las cuatro del fallo | `build_sets`, `build_clash_matrix`, `run_tests`, `reset_appearance` → `target_ambiguous`, ninguna llegó al puente |
+| Las tres ya guardadas en 0.3.0 | `apply_groups`, `set_status`, `save_viewpoints` → `target_ambiguous` |
+| El ensayo también | `dry_run=true` de `build_sets` y `build_clash_matrix` → rechazado |
+| Rechaza la ambigüedad, no la escritura | con TORRE-A elegida la misma llamada pasó, con `document_fingerprint_before=aa0f784b24a2d27c` |
+| `expected_document_fingerprint` | declarando la huella de TORRE-B con TORRE-A activa → `stale_state`, «No se tocó nada» |
+| Con rastro observable | `save_as` sin target y con huella ajena no creó archivo; con la huella correcta escribió el `.nwf` (3.303 B) |
+| Perfil a ambos lados | `navis_load_profile` → `addin.synchronised=true`, mismo checksum `1af3ac155ff10059` |
+| Asíncrono no bloquea | durante `navis_run(run_async=True)`, `navis_health` respondió en 4–45 ms |
+| Test vacío no da verde falso | el avatar trae un test con selecciones vacías: `workflow/run` devolvió `failed` con la advertencia «siguen en New», no `completed` |
+| `require_clean` con cambios | `failed`, `applied=0`, error explícito, documento **abierto** después |
+| `save` al cerrar | `completed`, `was_modified=true`, `document_open_after=false` |
+| `discard` | dentro de `navis_exit`: `was_modified=true` y advertencia de que se descartó por elección explícita |
+| `navis_exit` | `completed`, `application_exit_verified=true`, `verification_source=process_liveness`; PID ausente |
+| Sesión muerta | tras matar el proceso, `navis_sessions` → `count=0` y la sesión listada en `stale` |
+| Pestaña en la cinta | **NavisCoord** visible con su icono, junto a las demás pestañas (captura) |
+
+Lo que esta corrida **no** cubrió, y sigue pendiente:
+
+- **ACC**: no hay ningún `.nwfacc` en esta máquina, así que el rechazo de
+  `navis_save` sobre un documento de nube no se probó.
+- **«Estado del puente»**: la pestaña se confirmó por captura, pero el diálogo
+  no se abrió a mano. Que informa sin alterar se apoya en `StatusReport()`
+  —sin efectos secundarios por construcción— y en las pruebas de C#.
+- **`save_as` con reapertura**: se verificó que el `.nwf` se escribe; no se
+  cerró y reabrió para confirmar que sets, tests y grupos siguen ahí.
+- El flujo 0-1-2-3 corrió sobre un avatar de un solo modelo, así que
+  `build_sets` planificó cero conjuntos: el enrutamiento se comprobó por la
+  huella que reporta cada comando, no por un conjunto creado.
+
 ## Cobertura
 
 No se persigue un porcentaje. La regla es más estrecha y más útil: **toda
