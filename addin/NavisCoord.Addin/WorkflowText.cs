@@ -36,7 +36,7 @@ namespace NavisCoord
                         : status;
 
                 lines.Add("[" + Json.Str(model, "discipline") + "] " +
-                          CoordinationWorkflow.Truncate(Json.Str(model, "name"), 55) + "\n      " +
+                          TextLimits.Truncate(Json.Str(model, "name"), 55) + "\n      " +
                           Json.Num(model, "elements", 0).ToString("N0", CultureInfo.InvariantCulture) +
                           " elementos — " + label);
             }
@@ -304,8 +304,8 @@ namespace NavisCoord
                 foreach (var entry in series.Take(8))
                 {
                     lines.Add("   • " + Json.Str(entry, "test") + ": " +
-                              CoordinationWorkflow.Truncate(Json.Str(entry, "element_a"), 30) + " vs " +
-                              CoordinationWorkflow.Truncate(Json.Str(entry, "element_b"), 30) + " — " +
+                              TextLimits.Truncate(Json.Str(entry, "element_a"), 30) + " vs " +
+                              TextLimits.Truncate(Json.Str(entry, "element_b"), 30) + " — " +
                               Json.Num(entry, "level_count", 0).ToString("N0", CultureInfo.InvariantCulture) + " niveles");
                 }
                 if (count > 8) lines.Add("   … y " + (count - 8) + " más");
@@ -362,12 +362,37 @@ namespace NavisCoord
                            " verificados de " + Json.Num(payload, "applied", 0).ToString("N0", CultureInfo.InvariantCulture) +
                            " aplicados." + (errors.Count > 0 ? " " + errors[0] : string.Empty);
                 case "failed":
-                    return "✖ Falló: " + (errors.Count > 0 ? string.Join(" ", errors.Take(3)) : "sin detalle.");
+                    return "✖ Falló: " + (Causes(payload, errors) ?? "sin detalle.");
                 case "planned":
                     return "(ensayo: no se tocó el documento)";
                 default:
                     return string.Empty;
             }
+        }
+
+        /// <summary>
+        /// Why the step failed, in the caller's own words, or null if it
+        /// really did not say.
+        /// </summary>
+        /// <remarks>
+        /// A step can fail with `errors` empty and the reason sitting in
+        /// `warnings`: `workflow/run` reports a clash test that stayed in
+        /// «New» —empty selections, so Navisworks never ran it— as a warning
+        /// and then fails, correctly, rather than reporting a green run of
+        /// zero results. Reading only `errors` printed «Falló: sin detalle»
+        /// two lines under the sentence that gave the detail.
+        /// </remarks>
+        private static string Causes(Dictionary<string, object> payload, List<string> errors)
+        {
+            var causes = errors.Where(e => !string.IsNullOrWhiteSpace(e)).ToList();
+            if (causes.Count == 0)
+            {
+                causes = Json.Arr(payload, "warnings")
+                    .Select(w => Convert.ToString(w, CultureInfo.InvariantCulture))
+                    .Where(w => !string.IsNullOrWhiteSpace(w))
+                    .ToList();
+            }
+            return causes.Count > 0 ? string.Join(" ", causes.Take(3)) : null;
         }
 
         private static Dictionary<string, object> Section(Dictionary<string, object> payload, string key)

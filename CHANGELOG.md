@@ -5,6 +5,22 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Un paso que fallaba podía decir que no sabía por qué.** El veredicto que
+  cierra el texto de la cinta solo miraba `errors`, así que una corrida que
+  falla con la causa en `warnings` terminaba en «✖ Falló: sin detalle» dos
+  líneas debajo de la frase que daba el detalle. Pasa de verdad: un test de
+  clash con las selecciones vacías no llega a correr, Navisworks lo deja en
+  «New» y `workflow/run` falla —bien— en vez de reportar cero resultados en
+  verde. Ahora el cierre nombra la causa, y las cadenas en blanco dejan de
+  contar como detalle. Visto en vivo validando el binario 0.3.1.
+- `WorkflowText` era presentación pura pero compartía dependencia con la API
+  de Autodesk por un `Truncate` alojado en `CoordinationWorkflow`, así que no
+  se podía compilar en un runner sin licencia y la prosa que lee un
+  coordinador no tenía ni una prueba. El recorte de cadenas se mudó a
+  `TextLimits` y el texto entró al runner de C#.
+
 ## [0.3.1] — 2026-08-16
 
 Parche: ninguna herramienta ni ruta cambió de forma, y los argumentos que se

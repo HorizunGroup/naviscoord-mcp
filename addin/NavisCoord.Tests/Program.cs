@@ -53,6 +53,7 @@ namespace NavisCoord.Tests
             DispatcherTests.Run(Section, Eq, Check);
             FramingTests.Run(Section, Eq, Check);
             VocabularyTests.Run(Section, Eq, Check);
+            WorkflowTextTests.Run(Section, Eq, Check);
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
