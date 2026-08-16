@@ -63,6 +63,19 @@ herramienta ni ruta existente cambió de forma — los argumentos visuales de
   contexto multiplicándose capa a capa hasta dejar los dos elementos en **0,0 %
   del cuadro a cualquier altura de cámara** sobre un federado real. En
   perspectiva lo que queda detrás de la lente no se dibuja.
+- **`hide_unrelated_geometry`: causa encontrada y atacada.** No ocultaba nada
+  en ningún federado, y la causa no era ninguna de las dos que parecían obvias:
+  `ModelItem.IsHidden` **lanza excepción** sobre la mayoría de lo que devuelve
+  `ancestor.Children` —140 de 154 hermanos en la medición—, así que el `catch`
+  los saltaba en silencio y el aislamiento informaba, con toda razón y sin
+  utilidad, de que no había encontrado nada que ocultar. Ahora se pregunta al
+  documento (`Models.IsHidden`), que sí los resuelve, con la propiedad como
+  respaldo. Lo que lo cerró fue añadir un contador por cada motivo de descarte:
+  un `catch` que continúa sin contar convierte un fallo en un silencio.
+
+  Queda **sin confirmar en vivo** que con eso ya oculte; el arreglo no puede
+  empeorar nada, porque si la consulta al documento también se niega el
+  elemento se salta igual que antes. Ver `docs/TESTING.md`.
 - La escalera de reintentos ya no gasta un render de Navisworks en aislar
   cuando el aislamiento no oculta nada. En un federado real el complemento
   reporta `hidden_items: 0` tras recorrer 20 ancestros y 3.474 hermanos, así

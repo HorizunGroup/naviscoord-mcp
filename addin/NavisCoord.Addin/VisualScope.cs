@@ -253,15 +253,9 @@ namespace NavisCoord
                             if (sibling == null) { skippedNull++; continue; }
                             if (survivors.Contains(sibling)) { skippedSurvivor++; continue; }
                             if (toHide.Contains(sibling)) { skippedDuplicate++; continue; }
-                            try
-                            {
-                                if (sibling.IsHidden) { skippedHidden++; continue; }
-                            }
-                            catch
-                            {
-                                skippedUnreadable++;
-                                continue;
-                            }
+                            var hidden = IsHidden(sibling);
+                            if (hidden == null) { skippedUnreadable++; continue; }
+                            if (hidden.Value) { skippedHidden++; continue; }
                             toHide.Add(sibling);
                         }
                     }
@@ -304,6 +298,42 @@ namespace NavisCoord
             catch (Exception ex)
             {
                 Note("isolation_hide_failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// Whether an item is hidden, or null when nothing can say.
+        /// </summary>
+        /// <remarks>
+        /// `ModelItem.IsHidden` is the obvious call and it THROWS on most of
+        /// what `ancestor.Children` hands back. Measured, on a real
+        /// federation: of 154 siblings, 140 came back unreadable and 0 came
+        /// back hidden — so isolation spared every one of them and reported,
+        /// truthfully and uselessly, that it had found nothing to hide.
+        ///
+        /// The document-level query resolves the item through the document
+        /// instead of through the wrapper, and answers where the property
+        /// cannot. Null means neither could answer, and the caller skips the
+        /// item rather than hiding something it may not be able to restore.
+        /// </remarks>
+        private bool? IsHidden(ModelItem item)
+        {
+            if (item == null) return null;
+            try
+            {
+                return _doc.Models.IsHidden(new[] { item });
+            }
+            catch
+            {
+                // Fall through to the per-item property.
+            }
+            try
+            {
+                return item.IsHidden;
+            }
+            catch
+            {
+                return null;
             }
         }
 

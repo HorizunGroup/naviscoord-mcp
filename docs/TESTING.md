@@ -133,28 +133,31 @@ corrida.
       (2026-08-16). De `0,0 % / 0,0 %` rechazado a `1,06 % / 0,81 %` aceptado
       sobre el mismo cruce, con dos causas distintas —proyección ortográfica y
       recorte por sobreexposición— medidas por separado.
-- [ ] `hide_unrelated_geometry` sobre un federado de Revit: **abierto**, y la
-      siguiente corrida en vivo lo cierra de una sola vez.
+- [ ] `hide_unrelated_geometry`: **causa encontrada y medida**; el arreglo está
+      aplicado pero **falta confirmar en vivo que ahora sí oculta**. Basta una
+      corrida de `navis_clash_image(hide_unrelated_geometry=True)` y leer
+      `visual.hidden_items`.
 
-      Lo medido: `isolation_scan items=2 ancestors=20 siblings=3474 hiding=0`.
-      El recorrido funciona —ve 20 ancestros y 3.474 hermanos— y **descarta
-      los 3.474**. La primera hipótesis (items desprendidos del árbol) quedó
-      refutada por ese mismo conteo: un item desprendido no tiene ancestros.
+      El arreglo no puede empeorar nada: si la consulta al documento también
+      se niega, devuelve «no sé» y el elemento se salta, que es exactamente lo
+      que pasaba antes.
 
-      Quedan tres motivos posibles, uno por cada `continue` del filtro, y ya
-      hay un contador para cada uno en el complemento; basta correr
-      `navis_clash_image(hide_unrelated_geometry=True)` sobre un federado y
-      leer `notes`:
+      Dos hipótesis cayeron por el camino, y las tumbó la propia
+      instrumentación:
 
-      | Si domina | Significa |
+      | Medición | Qué descartó |
       |---|---|
-      | `survivor=` | `survivors` abarca casi todo: alguno de los dos lados está muy arriba del árbol y sus descendientes cubren el modelo |
-      | `hidden=` | ya estaban ocultos; no son nuestros y se respetan |
-      | `duplicate=` | el mismo item llega por varias ramas |
+      | `items=2 ancestors=20 siblings=3474 hiding=0` | items desprendidos del árbol: uno desprendido no tiene ancestros, y aquí se recorrieron 20 |
+      | `skipped[survivor=14 hidden=0 duplicate=0 null=0 unreadable=140]` | **140 de 154 hermanos ilegibles**: `ModelItem.IsHidden` LANZA sobre lo que devuelve `ancestor.Children` |
 
-      Mientras tanto la escalera de reintentos **no gasta un render** en ese
-      peldaño: si el complemento reporta `hidden_items: 0`, se descarta el
-      aislamiento y se abre el encuadre en su lugar.
+      No estaban ocultos ni eran supervivientes: la propiedad por elemento
+      reventaba y el `catch` los saltaba en silencio. La consulta a nivel de
+      documento (`Models.IsHidden`) sí los resuelve, y es la que se usa ahora,
+      con la propiedad como respaldo y `null` —«nadie sabe»— como tercer caso.
+
+      La lección va con el arreglo: **un `catch` que continúa sin contar
+      convierte un fallo en un silencio**. El contador por motivo es lo que
+      cerró esto en una sola corrida después de dos hipótesis equivocadas.
 - [ ] `background_color` con `background_restore_color`: comprobar visualmente
       que el fondo vuelve al que estaba. No se puede automatizar — el API de
       2026 escribe el fondo y no lo lee.
