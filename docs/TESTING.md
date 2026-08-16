@@ -110,9 +110,15 @@ corrida.
 
 ### Cinta
 
-- [ ] Con el complemento instalado, la pestaña «Tool add-ins» muestra
-      **un solo** botón de este producto, «Puente - NavisCoord», y arranca y
-      para el puente. Los seis anteriores duplicaban herramientas MCP.
+- [ ] Con el complemento instalado aparece la pestaña propia **«NavisCoord»**,
+      con el panel «Puente» y **un solo** botón, «Estado del puente». Los seis
+      anteriores vivían en «Tool add-ins» y duplicaban herramientas MCP.
+- [ ] El botón informa antes de actuar: muestra versión y CORRIENDO con puerto
+      o DETENIDO, y pregunta con «No» por defecto. Pulsarlo y responder «No»
+      deja el puente **como estaba** — consultarlo no puede matarlo.
+- [ ] La pestaña aparece con su icono propio, no con la llave genérica. Si
+      falta la pestaña entera, el sospechoso es `NavisCoordRibbon.xaml`: un
+      namespace equivocado no da error, simplemente no dibuja nada.
 
 ### Permisos
 
@@ -232,6 +238,10 @@ edificio concreto.
 Mismo montaje temporal, con el MCP corriendo **desde el wheel instalado en un
 venv limpio** —no desde el árbol— para que lo probado sea lo que se publica.
 `tools/list` desde ese paquete: **46 herramientas**, las cuatro presentes.
+
+> El conteo es el de esa fecha y no se actualiza: este apartado es el registro
+> de una corrida, no el inventario vigente. En 0.3.0 son **50** —`navis_clash_image`
+> entre ellas—, y el número exacto lo dice `tools/list`, no este documento.
 
 El perfil usado es el desechable. En esa corrida el paso de reglas todavía
 leía el perfil del complemento desde disco en vez del cargado por MCP, así

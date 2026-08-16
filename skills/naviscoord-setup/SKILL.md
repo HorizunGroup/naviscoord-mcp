@@ -1,6 +1,6 @@
 ---
 name: naviscoord-setup
-description: Instala, actualiza, repara y verifica NavisCoord — el complemento de Autodesk Navisworks y su runtime local — cuando se usa como plugin de Claude o Codex. Úsala si las herramientas navis_* no aparecen, si solo aparece navis_install_status, si el puente no responde, si Navisworks no muestra NavisCoord en la pestaña Add-Ins, o si el usuario pide instalar, actualizar o diagnosticar el plugin.
+description: Instala, actualiza, repara y verifica NavisCoord — el complemento de Autodesk Navisworks y su runtime local — cuando se usa como plugin de Claude o Codex. Úsala si las herramientas navis_* no aparecen, si solo aparece navis_install_status, si el puente no responde, si Navisworks no muestra la pestaña NavisCoord en la cinta, o si el usuario pide instalar, actualizar o diagnosticar el plugin.
 ---
 
 # Instalar y verificar NavisCoord
@@ -41,7 +41,7 @@ Detecta cada Navisworks Manage 2024–2026 instalado, compila el complemento con
 **Sin herramientas de compilación**: descarga `NavisCoord-addin-NW<versión>.zip` del release en GitHub y descomprime en
 `%APPDATA%\Autodesk\Navisworks Manage <versión>\Plugins\NavisCoord\`.
 
-Después abre Navisworks: el puente arranca solo. Si no, pestaña **Add-Ins → NavisCoord**.
+Después abre Navisworks: el puente arranca solo. Para comprobarlo, la cinta tiene una pestaña propia **NavisCoord → Puente → Estado del puente**, que informa antes de actuar y no cambia nada si respondes «No».
 
 ## Verificar
 

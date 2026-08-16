@@ -5,6 +5,67 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cuatro herramientas escribían sin comprobar en qué documento.**
+  `navis_build_sets`, `navis_build_clash_matrix`, `navis_run_tests` y
+  `navis_reset_appearance` no llamaban `require_mutable()`, así que la sesión
+  se resolvía por la vía de lectura — y esa vía, con dos instancias abiertas,
+  **elige la más reciente y no lo dice** (`sessions.py`). No había error: los
+  tests de clash aparecían en el modelo que Navisworks hubiera tocado último.
+  Las cuatro aceptan ahora `expected_document_fingerprint` y devuelven
+  `document_fingerprint_before`, como el resto de las mutaciones. El ensayo
+  también se rechaza: un `dry_run` que cuenta elementos en Torre B es el
+  número que una persona lee antes de aprobar la escritura en Torre A.
+- `install.ps1` comprueba **todo** lo que va a copiar antes de copiar nada: el
+  DLL se instalaba primero y la cinta se verificaba después, así que un build
+  sin XAML dejaba el complemento a medias —DLL cargado, pestaña ausente, cero
+  errores— que es justo lo que el script existe para no producir.
+- `install.ps1 -Uninstall` funciona aunque ya no quede Navisworks instalado:
+  el complemento vive en `%APPDATA%` y sigue ahí, pero el script exigía una
+  instalación del producto antes de dejar borrarlo. Además, desinstalar UNA
+  versión ya no borra el registro de sesiones, que es común a todas.
+- `Verify-SessionAcl.ps1`: la comprobación de herencia estaba escrita
+  `-not $x -eq $false`, que PowerShell evalúa como `(-not $x) -eq $false` —o
+  sea, `$x`, la misma comprobación de la línea siguiente. Ahora una mira el
+  flag y la otra que no haya quedado ninguna regla heredada. El criterio de
+  identidad de confianza era una alternancia de subcadenas, así que un grupo
+  llamado `NotAdministrators` pasaba; ahora el nombre tiene que ser el
+  componente completo.
+- La tabla de versiones soportadas de `SECURITY.md` decía 0.2.2, tres
+  releases atrás, y el pie de enlaces del changelog seguía en `v0.2.2`: los
+  encabezados `## [0.3.0]` y `## [0.2.3]` se publicaban como corchetes
+  literales y el diff de `[Unreleased]` escondía dos releases enteros.
+  Ambos entran ahora en `TestVersionCoherence`, que solo leía los archivos con
+  los que se *construye*.
+
+### Changed
+
+- **La lista de mutaciones dejó de escribirse a mano.** El test que debía
+  atrapar lo anterior enumeraba nueve herramientas y omitía justo esas
+  cuatro, así que pasaba en verde con el fallo dentro. Ahora el conjunto se
+  deriva de la superficie de escritura que declara el propio complemento —la
+  clase que atiende cada ruta en `Router.cs` y si el paso pasa por
+  `WorkflowHandlers.Mutate`— y lo que no muta se exime por nombre y con el
+  motivo escrito. Una ruta nueva cuenta como mutación hasta que alguien
+  explique por qué no lo es: olvidarse ahora rompe el build en vez de
+  aprobarlo. Se añadió además la comprobación de comportamiento que faltaba:
+  con dos instancias vivas, cada mutación se ejecuta de verdad contra un
+  puente espía y se verifica que **no llegó a llamarlo**.
+- La documentación se puso al día con lo que 0.3.0 dejó hecho y describía al
+  revés: la pestaña propia y «Estado del puente» —que informa antes de actuar,
+  con «No» por defecto— en `ARCHITECTURE.md`, `TESTING.md` y la skill de
+  instalación; el paso de release que mandaba correr el flujo 0-1-2-3 «desde
+  la cinta», imposible desde que esos botones se quitaron; y la nota que decía
+  que el pin del marketplace se verificaba a mano porque en CI la prueba se
+  saltaba, cuando el job `manifests` ya trae los tags y exige que la fase
+  detectada corresponda al evento. El CHANGELOG de 0.3.0 se contradecía a sí
+  mismo sobre `hide_unrelated_geometry`: una entrada daba la causa por
+  encontrada y confirmada en vivo y otra la declaraba abierta.
+- CI compila los `.py` de `scripts/` y ejecuta `profile_checksums.py`. Solo se
+  parseaban los `.ps1`, así que el generador del checksum que el runner de C#
+  compara podía romperse sin que nada lo dijera hasta el siguiente release.
+
 ## [0.3.0] — 2026-08-16
 
 Menor, no parche: `navis_clash_image` es una herramienta nueva. Ninguna
@@ -46,9 +107,13 @@ herramienta ni ruta existente cambió de forma — los argumentos visuales de
 
 ### Changed
 
-- La cinta ofrece **un solo botón**, «Puente - NavisCoord», que arranca y para
-  el puente. Los otros cinco —Configurar coordinación y los cuatro pasos
-  numerados— hacían exactamente lo que ya hacen `navis_configure`,
+- NavisCoord tiene **pestaña propia** en la cinta, con un panel «Puente» y un
+  solo botón, «Estado del puente». El botón informa primero —versión, y
+  CORRIENDO con su puerto o DETENIDO— y solo entonces pregunta si arrancarlo o
+  pararlo, con **«No» por defecto**: antes alternaba el puente al pulsarlo, así
+  que consultarlo lo mataba. Los otros cinco botones —Configurar coordinación y
+  los cuatro pasos numerados— hacían exactamente lo que ya hacen
+  `navis_configure`,
   `navis_audit_models`, `navis_run` y `navis_group_levels`, y llenaban la
   pestaña «Tool add-ins» de entradas que empezaban todas por la misma palabra.
   `CoordinationWorkflow` no cambia: sigue siendo el servicio que llaman las
@@ -77,11 +142,13 @@ herramienta ni ruta existente cambió de forma — los argumentos visuales de
   los elementos ocultados de **0 a 136**, con los 154 hermanos repartidos sin
   residuo entre supervivientes, duplicados y ocultados. Ver `docs/TESTING.md`.
 - La escalera de reintentos ya no gasta un render de Navisworks en aislar
-  cuando el aislamiento no oculta nada. En un federado real el complemento
-  reporta `hidden_items: 0` tras recorrer 20 ancestros y 3.474 hermanos, así
-  que ese peldaño devolvía la misma imagen por el mismo precio; ahora se
-  descarta y se abre el encuadre. **Por qué no oculta nada sigue abierto**, con
-  la medición y un contador por motivo en `docs/TESTING.md`.
+  cuando el complemento reporta `hidden_items: 0`: ese peldaño devolvía la
+  misma imagen por el mismo precio, así que se descarta y se abre el encuadre.
+  Se escribió cuando el aislamiento **nunca** ocultaba nada —20 ancestros y
+  3.474 hermanos para nada— y el contador por motivo que se añadió aquí es lo
+  que permitió encontrar la causa, arreglada en la entrada anterior. La
+  optimización sigue valiendo con el aislamiento ya funcionando: ahora el
+  peldaño solo se salta cuando de verdad no hay nada que ocultar.
 - `visual` y `notes` —lo que el complemento reporta haber hecho y qué le salió
   mal— dejaron de perderse en la capa Python. Llegaban al servidor y no al
   llamante, así que una investigación en vivo leía `null` mientras la respuesta
@@ -266,6 +333,8 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
-[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.0
+[0.2.3]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.3
 [0.2.2]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.2
 [0.2.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.1

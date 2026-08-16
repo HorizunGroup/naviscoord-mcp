@@ -10,10 +10,10 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
-from naviscoord import sessions
+from naviscoord import mcp_server, sessions
 from naviscoord.bridge import Bridge, BridgeError, CapabilityError
 from naviscoord.profile import Profile
 from naviscoord.sessions import SESSION_ENV, TargetError
@@ -358,6 +358,93 @@ class TestDocumentScopedState:
         assert state.group_key == ""
         assert state.group_roles == {}
         assert state.discovery is None
+
+
+class SpyBridge(Bridge):
+    """A bridge that records instead of talking, and must stay untouched.
+
+    `call` is the single funnel every mutation goes through, and `resolve`
+    is not built on it — so a tool that reaches `call` here is a tool whose
+    guard did not run.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.routes: list[str] = []
+
+    def call(self, route: str, payload: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
+        self.routes.append(route)
+        return {"ok": True}
+
+
+class TestMutationsRefuseAnAmbiguousTarget:
+    """With two instances open, a write must refuse rather than choose.
+
+    Source-level wiring says the guard is *written*; this says it *runs*.
+    The four tools below shipped 0.3.0 without it, and the symptom was not
+    an error — it was a set of clash tests appearing in whichever model
+    Navisworks had touched last.
+    """
+
+    MUTATIONS: ClassVar[dict[str, dict[str, Any]]] = {
+        "navis_build_sets": {"dry_run": False},
+        "navis_build_clash_matrix": {"dry_run": False},
+        "navis_run_tests": {},
+        "navis_reset_appearance": {},
+        # Already guarded in 0.3.0; here so a refactor cannot quietly undo it.
+        "navis_apply_groups": {"dry_run": False},
+        "navis_set_status": {"issue_ids": ["I-001"], "dry_run": False},
+        "navis_save_viewpoints": {"dry_run": False},
+    }
+
+    @pytest.fixture
+    def two_instances(self, registry: Path, monkeypatch: pytest.MonkeyPatch) -> SpyBridge:
+        write_session(registry, "torre-a", fingerprint="fp-a", title="Torre A")
+        write_session(
+            registry, "torre-b", fingerprint="fp-b", title="Torre B",
+            pid=os.getpid(), started="2026-08-14T11:00:00Z",
+        )
+        spy = SpyBridge()
+        state = SessionState(bridge=spy)
+        monkeypatch.setattr(mcp_server, "STATE", state)
+        return spy
+
+    @pytest.mark.parametrize("tool_name", sorted(MUTATIONS))
+    def test_the_write_never_reaches_the_bridge(
+        self, tool_name: str, two_instances: SpyBridge
+    ) -> None:
+        result = getattr(mcp_server, tool_name)(**self.MUTATIONS[tool_name])
+
+        assert two_instances.routes == [], (
+            f"{tool_name} llamó {two_instances.routes} con dos instancias abiertas"
+        )
+        assert "No voy a elegir por ti" in str(result.get("detail", "")), result
+
+    @pytest.mark.parametrize("tool_name", ["navis_build_sets", "navis_build_clash_matrix"])
+    def test_a_dry_run_is_refused_too(self, tool_name: str, two_instances: SpyBridge) -> None:
+        """The rehearsal has to happen on the model the write would hit.
+
+        A dry run that counts elements in Torre B is not harmless: it is the
+        number a human reads before approving the write.
+        """
+        result = getattr(mcp_server, tool_name)(dry_run=True)
+        assert two_instances.routes == [], tool_name
+        assert result.get("error"), result
+
+    def test_a_chosen_target_lets_the_same_write_through(
+        self, two_instances: SpyBridge
+    ) -> None:
+        """The guard refuses ambiguity, not writing."""
+        mcp_server.STATE.bridge.pin("torre-a")
+        result = mcp_server.navis_run_tests()
+        assert two_instances.routes == ["clash/run"]
+        assert result["document_fingerprint_before"] == "fp-a"
+
+    def test_a_read_still_picks_one_without_complaining(
+        self, two_instances: SpyBridge
+    ) -> None:
+        """Reads keep the old behaviour: the newest instance, silently."""
+        assert mcp_server.STATE.live_fingerprint()[0] in {"fp-a", "fp-b"}
 
 
 class TestProfileIdentity:

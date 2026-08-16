@@ -25,11 +25,30 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def changelog_releases() -> list[str]:
+    """Released versions with a `## [x.y.z]` heading, newest first.
+
+    `[Unreleased]` is skipped on purpose: it carries no version and is where
+    in-flight work belongs.
+    """
+    import re
+
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    return re.findall(r"^## \[(\d+\.\d+\.\d+)\]", text, re.MULTILINE)
+
+
 # ------------------------------------------------------------- versioning
 
 
 class TestVersionCoherence:
-    """One version, declared in six places, all of which must agree."""
+    """One version, declared in seven places, all of which must agree.
+
+    `SECURITY.md` and the changelog are here because they were the two that
+    drifted: the supported-version table sat at 0.2.2 through three releases
+    with nothing to catch it, since the fixture below only read the files a
+    release *builds* from. A version a reader can see is a version that has
+    to be right.
+    """
 
     @pytest.fixture
     def declared(self) -> dict[str, str]:
@@ -37,11 +56,15 @@ class TestVersionCoherence:
 
         pyproject = (ROOT / "server" / "pyproject.toml").read_text(encoding="utf-8")
         init = (ROOT / "server" / "naviscoord" / "__init__.py").read_text(encoding="utf-8")
+        security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
         declared = {
             "pyproject": re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE).group(1),
             "__init__": re.search(r'^__version__ = "([^"]+)"', init, re.MULTILINE).group(1),
             "claude_plugin": read_json(ROOT / ".claude-plugin" / "plugin.json")["version"],
             "codex_plugin": read_json(ROOT / ".codex-plugin" / "plugin.json")["version"],
+            # The first row of the supported-versions table.
+            "SECURITY.md": re.search(r"^\|\s*(\d+\.\d+\.\d+)\s*\|", security, re.MULTILINE).group(1),
+            "CHANGELOG.md": changelog_releases()[0],
         }
 
         # Discovered, not named: this repository carries a private ribbon
@@ -62,6 +85,30 @@ class TestVersionCoherence:
         from naviscoord import __version__
 
         assert __version__ == declared["pyproject"]
+
+    def test_every_release_heading_has_a_link(self) -> None:
+        """A heading without its definition renders as literal brackets.
+
+        The footer stayed at 0.2.2 for two releases: `## [0.3.0]` and
+        `## [0.2.3]` were broken links on the published changelog, and
+        `[Unreleased]` compared against a tag two releases old.
+        """
+        text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        import re
+
+        defined = set(re.findall(r"^\[([^\]]+)\]:\s*http", text, re.MULTILINE))
+        missing = [v for v in changelog_releases() if v not in defined]
+        assert not missing, f"encabezados sin enlace al pie: {missing}"
+        assert "Unreleased" in defined
+
+    def test_unreleased_compares_against_the_newest_tag(self) -> None:
+        """Otherwise the diff link silently hides a whole release."""
+        text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        import re
+
+        link = re.search(r"^\[Unreleased\]:\s*(\S+)", text, re.MULTILINE).group(1)
+        newest = changelog_releases()[0]
+        assert link.endswith(f"v{newest}...HEAD"), link
 
 
 class TestMarketplacePins:

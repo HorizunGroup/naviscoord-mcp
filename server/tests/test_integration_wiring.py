@@ -86,6 +86,91 @@ def mcp_tools() -> dict[str, str]:
     return found
 
 
+# --------------------------------------------------- the write surface
+
+# Routes the add-in serves from a write path but that do not change the
+# document. Declared here, with the reason, because the alternative is a
+# hand-written list of the tools that DO mutate — and that is exactly how
+# four of them went unguarded: the list was the only record, nobody thought
+# to extend it, and the test kept passing. Now anything new counts as a
+# mutation until someone writes down why it is not.
+NOT_A_DOCUMENT_MUTATION: dict[str, str] = {
+    "sets/list": "enumera los conjuntos; vive en WriteHandlers pero solo lee",
+    "selection/set": "cambia qué está seleccionado en la sesión, no el contenido",
+}
+
+# `STATE.require_mutable(` is the guard; navis_exit has no document to
+# fingerprint and resolves the instance for mutation directly.
+GUARD_FORMS = ("STATE.require_mutable(", "resolve(for_mutation=True)")
+
+
+def mutating_routes() -> set[str]:
+    """Routes that write, according to the add-in that serves them.
+
+    Two declarations, both made in C# for its own reasons rather than for
+    this test: the handler class a route is dispatched to in `Router.cs`,
+    and — for the workflow steps, which all live in one class — whether the
+    step goes through `WorkflowHandlers.Mutate`.
+    """
+    routes = set(
+        re.findall(
+            r'\["([a-z0-9_]+/[a-z0-9_]+)"\]\s*=\s*(?:\(p, _\) =>\s*)?'
+            r"(?:WriteHandlers|SaveHandlers|CloseHandlers)\.",
+            read(ADDIN / "Router.cs"),
+        )
+    )
+    routes |= set(
+        re.findall(
+            r'Mutate\(payload,\s*job,\s*"([a-z0-9_]+/[a-z0-9_]+)"',
+            read(ADDIN / "WorkflowHandlers.cs"),
+        )
+    )
+    return routes - set(NOT_A_DOCUMENT_MUTATION)
+
+
+def bridge_method_routes() -> dict[str, set[str]]:
+    """Bridge method name -> the routes it asks the add-in for."""
+    source = read(SERVER / "bridge.py")
+    tree = ast.parse(source)
+    out: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        routes: set[str] = set()
+        for call in ast.walk(node):
+            if not isinstance(call, ast.Call):
+                continue
+            if getattr(call.func, "attr", "") not in {"call", "require", "submit_job"}:
+                continue
+            if call.args and isinstance(call.args[0], ast.Constant):
+                value = call.args[0].value
+                if isinstance(value, str) and "/" in value:
+                    routes.add(value)
+        if routes:
+            out[node.name] = routes
+    return out
+
+
+def tool_routes() -> dict[str, set[str]]:
+    """Tool name -> every route it can reach.
+
+    Three ways a tool names a route: through a bridge method, by passing the
+    route to `run_route`, and by naming a workflow step that `_workflow`
+    prefixes. All three are literals in the source, so all three are visible
+    here.
+    """
+    methods = bridge_method_routes()
+    out: dict[str, set[str]] = {}
+    for name, body in mcp_tools().items():
+        routes: set[str] = set()
+        for method in re.findall(r"STATE\.bridge\.([a-z_]+)\(", body):
+            routes |= methods.get(method, set())
+        routes |= set(re.findall(r'run_route\(\s*["\']([a-z0-9_]+/[a-z0-9_]+)["\']', body))
+        routes |= {f"workflow/{s}" for s in re.findall(r'_workflow\(\s*["\']([a-z0-9_]+)', body)}
+        out[name] = routes
+    return out
+
+
 # ------------------------------------------------------------------ tests
 
 
@@ -262,17 +347,46 @@ class TestToolWiring:
         assert "STATE.bridge.capabilities(" in mcp_tools()["navis_capabilities"]
 
     def test_every_mutating_tool_guards_the_document(self) -> None:
-        """A mutation that skips require_mutable can land on another model."""
+        """A mutation that skips require_mutable can land on another model.
+
+        Without the guard the session resolves through the read path, and
+        that path picks the most recent instance and says nothing — so with
+        Torre A and Torre B both open the write lands wherever, silently.
+        The set of mutations is derived from the add-in's own write surface,
+        not listed here; see `NOT_A_DOCUMENT_MUTATION`.
+        """
         tools = mcp_tools()
-        mutating = [
-            "navis_apply_groups", "navis_set_status", "navis_save_viewpoints",
-            "navis_color_by_priority", "navis_configure", "navis_run",
-            "navis_group_levels", "navis_save", "navis_save_as",
-        ]
-        for name in mutating:
-            assert "STATE.require_mutable(" in tools[name], (
-                f"{name} muta sin comprobar la huella del documento"
-            )
+        writes = mutating_routes()
+        unguarded: list[str] = []
+        for name, routes in tool_routes().items():
+            if not routes & writes:
+                continue
+            if not any(form in tools[name] for form in GUARD_FORMS):
+                unguarded.append(f"{name} → {sorted(routes & writes)}")
+        assert not unguarded, (
+            "mutan sin comprobar la huella del documento: " + "; ".join(sorted(unguarded))
+        )
+
+    def test_the_write_surface_is_actually_discovered(self) -> None:
+        """The derivation above is worthless if it silently finds nothing.
+
+        A regex that stops matching turns the guard test green by having
+        nothing left to check, which is the failure mode it exists to
+        prevent.
+        """
+        writes = mutating_routes()
+        assert len(writes) >= 12, f"solo {len(writes)} rutas de escritura: {sorted(writes)}"
+        for expected in ("sets/build", "clash/matrix", "clash/run", "appearance/reset",
+                         "clash/group", "document/save", "workflow/run"):
+            assert expected in writes, expected
+        assert "sets/list" not in writes
+        assert "workflow/audit_models" not in writes, (
+            "AuditModels no pasa por Mutate en C#; si eso cambió, cambia también el guardia"
+        )
+        reached = set().union(*tool_routes().values())
+        assert writes <= reached | {"sets/build_search"}, (
+            f"rutas de escritura que ninguna tool alcanza: {sorted(writes - reached)}"
+        )
 
     def test_read_tools_use_the_freshness_guard(self) -> None:
         """Answering from an analysis of a different document is worse than

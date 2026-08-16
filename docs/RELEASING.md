@@ -17,7 +17,7 @@ SemVer. Para este proyecto, en la práctica:
 
 ## 2. Actualizar las declaraciones
 
-La versión se declara en seis sitios y **todos tienen que coincidir**; hay una
+La versión se declara en siete sitios y **todos tienen que coincidir**; hay una
 prueba que lo comprueba (`test_packaging.py::TestVersionCoherence`).
 
 - `server/pyproject.toml` → `version`
@@ -25,6 +25,19 @@ prueba que lo comprueba (`test_packaging.py::TestVersionCoherence`).
 - `.claude-plugin/plugin.json` → `version`
 - `.codex-plugin/plugin.json` → `version`
 - `addin/NavisCoord.Addin/NavisCoord.Addin.csproj` → `<Version>`
+- `SECURITY.md` → la primera fila de la tabla de versiones soportadas
+- `CHANGELOG.md` → el encabezado `## [x.y.z]` más reciente
+
+Los dos últimos entraron tarde a la prueba, y se nota en el historial: la
+tabla de `SECURITY.md` se quedó en 0.2.2 durante tres releases porque la
+comprobación solo leía los archivos con los que se *construye*. Una versión
+que un lector puede ver es una versión que tiene que estar bien.
+
+El pie de enlaces del changelog también se comprueba: cada encabezado
+`## [x.y.z]` necesita su definición `[x.y.z]: …` al final del archivo, y
+`[Unreleased]` tiene que comparar contra el tag más reciente. Sin eso el
+encabezado se publica como corchetes literales y el diff de `Unreleased`
+esconde un release entero.
 
 ### El `ref` de los marketplaces va en el commit de release, ANTES del tag
 
@@ -48,13 +61,17 @@ distingue por el estado del repositorio:
 | Candidata de release | la rama es `release/naviscoord-<versión>` | `ref == "v" + versión`, aunque ese tag todavía no exista |
 | Release | el tag de la versión declarada ya existe | `ref == "v" + versión` |
 
-> El estado «candidata» se detecta por el **nombre de la rama**, así que la
-> comprobación solo es concluyente en un clon con la rama activa y con los
-> tags presentes. En CI no lo es: `actions/checkout` no trae tags, de modo que
-> la prueba se salta; y en el checkout desacoplado que GitHub usa para un pull
-> request, `git rev-parse --abbrev-ref HEAD` responde `HEAD` y el estado
-> «candidata» es inalcanzable. **Este pin se verifica a mano antes de
-> etiquetar** (paso 7.4), no en CI.
+> Esto **ya se comprueba en CI**, y la nota anterior —que decía que la prueba
+> se saltaba y que el pin había que verificarlo a mano— describía justamente
+> el defecto que `marketplace_pin.py` vino a cerrar. Hoy el job `manifests`
+> hace `fetch-tags: true` con `fetch-depth: 0`, de modo que `git tag` responde
+> de verdad; la fase se lee del evento (`GITHUB_REF`, `GITHUB_EVENT_NAME`,
+> `GITHUB_HEAD_REF`) en vez de `git rev-parse`, así que «candidata» **sí** es
+> alcanzable en un pull request desde `release/naviscoord-<versión>`; y el run
+> falla si la fase detectada no es la que corresponde al evento, o si en fase
+> `tag` la lista de tags vuelve vacía. Verificarlo a mano antes de etiquetar
+> (paso 7.4) sigue siendo buena costumbre, pero ya no es lo único que lo
+> sostiene.
 
 Los archivos a cambiar en el paso 2 son:
 
@@ -110,14 +127,23 @@ instalaciones editables.
 Ninguna de estas corre en CI. Ver [TESTING.md](TESTING.md) para la lista
 completa; el mínimo antes de publicar:
 
-- [ ] Abrir un federado real y correr el flujo 0-1-2-3 desde la cinta.
-- [ ] Correr los mismos cuatro pasos como herramientas MCP y comparar.
+- [ ] Abrir un federado real y correr el flujo 0-1-2-3 con las herramientas
+      MCP (`navis_audit_models`, `navis_configure`, `navis_run`,
+      `navis_group_levels`). Desde la cinta ya no se puede: esos cinco botones
+      se quitaron en 0.3.0 por duplicar las rutas, y `CoordinationWorkflow`
+      —el servicio que ambos llamaban— es el mismo.
+- [ ] La pestaña **NavisCoord** aparece con su icono y «Estado del puente»
+      informa sin alterar nada si se responde «No».
 - [ ] `navis_save_as` a un `.nwf` local; cerrar, reabrir y confirmar que
       sets, tests, resultados y grupos siguen ahí.
 - [ ] Con un `.nwfacc` de ACC abierto: comprobar que `navis_save` se rechaza
       con la razón correcta.
-- [ ] Dos Navisworks abiertas: `navis_sessions` lista ambas; una mutación sin
-      `navis_target` se rechaza; cerrar una no rompe la otra.
+- [ ] Dos Navisworks abiertas: `navis_sessions` lista ambas; cerrar una no
+      rompe la otra; y **toda** mutación sin `navis_target` se rechaza — no
+      solo las evidentes. Comprobar en concreto `navis_build_sets`,
+      `navis_build_clash_matrix`, `navis_run_tests` y `navis_reset_appearance`,
+      que son las cuatro que se publicaron sin ese guardia: no daban error,
+      escribían en el modelo que Navisworks hubiera tocado último.
 - [ ] `navis_run(run_async=True)` y comprobar que `navis_health` y
       `navis_job_status` **siguen respondiendo** durante la corrida.
 - [ ] Con cambios sin guardar, comprobar los tres modos de
@@ -125,6 +151,20 @@ completa; el mínimo antes de publicar:
       `discard` solo descarta cuando se pidió expresamente.
 - [ ] `navis_exit(dry_run=false)` responde antes de cerrar y solo queda en
       `completed` cuando el PID de Navisworks desaparece.
+
+Para hacer todo eso **con el binario del release** en vez de con el compilado
+del árbol, hay que sustituir el complemento que ya tienes instalado, que es la
+acción menos reversible de esta validación. Para eso está
+`scripts/Smoke-AddinSwap.ps1`, en cuatro modos separados y comprobables por
+separado — toca **solo** el DLL de NavisCoord y deja en paz el perfil y
+cualquier otro plugin:
+
+```powershell
+.\scripts\Smoke-AddinSwap.ps1 -Mode Backup  -Versions 2026   # copia con manifiesto SHA-256
+.\scripts\Smoke-AddinSwap.ps1 -Mode Install -Versions 2026   # instala el de dist\addin\<versión>\
+# … las pruebas de arriba …
+.\scripts\Smoke-AddinSwap.ps1 -Mode Restore -BackupRoot <ruta>  # y vuelve a comparar hashes
+```
 
 ## 7. El commit de release, y el tag encima
 

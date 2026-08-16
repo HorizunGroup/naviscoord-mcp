@@ -901,7 +901,9 @@ def navis_run_rules_workflow(
 
 @mcp.tool()
 @_guard
-def navis_build_sets(dry_run: bool = True, prefix: str = "NC") -> dict[str, Any]:
+def navis_build_sets(
+    dry_run: bool = True, prefix: str = "NC", expected_document_fingerprint: str = ""
+) -> dict[str, Any]:
     """Crea un conjunto de selección explícito por disciplina.
 
     Conjuntos explícitos y no de búsqueda, a propósito: un search set se
@@ -912,6 +914,7 @@ def navis_build_sets(dry_run: bool = True, prefix: str = "NC") -> dict[str, Any]
     Con dry_run=True (por defecto) solo reporta cuántos elementos caerían en
     cada disciplina.
     """
+    fingerprint = STATE.require_mutable(expected_document_fingerprint)
     disciplines = []
     for code, rule in STATE.profile.disciplines.items():
         if code == "OTRO":
@@ -924,13 +927,18 @@ def navis_build_sets(dry_run: bool = True, prefix: str = "NC") -> dict[str, Any]
                 "source_files": sources,
             }
         )
-    return STATE.bridge.build_sets(disciplines, prefix, dry_run)
+    payload = STATE.bridge.build_sets(disciplines, prefix, dry_run)
+    payload.setdefault("document_fingerprint_before", fingerprint)
+    return payload
 
 
 @mcp.tool()
 @_guard
 def navis_build_clash_matrix(
-    dry_run: bool = True, prefix: str = "NC", replace_existing: bool = False
+    dry_run: bool = True,
+    prefix: str = "NC",
+    replace_existing: bool = False,
+    expected_document_fingerprint: str = "",
 ) -> dict[str, Any]:
     """Genera la suite completa de tests disciplina contra disciplina.
 
@@ -941,7 +949,10 @@ def navis_build_clash_matrix(
     pairs = STATE.profile.section("clash_matrix").get("pairs", [])
     if not pairs:
         return {"error": "El perfil no define clash_matrix.pairs."}
-    return STATE.bridge.build_matrix(pairs, prefix, dry_run, replace_existing)
+    fingerprint = STATE.require_mutable(expected_document_fingerprint)
+    payload = STATE.bridge.build_matrix(pairs, prefix, dry_run, replace_existing)
+    payload.setdefault("document_fingerprint_before", fingerprint)
+    return payload
 
 
 @mcp.tool()
@@ -953,13 +964,22 @@ def navis_list_tests() -> dict[str, Any]:
 
 @mcp.tool()
 @_guard
-def navis_run_tests(tests: list[str] | None = None) -> dict[str, Any]:
+def navis_run_tests(
+    tests: list[str] | None = None, expected_document_fingerprint: str = ""
+) -> dict[str, Any]:
     """Corre los tests indicados, o todos si no se especifica ninguno.
 
     Reporta el conteo de resultados antes y después de cada test, para que un
     test que no encontró nada se distinga de uno que no llegó a correr.
+
+    Correr un test escribe sus resultados dentro del documento, así que pasa
+    por el mismo guardia que el resto de las mutaciones aunque no tenga
+    dry_run: no hay ensayo posible de una corrida de clash.
     """
-    return STATE.bridge.run_tests(tests)
+    fingerprint = STATE.require_mutable(expected_document_fingerprint)
+    payload = STATE.bridge.run_tests(tests)
+    payload.setdefault("document_fingerprint_before", fingerprint)
+    return payload
 
 
 # ------------------------------------------------------------- analysis
@@ -1680,9 +1700,17 @@ def navis_color_by_priority(limit: int = 50, expected_document_fingerprint: str 
 
 @mcp.tool()
 @_guard
-def navis_reset_appearance() -> dict[str, Any]:
-    """Quita todos los colores aplicados sobre el modelo."""
-    return STATE.bridge.reset_appearance()
+def navis_reset_appearance(expected_document_fingerprint: str = "") -> dict[str, Any]:
+    """Quita todos los colores aplicados sobre el modelo.
+
+    Sin argumentos borra TODO override de apariencia del documento, incluidos
+    los que puso una persona a mano. Es la mutación más fácil de disparar por
+    error y la única sin dry_run, así que la huella se comprueba igual.
+    """
+    fingerprint = STATE.require_mutable(expected_document_fingerprint)
+    payload = STATE.bridge.reset_appearance()
+    payload.setdefault("document_fingerprint_before", fingerprint)
+    return payload
 
 
 # --------------------------------------------------------- flujo operativo
