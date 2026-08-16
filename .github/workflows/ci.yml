@@ -342,6 +342,16 @@ jobs:
             echo "::error::archivos >2 MB versionados:"; echo "$big"; exit 1
           fi
 
+      - name: Los scripts de Python compilan
+        # `install.ps1` y los .ps1 de release ya se parseaban; los .py de
+        # scripts/ no. Dos de ellos no los ejecuta nada en CI —
+        # `profile_checksums.py`, del que sale el checksum que el runner de C#
+        # compara, y `Smoke-AddinSwap.ps1` en su lado— así que un error de
+        # sintaxis ahí no aparecía hasta el siguiente release, hecho a mano.
+        run: |
+          python -m compileall -q scripts
+          python scripts/profile_checksums.py
+
       - name: Los scripts de release son sintácticamente válidos
         shell: pwsh
         run: |

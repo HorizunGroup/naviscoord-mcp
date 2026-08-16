@@ -18,13 +18,20 @@ NavisCoord tiene tres piezas y una regla que las separa.
 llama y transforma. Dos implementaciones de la misma decisión derivan, y la
 que nadie pulsa deriva en silencio.
 
-**La cinta ofrece un solo botón: «Puente - NavisCoord».** Llegó a tener seis,
-uno por paso, en la pestaña «Tool add-ins» — y cada uno hacía exactamente lo
-que ya hacía una herramienta MCP. Un botón que duplica una ruta es la segunda
-implementación de la regla de arriba, con la desventaja de que la prueba de
-paridad solo puede comprobar que ambos llaman al servicio, no que ambos sigan
-haciendo lo mismo cuando alguien toque uno. El botón que queda hace lo único
-que no es una ruta, porque es lo que las habilita: arrancar y parar el puente.
+**NavisCoord tiene pestaña propia, con un solo botón: «Estado del puente».**
+Llegó a tener seis, uno por paso, repartidos en la pestaña «Tool add-ins» — y
+cada uno hacía exactamente lo que ya hacía una herramienta MCP. Un botón que
+duplica una ruta es la segunda implementación de la regla de arriba, con la
+desventaja de que la prueba de paridad solo puede comprobar que ambos llaman
+al servicio, no que ambos sigan haciendo lo mismo cuando alguien toque uno. El
+botón que queda hace lo único que no es una ruta, porque es lo que las
+habilita: mirar el puente y, si hace falta, arrancarlo o pararlo.
+
+Mirar y actuar están separados a propósito. El botón **informa primero**
+—versión, y CORRIENDO con su puerto o DETENIDO— y solo entonces pregunta, con
+«No» por defecto. Antes alternaba el puente al pulsarlo, de modo que la única
+forma de saber si estaba vivo era matarlo; por eso `BridgeHost.StatusReport()`
+no tiene efectos secundarios.
 
 ## Qué hace cada pieza
 

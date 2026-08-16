@@ -42,6 +42,16 @@ brg_issue_elements.csv
 dim_*.csv
 *.pdf
 
+# Runtime del asistente. `.claude/` puede contener configuración del proyecto
+# que sí vale la pena versionar, así que se ignora lo que es estado de una
+# máquina concreta, no la carpeta entera. `scheduled_tasks.lock` llegó a estar
+# versionado con un UUID de sesión y un PID dentro: no es fuente de nada y
+# ninguna regla del job de higiene lo detectaba.
+.claude/scheduled_tasks.lock
+.claude/*.lock
+.claude/shell-snapshots/
+.claude/todos/
+
 # Editor / OS
 .vscode/
 .idea/

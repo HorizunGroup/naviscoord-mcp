@@ -81,15 +81,27 @@ try {
     Check ($owner -eq ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -or
            $owner -like '*Administr*' -or $owner -like '*SYSTEM*') 'el propietario es el usuario actual o admin'
 
-    Check (-not $acl.AreAccessRulesProtected -eq $false) 'la herencia esta desactivada (reglas protegidas)'
-    Check $acl.AreAccessRulesProtected 'AreAccessRulesProtected = True'
+    Check $acl.AreAccessRulesProtected 'la herencia esta desactivada (AreAccessRulesProtected = True)'
+    # Distinto de la linea anterior, que solo mira el flag. Esta comprueba el
+    # resultado: que no haya quedado NINGUNA regla heredada dentro. Antes aqui
+    # habia una segunda comprobacion del mismo flag escrita como
+    # `-not $x -eq $false`, que PowerShell evalua como `(-not $x) -eq $false`
+    # — es decir, exactamente `$x`. Parecia otra cosa y no lo era.
+    $inherited = @($acl.Access | Where-Object { $_.IsInherited })
+    Check ($inherited.Count -eq 0) "no quedan reglas heredadas (encontradas: $($inherited.Count))"
 
     $trusted = @()
     $untrusted = @()
     foreach ($rule in $acl.Access) {
         $id = $rule.IdentityReference.Value
         $line = "{0,-45} {1,-12} {2}" -f $id, $rule.AccessControlType, $rule.FileSystemRights
-        if ($id -match 'SYSTEM$|Administradores|Administrators|^' + [regex]::Escape($env:USERNAME) + '$' -or
+        # El nombre de grupo tiene que ser el componente COMPLETO, no una
+        # subcadena: la alternancia anterior daba por buena cualquier identidad
+        # que contuviera la palabra, asi que un grupo de dominio llamado
+        # "NotAdministrators" entraba como de confianza. Es la lista que decide
+        # si el registro de sesiones quedo expuesto, no puede ser aproximada.
+        if ($id -match '(?i)(^|\\)(SYSTEM|Administradores|Administrators|' +
+                       [regex]::Escape($env:USERNAME) + ')$' -or
             $id -eq ([Security.Principal.WindowsIdentity]::GetCurrent().Name)) {
             $trusted += $line
         } else {
