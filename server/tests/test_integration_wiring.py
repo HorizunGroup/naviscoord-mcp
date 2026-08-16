@@ -329,12 +329,40 @@ class TestCodexManifest:
 
 
 class TestParity:
-    """The ribbon and the routes must call the same service, not two copies."""
+    """Every coordination step must reach the service, not a copy of it.
 
-    def test_buttons_delegate_to_the_workflow_service(self) -> None:
-        buttons = read(ADDIN / "WorkflowButtons.cs")
-        for step in ("AuditModels", "Configure", "RunAll", "GroupByLevel", "ApplyRules"):
-            assert f"CoordinationWorkflow.{step}" in buttons, step
+    This used to assert the same thing about the ribbon buttons AND the
+    routes. The buttons are gone: six of them stood in a row on the Tool
+    add-ins tab doing exactly what six MCP tools already did, so the ribbon
+    now carries one button — the bridge toggle — and the workflow is reached
+    the one way that has tests behind it.
+    """
+
+    def test_the_ribbon_offers_only_the_bridge(self) -> None:
+        """One button, and it says what it does.
+
+        A second `AddInPlugin` in this add-in is a duplicate of a tool by
+        construction: everything else it could offer is already a route.
+        """
+        # Only classes deriving from `AddInPlugin` become buttons. The bridge's
+        # autostart is an `EventWatcherPlugin` and shows nothing, so matching
+        # on "a file that mentions AddInPlugin" counted it and made this fail
+        # for a button that does not exist.
+        buttons = []
+        for path in ADDIN.glob("*.cs"):
+            for attribute, base in re.findall(
+                r"\[Plugin\((.*?)\)\]\s*public sealed class \w+\s*:\s*(\w+)",
+                read(path),
+                re.DOTALL,
+            ):
+                if base != "AddInPlugin":
+                    continue
+                shown = re.search(r'DisplayName\s*=\s*"([^"]+)"', attribute)
+                buttons.append(shown.group(1) if shown else "(sin nombre)")
+
+        assert buttons == ["Puente - NavisCoord"], (
+            f"la cinta ofrece {buttons}; debe ofrecer solo el puente"
+        )
 
     def test_routes_delegate_to_the_same_service(self) -> None:
         handlers = read(ADDIN / "WorkflowHandlers.cs")
@@ -393,19 +421,19 @@ class TestParity:
         }
         assert not unmatched, f"capacidades anunciadas sin ruta que las sirva: {sorted(unmatched)}"
 
-    def test_no_business_logic_left_in_the_button_files(self) -> None:
-        """The ribbon files should render and delegate, nothing else.
+    def test_no_business_logic_left_in_the_ribbon_file(self) -> None:
+        """The ribbon should start the bridge and delegate, nothing else.
 
-        Their old job was to compute AND format, which is why the MCP server
-        could not reuse a single step.
+        The old button files computed AND formatted, which is why the MCP
+        server could not reuse a single step. They are gone; this keeps the
+        rule pointed at whatever is left on the ribbon.
         """
-        for name in ("WorkflowButtons.cs", "ConfigurePlugin.cs"):
-            source = read(ADDIN / name)
-            for banned in ("TestsRunAllTests", "TestsAddCopy", "TestsMove",
-                           "TestsEditDisplayName", "new ClashTest", "SelectionSets.AddCopy"):
-                assert banned not in source, (
-                    f"{name} todavía manipula el documento directamente: «{banned}»"
-                )
+        source = read(ADDIN / "BridgePlugin.cs")
+        for banned in ("TestsRunAllTests", "TestsAddCopy", "TestsMove",
+                       "TestsEditDisplayName", "new ClashTest", "SelectionSets.AddCopy"):
+            assert banned not in source, (
+                f"BridgePlugin.cs manipula el documento directamente: «{banned}»"
+            )
 
 
 class TestSourceHygiene:

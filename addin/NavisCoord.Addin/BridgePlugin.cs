@@ -127,8 +127,12 @@ namespace NavisCoord
     /// <summary>
     /// Ribbon command: start, stop, and show where the session token lives.
     /// </summary>
+    // The only button this add-in puts on the ribbon, and it says what it is.
+    // "NavisCoord" named the product, which told a user nothing about what
+    // pressing it would do — and it sat in a row of six that all began with
+    // the same word.
     [Plugin("NavisCoord.Toggle", "HRZN",
-        DisplayName = "NavisCoord",
+        DisplayName = "Puente - NavisCoord",
         ToolTip = "Iniciar o detener el puente de coordinación NavisCoord")]
     public sealed class TogglePlugin : AddInPlugin
     {

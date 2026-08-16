@@ -1262,10 +1262,80 @@ def navis_coordination_matrix() -> dict[str, Any]:
     return payload
 
 
+def _image_options(overrides: dict[str, Any]) -> "ImageOptions":
+    """Builds the option set, ignoring anything the caller left unset.
+
+    Every visual argument defaults to `None` at the tool boundary rather than
+    to its value, so "not mentioned" and "explicitly set to the default" stay
+    distinguishable and the defaults can move without rewriting saved calls.
+    """
+    from .imaging import ImageOptions
+
+    supplied = {key: value for key, value in overrides.items() if value is not None}
+    return ImageOptions(**supplied).normalised()
+
+
+def _capture_fetcher(options: "ImageOptions"):
+    """Binds the bridge into the capture loop for one report run."""
+    from .imaging import capture
+
+    def fetch(guid: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return STATE.bridge.clash_image(guid, options=payload)
+
+    def for_issue(issue) -> Any:
+        return capture(
+            fetch,
+            issue.image_clash_id(),
+            options,
+            discipline_a=issue.discipline_a,
+            discipline_b=issue.discipline_b,
+            responsible=issue.responsible,
+            caption=_caption(issue),
+        )
+
+    return for_issue
+
+
+def _caption(issue) -> str:
+    """What gets burned into the picture.
+
+    Images leave reports: they are pasted into a chat, printed, pinned to a
+    wall. At that point the page carrying the issue id and the level is gone,
+    and an unlabelled render of a plenum is indistinguishable from any other
+    render of any other plenum.
+    """
+    parts = [issue.issue_id]
+    if issue.level:
+        parts.append(issue.level)
+    if issue.priority:
+        parts.append(issue.priority.upper())
+    return "  ·  ".join(p for p in parts if p)
+
+
 @mcp.tool()
 @_guard
 def navis_pdf_report(
-    path: str, max_issues: int = 25, with_images: bool = True, overwrite: bool = False
+    path: str,
+    max_issues: int = 25,
+    with_images: bool = True,
+    overwrite: bool = False,
+    camera_mode: str | None = None,
+    margin_percent: float | None = None,
+    min_distance: float | None = None,
+    max_distance: float | None = None,
+    image_width: int | None = None,
+    image_height: int | None = None,
+    background_color: str | None = None,
+    hide_unrelated_geometry: bool | None = None,
+    colorize_by_discipline: bool | None = None,
+    show_clash_marker: bool | None = None,
+    show_level: bool | None = None,
+    show_grid: bool | None = None,
+    render_quality: str | None = None,
+    min_screen_fraction: float | None = None,
+    min_pixel_fraction: float | None = None,
+    max_attempts: int | None = None,
+    keep_rejected: bool | None = None,
 ) -> dict[str, Any]:
     """Genera el informe PDF de coordinación.
 
@@ -1274,31 +1344,177 @@ def navis_pdf_report(
     renderizada por Navisworks, la ubicación, quién mueve, por qué importa y
     qué hacer.
 
+    **Las imágenes se verifican, no se asumen.** De cada una se comprueba que
+    los dos elementos en conflicto están dentro del encuadre (proyectando sus
+    cajas por la cámara que se aplicó de verdad) y que ambos aparecen en los
+    píxeles, que es lo único que detecta que un muro tapaba el cruce. La que no
+    pasa se vuelve a tomar más abierta o aislando la geometría de por medio, y
+    si aun así no sirve se descarta contándolo, en vez de publicar una foto que
+    no muestra el problema. El resultado trae el recuento de pedidas,
+    generadas, fallidas y descartadas, con el motivo de cada descarte.
+
+    Todos los argumentos visuales son opcionales: sin ninguno, el informe sale
+    igual que siempre pero con el encuadre nuevo.
+
+    - `camera_mode`: `closeup` (por defecto), `context` o `plan`.
+    - `margin_percent`: aire alrededor del cruce, 25 por defecto.
+    - `min_distance` / `max_distance`: metros; acotan la cámara sin cambiar lo
+      que entra en el cuadro.
+    - `hide_unrelated_geometry`: aísla los dos elementos ocultando lo demás;
+      se restaura al terminar cada captura.
+    - `colorize_by_discipline`: un color estable por disciplina (por defecto).
+      Con `False`, rojo es quien mueve y azul quien no se toca.
+    - `render_quality`: `draft`, `standard` (por defecto) o `high`.
+
     Las imágenes se piden una por una y Navisworks tiene que posicionar cámara
     y renderizar cada vez, así que 25 problemas tardan algo. Usa
     with_images=False para un borrador rápido.
     """
-    from .report import build_report, decode_image
+    from .report import build_report
 
     result = STATE.require_fresh_result()
 
-    fetcher = None
-    if with_images:
-        def fetcher(guid: str) -> bytes | None:
-            payload = STATE.bridge.clash_image(guid)
-            if payload.get("error"):
-                return None
-            return decode_image(payload)
+    options = _image_options({
+        "camera_mode": camera_mode,
+        "margin_percent": margin_percent,
+        "min_distance": min_distance,
+        "max_distance": max_distance,
+        "image_width": image_width,
+        "image_height": image_height,
+        "background_color": background_color,
+        "hide_unrelated_geometry": hide_unrelated_geometry,
+        "colorize_by_discipline": colorize_by_discipline,
+        "show_clash_marker": show_clash_marker,
+        "show_level": show_level,
+        "show_grid": show_grid,
+        "render_quality": render_quality,
+        "min_screen_fraction": min_screen_fraction,
+        "min_pixel_fraction": min_pixel_fraction,
+        "max_attempts": max_attempts,
+        "keep_rejected": keep_rejected,
+    })
 
-    return build_report(
+    payload = build_report(
         path,
         result,
         STATE.profile,
         document_title=STATE.export.document_title if STATE.export else "",
         max_issues=max_issues,
-        image_fetcher=fetcher,
+        capture_fetcher=_capture_fetcher(options) if with_images else None,
         overwrite=overwrite,
     )
+    payload["image_options"] = options.to_json()
+    return payload
+
+
+@mcp.tool()
+@_guard
+def navis_clash_image(
+    issue_id: str = "",
+    clash_guid: str = "",
+    save_to: str = "",
+    camera_mode: str | None = None,
+    margin_percent: float | None = None,
+    min_distance: float | None = None,
+    max_distance: float | None = None,
+    image_width: int | None = None,
+    image_height: int | None = None,
+    background_color: str | None = None,
+    hide_unrelated_geometry: bool | None = None,
+    colorize_by_discipline: bool | None = None,
+    show_clash_marker: bool | None = None,
+    show_level: bool | None = None,
+    show_grid: bool | None = None,
+    render_quality: str | None = None,
+    min_screen_fraction: float | None = None,
+    min_pixel_fraction: float | None = None,
+    max_attempts: int | None = None,
+    keep_rejected: bool | None = None,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    """Renderiza UNA interferencia y dice si la imagen sirve.
+
+    Para afinar el encuadre antes de gastar veinticinco renders en un PDF, y
+    para comprobar una que salió mal. Devuelve las métricas completas —qué
+    cámara se usó, qué fracción de la pantalla ocupa cada elemento, cuántos
+    píxeles de cada color se contaron, qué intentos hubo y por qué— sin meter
+    la imagen en la conversación.
+
+    Con `save_to` escribe el PNG (dentro de las rutas autorizadas); sin él solo
+    informa. La imagen nunca se devuelve en base64 al modelo: son cientos de
+    kilobytes que no aportan nada a la decisión.
+
+    Para inspeccionar por qué se descartó una imagen, `keep_rejected=True`
+    guarda igualmente el mejor intento: mirar el encuadre rechazado es lo único
+    que distingue «el muro tapaba el tubo» de «el control se pasó de estricto».
+    """
+    from .imaging import capture
+    from .paths import policy as path_policy
+
+    result = STATE.require_fresh_result()
+
+    issue = None
+    if issue_id:
+        issue = STATE.issue(issue_id)
+        guid = issue.image_clash_id()
+    elif clash_guid:
+        guid = clash_guid
+    else:
+        raise ValueError("Indica 'issue_id' o 'clash_guid'.")
+    if not guid:
+        raise ValueError(f"El problema {issue_id} no tiene ningún cruce que fotografiar.")
+
+    options = _image_options({
+        "camera_mode": camera_mode,
+        "margin_percent": margin_percent,
+        "min_distance": min_distance,
+        "max_distance": max_distance,
+        "image_width": image_width,
+        "image_height": image_height,
+        "background_color": background_color,
+        "hide_unrelated_geometry": hide_unrelated_geometry,
+        "colorize_by_discipline": colorize_by_discipline,
+        "show_clash_marker": show_clash_marker,
+        "show_level": show_level,
+        "show_grid": show_grid,
+        "render_quality": render_quality,
+        "min_screen_fraction": min_screen_fraction,
+        "min_pixel_fraction": min_pixel_fraction,
+        "max_attempts": max_attempts,
+        "keep_rejected": keep_rejected,
+    })
+
+    def fetch(target: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return STATE.bridge.clash_image(target, options=payload)
+
+    shot = capture(
+        fetch,
+        guid,
+        options,
+        discipline_a=issue.discipline_a if issue else "",
+        discipline_b=issue.discipline_b if issue else "",
+        responsible=issue.responsible if issue else "",
+        caption=_caption(issue) if issue else guid[:8],
+    )
+
+    payload = shot.to_json()
+    payload["issue_id"] = issue.issue_id if issue else ""
+    payload["document_title"] = STATE.export.document_title if STATE.export else ""
+
+    if save_to and shot.png:
+        authorised = path_policy().resolve_file(save_to, overwrite=overwrite)
+        with authorised.staged_write() as staging:
+            staging.write_bytes(shot.png)
+        payload["path"] = str(authorised.path)
+        payload["allowed_root"] = str(authorised.root)
+    elif save_to:
+        payload["path"] = ""
+        payload["detail"] = "No se escribió nada: no hubo imagen que guardar."
+
+    # `result` is read to enforce the freshness guard; naming it here keeps
+    # that intent visible rather than looking like an unused local.
+    payload["analysis_profile"] = result.profile_name
+    return payload
 
 
 # ------------------------------------------------------------ write-back
