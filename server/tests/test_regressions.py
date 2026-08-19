@@ -948,14 +948,30 @@ class TestVerdictKnowsWhetherItLooked:
         test had structure on side A. No architecture against services, no
         service against service, no electrical anywhere.
         """
+        # Three trades in the federation, so the profile's EST×HVAC and
+        # ARQ×HVAC both become answerable. Only one of them has a test.
         export = _wall_vs_wall_export("STR-WAL VS ARCH-GB-WALL")
+        duct = element("hvac/1", "", category="Ducts", name="Suministro 1")
+        beam = element("est/9", "", category="Structural Framing", name="Viga")
+        extra = clash("gx", beam, duct, depth=0.09)
+        extra.test = "STR-STF VS HVAC"
+        export.clashes.append(extra)
+        export.tests.append(
+            {"name": "STR-STF VS HVAC", "status": "Old", "exported": 1}
+        )
         result = analyze(export, profile)
 
         assert result.coverage.never_run == [], "los tests que existen sí corrieron"
-        assert result.coverage.covered_pairs == [("ARQ", "EST")]
-        assert len(result.coverage.required_pairs) > 1
-        assert result.coverage.missing_pairs, "y del resto de la matriz no se sabe nada"
+        assert ("EST", "HVAC") in result.coverage.covered_pairs
+        assert ("ARQ", "HVAC") in result.coverage.required_pairs, (
+            "arquitectura y ventilación están las dos en el modelo: son comparables"
+        )
+        assert ("ARQ", "HVAC") in result.coverage.missing_pairs
         assert result.coverage.complete is False
+        assert all(
+            "HID" not in pair and "ELE" not in pair
+            for pair in result.coverage.required_pairs
+        ), "no se exige comparar contra especialidades que no están modeladas"
 
         readiness, verdict = _verdict(result, [])
         assert readiness == "sin evidencia suficiente"

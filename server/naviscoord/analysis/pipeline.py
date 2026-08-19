@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..model import Clash, ClashExport, ElementRef, Issue
-from ..profile import Profile
+from ..profile import UNCLASSIFIED, Profile
 from .cluster import ClashCluster, build_clusters
 from .declared import read_declarations
 from .discipline import DisciplineTagger, TaggingReport
@@ -68,6 +68,18 @@ class MatrixCoverage:
         return [pair for pair in self.required_pairs if pair not in covered]
 
     @property
+    def required_covered(self) -> int:
+        """Required pairs that have a test.
+
+        Not the same as how many pairs are covered: a matrix can compare a
+        pair the profile never asked for — structure against architecture is
+        the usual one — and counting those made the report say it compared
+        "9 of the 8 pairs the profile requires".
+        """
+        covered = set(self.covered_pairs)
+        return sum(1 for pair in self.required_pairs if pair in covered)
+
+    @property
     def complete(self) -> bool:
         return self.total > 0 and not self.never_run and not self.missing_pairs
 
@@ -81,6 +93,7 @@ class MatrixCoverage:
         tests: list[dict[str, Any]] | None,
         declarations: dict[str, Any] | None = None,
         profile: Profile | None = None,
+        present: set[str] | None = None,
     ) -> "MatrixCoverage":
         out = cls()
         for entry in tests or []:
@@ -102,8 +115,17 @@ class MatrixCoverage:
                 if not isinstance(entry, dict):
                     continue
                 a, b = str(entry.get("a", "")), str(entry.get("b", ""))
-                if a and b:
-                    out.required_pairs.append(_pair(a, b))
+                if not a or not b:
+                    continue
+                # Only pairs this model could actually produce. The profile
+                # lists every combination the practice coordinates, sixteen of
+                # them; a tower with no electrical and no sanitary in the
+                # federation can never satisfy ten of those, and reporting
+                # "3 of 16" turns a real gap — three trades that ARE modelled
+                # and never compared — into a number nobody acts on.
+                if present is not None and (a.upper() not in present or b.upper() not in present):
+                    continue
+                out.required_pairs.append(_pair(a, b))
 
         seen: set[tuple[str, str]] = set()
         for declaration in (declarations or {}).values():
@@ -199,7 +221,22 @@ def analyze(
     result.warnings.extend(profile.validate())
 
     declarations = read_declarations(export.tests, profile)
-    result.coverage = MatrixCoverage.from_tests(export.tests, declarations, profile)
+    tagger = DisciplineTagger(
+        profile, discipline_overrides, group_key, group_roles, declarations
+    )
+    result.tagging = tagger.tag_export(export)
+    result.warnings.extend(result.tagging.warnings())
+
+    # Coverage is judged against the trades this federation actually holds,
+    # so tagging has to have run first.
+    present = {
+        code
+        for code, count in result.tagging.by_discipline.items()
+        if count > 0 and code != UNCLASSIFIED
+    }
+    result.coverage = MatrixCoverage.from_tests(
+        export.tests, declarations, profile, present
+    )
     if result.coverage.never_run:
         missing = ", ".join(f"«{n}»" for n in result.coverage.never_run[:6])
         if len(result.coverage.never_run) > 6:
@@ -214,17 +251,11 @@ def analyze(
         if len(result.coverage.missing_pairs) > 8:
             pending += f" y {len(result.coverage.missing_pairs) - 8} más"
         result.warnings.append(
-            f"La matriz compara {len(result.coverage.covered_pairs)} de las "
+            f"La matriz compara {result.coverage.required_covered} de las "
             f"{len(result.coverage.required_pairs)} parejas que exige el perfil. "
             f"Sin tests: {pending}. Que todos los tests hayan corrido no significa "
             "que se haya mirado todo: de esas parejas este informe no dice nada."
         )
-    tagger = DisciplineTagger(
-        profile, discipline_overrides, group_key, group_roles, declarations
-    )
-    result.tagging = tagger.tag_export(export)
-    result.warnings.extend(result.tagging.warnings())
-
     # Before anything groups by level. Clustering, hotspots, the work plan
     # and every per-level count all key off this string, so reconciling it
     # afterwards would mean redoing all of them.

@@ -51,6 +51,7 @@ from .paths import PathPolicyError
 from .paths import policy as output_policy
 from .profile import MAX_PROFILE_BYTES, Profile, canonical_text
 from .sessions import TargetError
+from .setmap import map_sets, plan_pairs
 from .sessions import summary as session_summary
 from .state import SessionState, StateError
 
@@ -944,14 +945,47 @@ def navis_build_clash_matrix(
 
     Cada par recibe el tipo (Hard / HardConservative / Clearance) y la
     tolerancia que dicta el perfil — estructura contra instalaciones a 1 mm,
-    holguras de mantenimiento a 50 mm. Requiere navis_build_sets antes.
+    holguras de mantenimiento a 50 mm.
+
+    Usa los conjuntos de selección que YA tiene el documento, emparejando el
+    nombre de cada uno con una especialidad. Un equipo que coordina ya los
+    tiene hechos, y construir otros paralelos obliga a recorrer el modelo
+    entero — que es lento y no hace falta. Si existe un conjunto `<prefijo> -
+    <CÓDIGO>` se usa ese y se ignoran los del proyecto para esa especialidad.
+
+    Los pares que no se pueden armar salen en `skipped` con el motivo: que no
+    se comparara estructura contra sanitaria y que no haya sanitaria en el
+    modelo son cosas distintas.
     """
     pairs = STATE.profile.section("clash_matrix").get("pairs", [])
     if not pairs:
         return {"error": "El perfil no define clash_matrix.pairs."}
+
+    # The guard first, before anything reaches the bridge. Reading the sets
+    # is harmless in itself, but doing it ahead of the target check means an
+    # ambiguous session has already been touched by the time the refusal
+    # arrives — and "it only read" is the argument that erodes the rule.
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
-    payload = STATE.bridge.build_matrix(pairs, prefix, dry_run, replace_existing)
+
+    names = [
+        str(entry.get("name", ""))
+        for entry in (STATE.bridge.list_sets().get("sets") or [])
+        if isinstance(entry, dict) and not entry.get("is_group")
+    ]
+    mapping = map_sets(names, STATE.profile, prefix)
+    buildable, skipped = plan_pairs(pairs, mapping)
+    if not buildable:
+        return {
+            "error": "Ningún par se puede armar con los conjuntos del documento.",
+            "sets_seen": names,
+            "set_mapping": mapping.to_json(),
+            "skipped": skipped,
+        }
+
+    payload = STATE.bridge.build_matrix(buildable, prefix, dry_run, replace_existing)
     payload.setdefault("document_fingerprint_before", fingerprint)
+    payload["set_mapping"] = mapping.to_json()
+    payload["skipped_pairs"] = skipped
     return payload
 
 

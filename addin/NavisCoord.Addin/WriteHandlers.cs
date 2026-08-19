@@ -44,12 +44,64 @@ namespace NavisCoord
                     ["name"] = saved.DisplayName ?? string.Empty,
                     ["guid"] = saved.Guid.ToString(),
                     ["is_group"] = saved.IsGroup,
-                    ["item_count"] = saved is SelectionSet set && set.ExplicitModelItems != null
-                        ? (double)set.ExplicitModelItems.Count
-                        : 0.0
+                    ["item_count"] = (double?)ExplicitItems(saved as SelectionSet)?.Count ?? 0.0,
+                    // A search set stores the rule, not the result, so it has
+                    // no count until Navisworks re-evaluates it. Saying which
+                    // kind this is beats a zero that reads as "empty".
+                    ["is_search_set"] = saved is SelectionSet s && ExplicitItems(s) == null
                 });
             }
             return new Dictionary<string, object> { ["sets"] = sets };
+        }
+
+        /// <summary>
+        /// The items a set resolves to, or null when it stores a rule instead.
+        /// </summary>
+        /// <remarks>
+        /// `ExplicitModelItems` THROWS on a search set rather than returning
+        /// null — `InvalidOperationException: Invalid operation when
+        /// '!HasExplicitModelItems'` — so the null check that guarded every
+        /// call site blew up before it could be evaluated. Listing the sets of
+        /// a document containing one search set failed outright, and the
+        /// matrix builder, which skipped anything whose items came back null,
+        /// could not build a test from a search set at all: the one thing
+        /// `sets/build_search` exists to produce.
+        /// </remarks>
+        /// <summary>
+        /// A clash-test side pointing at saved sets by reference.
+        /// </summary>
+        /// <remarks>
+        /// Several per side on purpose: structure arrives as four sets —
+        /// walls, columns, framing, floors — and a side that could hold only
+        /// one meant either four tests where the coordinator wanted one, or a
+        /// fifth set built by walking the whole model to merge them.
+        ///
+        /// By reference, not by copying the items: a set rebuilt afterwards
+        /// is picked up on the next run instead of leaving the test comparing
+        /// what the model held the day the matrix was made. It is also the
+        /// only form that works for a search set, which has no items to copy.
+        /// </remarks>
+        private static SelectionSourceCollection SourcesFor(Document doc, IEnumerable<SavedItem> sets)
+        {
+            var sources = new SelectionSourceCollection();
+            foreach (var set in sets)
+            {
+                if (set != null) sources.Add(doc.SelectionSets.CreateSelectionSource(set));
+            }
+            return sources;
+        }
+
+        private static ModelItemCollection ExplicitItems(SelectionSet set)
+        {
+            if (set == null) return null;
+            try
+            {
+                return set.HasExplicitModelItems ? set.ExplicitModelItems : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -82,6 +134,7 @@ namespace NavisCoord
             // that used to cost.
             var router = DisciplineRouter.FromSpecs(specs, Json.Str(payload, "fallback_discipline"));
             var buckets = new Dictionary<string, ModelItemCollection>(StringComparer.OrdinalIgnoreCase);
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var basis = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
             foreach (var raw in specs)
             {
@@ -114,16 +167,35 @@ namespace NavisCoord
                         buckets[verdict.Discipline] = bucket;
                         basis[verdict.Discipline] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                     }
-                    bucket.Add(item);
+                    // A rehearsal counts; it does not collect.
+                    //
+                    // `dry_run` was checked only after this walk, so the
+                    // rehearsal did the whole job — every leaf of every model
+                    // resolved and retained in a ModelItemCollection — and
+                    // then threw the collections away. On a real federation
+                    // that is hundreds of thousands of retained COM handles
+                    // on the UI thread, for an answer that is a handful of
+                    // integers. It took Navisworks down with it, which is a
+                    // remarkable thing for a command whose whole promise is
+                    // that it changes nothing.
+                    counts[verdict.Discipline] =
+                        counts.TryGetValue(verdict.Discipline, out var seen) ? seen + 1 : 1;
+                    if (!dryRun) bucket.Add(item);
                     var tally = basis[verdict.Discipline];
                     tally[verdict.Basis] = tally.TryGetValue(verdict.Basis, out var c) ? c + 1 : 1;
                     if (verdict.Ambiguous) ambiguous++;
                 }
             }
 
-            var plan = buckets.ToDictionary(
-                kv => kv.Key,
-                kv => (object)(double)kv.Value.Count);
+            var plan = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            foreach (var code in buckets.Keys)
+            {
+                plan[code] = (double)(counts.TryGetValue(code, out var n) ? n : 0);
+            }
+            foreach (var pair in counts)
+            {
+                if (!plan.ContainsKey(pair.Key)) plan[pair.Key] = (double)pair.Value;
+            }
 
             var routing = router.Describe();
             routing["assigned_by"] = basis.ToDictionary(
@@ -161,7 +233,7 @@ namespace NavisCoord
             {
                 if (saved is SelectionSet set && (saved.DisplayName ?? string.Empty).StartsWith(prefix, StringComparison.Ordinal))
                 {
-                    observed[saved.DisplayName] = (double)(set.ExplicitModelItems?.Count ?? 0);
+                    observed[saved.DisplayName] = (double)(ExplicitItems(set)?.Count ?? 0);
                 }
             }
 
@@ -841,7 +913,7 @@ namespace NavisCoord
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var plan = new List<object>();
-            var toCreate = new List<(string Name, string A, string B, ClashTestType Type, double Tolerance)>();
+            var toCreate = new List<(string Name, List<SelectionSet> SetsA, List<SelectionSet> SetsB, ClashTestType Type, double Tolerance)>();
 
             foreach (var raw in pairs)
             {
@@ -852,10 +924,18 @@ namespace NavisCoord
                 var toleranceM = Json.Num(spec, "tolerance_m", 0.001);
                 var name = $"{prefix} {a} vs {b}";
 
-                var setA = FindSet(doc, $"{prefix} - {a}");
-                var setB = FindSet(doc, $"{prefix} - {b}");
-                var skip = setA == null || setB == null
-                    ? $"faltan conjuntos ({prefix} - {a} / {prefix} - {b}); corre sets/build primero"
+                // The server names the sets for each side, having matched the
+                // document's own against the profile's vocabulary. Falling
+                // back to `{prefix} - {code}` keeps an older caller working.
+                var namesA = Json.StrArr(spec, "sets_a");
+                var namesB = Json.StrArr(spec, "sets_b");
+                if (namesA.Count == 0) namesA = new List<string> { $"{prefix} - {a}" };
+                if (namesB.Count == 0) namesB = new List<string> { $"{prefix} - {b}" };
+
+                var setsA = namesA.Select(n => FindSet(doc, n)).Where(s => s != null).ToList();
+                var setsB = namesB.Select(n => FindSet(doc, n)).Where(s => s != null).ToList();
+                var skip = setsA.Count == 0 || setsB.Count == 0
+                    ? $"faltan conjuntos ({string.Join(", ", namesA)} / {string.Join(", ", namesB)})"
                     : existing.Contains(name) && !replace
                         ? "ya existe un test con ese nombre"
                         : null;
@@ -865,8 +945,8 @@ namespace NavisCoord
                     ["name"] = name,
                     ["type"] = typeName,
                     ["tolerance_m"] = toleranceM,
-                    ["items_a"] = (double)(setA?.ExplicitModelItems?.Count ?? 0),
-                    ["items_b"] = (double)(setB?.ExplicitModelItems?.Count ?? 0),
+                    ["sets_a"] = setsA.Select(s => (object)s.DisplayName).ToList(),
+                    ["sets_b"] = setsB.Select(s => (object)s.DisplayName).ToList(),
                     ["skipped"] = skip ?? string.Empty
                 });
 
@@ -876,7 +956,7 @@ namespace NavisCoord
                     // converted back into document units before it reaches
                     // Navisworks, or a millimetre becomes a metre on a
                     // project authored in feet.
-                    toCreate.Add((name, a, b, testType, toleranceM / (scale == 0 ? 1 : scale)));
+                    toCreate.Add((name, setsA, setsB, testType, toleranceM / (scale == 0 ? 1 : scale)));
                 }
             }
 
@@ -892,9 +972,7 @@ namespace NavisCoord
             var created = 0;
             foreach (var spec in toCreate)
             {
-                var setA = FindSet(doc, $"{prefix} - {spec.A}");
-                var setB = FindSet(doc, $"{prefix} - {spec.B}");
-                if (setA?.ExplicitModelItems == null || setB?.ExplicitModelItems == null) continue;
+                if (spec.SetsA.Count == 0 || spec.SetsB.Count == 0) continue;
 
                 if (replace)
                 {
@@ -910,8 +988,15 @@ namespace NavisCoord
                     TestType = spec.Type,
                     Tolerance = spec.Tolerance
                 };
-                test.SelectionA.Selection.CopyFrom(setA.ExplicitModelItems);
-                test.SelectionB.Selection.CopyFrom(setB.ExplicitModelItems);
+                // Pointed at the SETS, not at a snapshot of their contents.
+                //
+                // Copying the explicit items froze whatever the set held the
+                // moment the matrix was built, so a set rebuilt afterwards
+                // left the test comparing yesterday's elements — and it made
+                // search sets unusable, because they have no items to copy.
+                // A selection source resolves at run time and works for both.
+                test.SelectionA.Selection.CopyFrom(SourcesFor(doc, spec.SetsA));
+                test.SelectionB.Selection.CopyFrom(SourcesFor(doc, spec.SetsB));
                 clash.TestsData.TestsAddCopy(test);
                 created++;
             }

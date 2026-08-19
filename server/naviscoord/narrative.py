@@ -427,7 +427,7 @@ def _blind_spots(result: AnalysisResult) -> str:
             else ""
         )
         parts.append(
-            f"la matriz solo compara {len(coverage.covered_pairs)} de las "
+            f"la matriz solo compara {coverage.required_covered} de las "
             f"{len(coverage.required_pairs)} parejas que exige el perfil, y sobre "
             f"{named}{more} no hay ni un test"
         )
