@@ -160,8 +160,14 @@ def _landscape(result: AnalysisResult, profile: Profile) -> str:
     by_design = sum(
         count
         for reason, count in reasons.items()
+        # Every reason that means "this is how the building is built" belongs
+        # here. A reason missing from the set does not vanish — it falls into
+        # the closing "everything else" clause and gets described as a contact
+        # below tolerance, so 510 partitions dying against walls were reported
+        # to the reader as 510 sub-millimetre grazes.
         if reason in {"designed_embedment", "architectural_hosting",
-                      "architectural_self_overlap", "designed_pass_through"}
+                      "architectural_self_overlap", "designed_pass_through",
+                      "designed_adjacency"}
     )
     approved = reasons.get("status_excluded", 0)
 
@@ -398,6 +404,54 @@ def _findings(
     return findings
 
 
+def _blind_spots(result: AnalysisResult) -> str:
+    """Why a zero here might mean 'not looked at' rather than 'nothing there'.
+
+    Returns a sentence naming the gap, or an empty string when the run really
+    did cover its matrix.
+    """
+    parts: list[str] = []
+
+    coverage = getattr(result, "coverage", None)
+    if coverage is not None and coverage.never_run:
+        count = len(coverage.never_run)
+        parts.append(
+            f"{count} de {coverage.total} tests nunca se corrieron, así que esos "
+            "pares de especialidades no se han mirado"
+        )
+    if coverage is not None and coverage.missing_pairs:
+        named = ", ".join(f"{a}×{b}" for a, b in coverage.missing_pairs[:4])
+        more = (
+            f" y {len(coverage.missing_pairs) - 4} más"
+            if len(coverage.missing_pairs) > 4
+            else ""
+        )
+        parts.append(
+            f"la matriz solo compara {len(coverage.covered_pairs)} de las "
+            f"{len(coverage.required_pairs)} parejas que exige el perfil, y sobre "
+            f"{named}{more} no hay ni un test"
+        )
+
+    filtering = result.filtering
+    if filtering is not None:
+        emptied = [
+            test
+            for test, total in filtering.input_by_test.items()
+            if total > 0 and filtering.kept_by_test.get(test, 0) == 0
+        ]
+        if emptied:
+            named = ", ".join(f"«{t}»" for t in emptied[:3])
+            more = f" y {len(emptied) - 3} más" if len(emptied) > 3 else ""
+            parts.append(
+                f"el filtro de ruido vació {len(emptied)} test(s) por completo "
+                f"({named}{more}), que quedan reportados como limpios sin evidencia"
+            )
+
+    if not parts:
+        return ""
+    return "; ".join(parts) + "."
+
+
 def _verdict(result: AnalysisResult, findings: list[Finding]) -> tuple[str, str]:
     """Is this model fit to coordinate, and what is the one-line judgement?"""
     modelling_weight = sum(f.weight for f in findings if f.kind == MODELLING)
@@ -419,6 +473,26 @@ def _verdict(result: AnalysisResult, findings: list[Finding]) -> tuple[str, str]
             "El modelo es coordinable, pero arrastra un volumen alto de interferencias "
             "críticas que no se cierran en una sola sesión; hay que planificarlas por "
             "bloques y por pareja de especialidades.",
+        )
+    # "Apto" is a claim about the whole model, so it needs the whole model to
+    # have been looked at — and this used to be checked only when nothing was
+    # found, as if finding something proved the search had been thorough. It
+    # does not. A matrix that compares three of sixteen trade pairs can turn
+    # up twenty-seven critical interferences and still be silent about most
+    # of the building; passing that as "coordinable" is the same false
+    # reassurance as passing an unrun matrix as clean, wearing a number.
+    blind = _blind_spots(result)
+    if blind:
+        found = (
+            f"Se encontraron {critical} interferencias críticas y son reales, pero "
+            if critical
+            else "No aparecen interferencias críticas, pero "
+        )
+        return (
+            "sin evidencia suficiente",
+            f"{found}el modelo todavía no puede declararse apto: {blind} "
+            "Cerrar el vacío y volver a correr es lo que convierte este resultado "
+            "en una respuesta sobre el modelo y no solo sobre lo que se miró.",
         )
     if critical == 0:
         return (

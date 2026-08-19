@@ -135,12 +135,12 @@ class ImageOptions:
     #: Attempts per image, INCLUDING the first. Two re-shoots is where the
     #: ladder runs out of genuinely different things to try, and each one
     #: costs a Navisworks render.
-    max_attempts: int = 3
+    max_attempts: int = 4
     #: Keep the best failed attempt instead of dropping it. Off by default: a
     #: misleading picture in a coordination report is worse than a stated gap.
     keep_rejected: bool = False
 
-    MODES = ("closeup", "context", "plan")
+    MODES = ("closeup", "context", "plan", "underside")
     QUALITIES = ("draft", "standard", "high")
 
     def normalised(self) -> ImageOptions:
@@ -152,7 +152,8 @@ class ImageOptions:
         addin used 400 is a report that lies about its own inputs.
         """
         mode = str(self.camera_mode or "closeup").strip().lower()
-        aliases = {"contexto": "context", "planta": "plan", "top": "plan", "primer_plano": "closeup"}
+        aliases = {"contexto": "context", "planta": "plan", "top": "plan",
+                   "primer_plano": "closeup", "abajo": "underside", "bottom": "underside"}
         mode = aliases.get(mode, mode)
         if mode not in self.MODES:
             mode = "closeup"
@@ -309,9 +310,23 @@ class PixelMetrics:
         pointed at empty space renders the background gradient, which is a
         handful of colours covering everything, while a camera inside geometry
         renders one flat surface, which is one colour covering everything.
+
+        Both are counts of colour, and colour alone cannot tell an empty
+        picture from a clean one. Isolation exists to strip a render down to
+        two painted elements against the sky, so the better the shot the fewer
+        colours it holds — and the underside view of a pipe below a slab, the
+        clearest picture of that clash there is, came back as three buckets and
+        was thrown away as a photograph of nothing.
+
+        So the count only speaks when nothing else does. Finding either side's
+        paint settles the question: whatever else this picture is, it is not a
+        picture of nothing. How MUCH of it is visible is a different question,
+        and the per-side checks already answer it.
         """
         if not self.sampled:
             return True
+        if self.side_a_pixels or self.side_b_pixels:
+            return False
         return self.distinct_colours <= 3 or self.dominant_fraction >= 0.995
 
     def to_json(self) -> dict[str, Any]:
@@ -561,6 +576,62 @@ FRAMING_REASONS = frozenset(
 OCCLUSION_REASONS = frozenset({"side_a_not_visible", "side_b_not_visible", "image_blank"})
 
 
+def _screen_fraction(coverage: dict[str, Any], side: str) -> float:
+    entry = coverage.get(f"side_{side}") or {}
+    try:
+        return float(entry.get("screen_fraction", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _renders_as_predicted(
+    coverage: dict[str, Any], side: str, fraction: float, options: ImageOptions
+) -> bool:
+    """Is this side small because it IS small, or because something hides it?
+
+    The pixel threshold is an absolute share of the image, which asks the
+    impossible of an element whose entire projection is smaller than that
+    share — a 15 mm copper pipe covers 0.02% of the frame when the slab it
+    crosses is in shot too. Rejecting it says "not visible" about something
+    plainly visible, just small.
+
+    Geometry already knows how much of the frame the element should occupy.
+    Comparing what came back against that prediction keeps the check that
+    matters — a wall standing in front still renders far less than predicted
+    and is still rejected — while dropping the one that only measured size.
+    """
+    predicted = _screen_fraction(coverage, side)
+    if not predicted or predicted >= options.min_pixel_fraction:
+        # Big enough to be held to the absolute threshold, so it just failed.
+        return False
+    return fraction >= predicted * VISIBILITY_RATIO
+
+
+def _pair_is_lopsided(coverage: dict[str, Any], options: ImageOptions) -> bool:
+    a = _screen_fraction(coverage, "a")
+    b = _screen_fraction(coverage, "b")
+    if a <= 0.0 or b <= 0.0:
+        return False
+    return max(a, b) / min(a, b) >= LOPSIDED_RATIO
+
+
+def _smaller_side(coverage: dict[str, Any]) -> str:
+    a = _screen_fraction(coverage, "a")
+    b = _screen_fraction(coverage, "b")
+    if a <= 0.0 or b <= 0.0:
+        return ""
+    return "a" if a < b else "b"
+
+
+#: How much of its predicted footprint an element must actually render before
+#: the difference reads as something standing in front of it rather than as
+#: ordinary anti-aliasing at small sizes.
+VISIBILITY_RATIO = 0.25
+
+#: Projected-area ratio past which no single camera can show both sides large.
+LOPSIDED_RATIO = 50.0
+
+
 def judge(
     coverage: dict[str, Any],
     pixels: PixelMetrics,
@@ -592,10 +663,24 @@ def judge(
     elif pixels.blank:
         reasons.append("image_blank")
     else:
-        if pixels.side_a_fraction < options.min_pixel_fraction:
-            reasons.append("side_a_not_visible")
-        if pixels.side_b_fraction < options.min_pixel_fraction:
-            reasons.append("side_b_not_visible")
+        for side, fraction in (("a", pixels.side_a_fraction), ("b", pixels.side_b_fraction)):
+            if fraction >= options.min_pixel_fraction:
+                continue
+            if _renders_as_predicted(coverage, side, fraction, options):
+                continue
+            reasons.append(f"side_{side}_not_visible")
+
+    # A lopsided pair cannot be framed so both sides are large: a copper pipe
+    # against a floor-spanning slab is four orders of magnitude apart, and
+    # tightening until the pipe is legible pushes the slab out of frame. The
+    # ladder then burns its attempts alternating between the two complaints.
+    # Where the clash itself is well framed, the picture already answers the
+    # question it exists to answer, so the size complaint about the smaller
+    # side is dropped rather than re-shot forever.
+    if _pair_is_lopsided(coverage, options) and coverage.get("clash_contained", False):
+        smaller = _smaller_side(coverage)
+        if smaller:
+            reasons = [r for r in reasons if r != f"side_{smaller}_too_small"]
 
     verdict.reasons = reasons
     verdict.ok = not reasons
@@ -643,6 +728,25 @@ def next_attempt(options: ImageOptions, verdict: Verdict) -> ImageOptions | None
         widened = _widen(options.camera_mode) if misframed else options.camera_mode
         return replace(options, hide_unrelated_geometry=True, camera_mode=widened)
 
+    if occluded and options.hide_unrelated_geometry:
+        # Isolation keeps BOTH sides, so whatever still stands in front of one
+        # of them is the other: a pipe crossing the slab it passes through,
+        # with the slab between it and every camera placed above. Hiding the
+        # occluder is not available — it is half the subject.
+        #
+        # Two cures, in order of cost. Pull back first, in case the subject
+        # was merely small. Then go underneath, which is the only thing that
+        # works when the occluder is a horizontal surface — and it is worth
+        # noting what is NOT on this list: `plan` looks straight down, so for
+        # a service hanging below a slab it is the one view guaranteed to
+        # fail, and spending a render on it costs the rung that would have
+        # worked.
+        following = {"closeup": "context", "context": "underside"}.get(
+            options.camera_mode
+        )
+        if following:
+            return replace(options, camera_mode=following)
+
     if misframed:
         wider = _widen(options.camera_mode)
         if wider != options.camera_mode:
@@ -656,7 +760,11 @@ def next_attempt(options: ImageOptions, verdict: Verdict) -> ImageOptions | None
 
 
 def _widen(mode: str) -> str:
-    return {"closeup": "context", "context": "plan"}.get(mode, mode)
+    # `underside` is last because it is not a wider shot, it is the same shot
+    # from the other side of whatever is in the way. That only ever helps when
+    # the obstruction is horizontal — a slab over a dropping pipe — so it is
+    # tried once the ordinary rungs have failed rather than instead of them.
+    return {"closeup": "context", "context": "plan", "plan": "underside"}.get(mode, mode)
 
 
 # --------------------------------------------------------------- capture

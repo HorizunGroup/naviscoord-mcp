@@ -407,7 +407,17 @@ namespace NavisCoord
                     ["type"] = test.TestType.ToString(),
                     ["tolerance_m"] = test.Tolerance * scale,
                     ["status"] = test.Status.ToString(),
-                    ["exported"] = (double)exported
+                    ["exported"] = (double)exported,
+                    // What the coordinator DECLARED each side to be. This is
+                    // the only authoritative statement of intent in the whole
+                    // export: a test named "STR-WAL VS ARCH-GB-WALL" is a
+                    // person asserting that side A is structure and side B is
+                    // architecture. Without it the engine falls back to Revit
+                    // categories, where a structural wall and an
+                    // architectural wall are both `Walls` — indistinguishable,
+                    // and therefore silently collapsed into one discipline.
+                    ["selection_a"] = SelectionNames(doc, test.SelectionA),
+                    ["selection_b"] = SelectionNames(doc, test.SelectionB)
                 });
 
                 if (truncated) break;
@@ -427,6 +437,41 @@ namespace NavisCoord
                 ["clashes"] = clashes,
                 ["truncated"] = truncated
             };
+        }
+
+        /// <summary>
+        /// Names of the saved search/selection sets making up one side of a test.
+        /// </summary>
+        /// <remarks>
+        /// A side is a <c>SelectionSourceCollection</c>, not a set: it can
+        /// hold several sets, or a whole folder, or nothing at all when the
+        /// test was built against an ad-hoc selection. Every one of those is
+        /// legitimate, so an unresolvable side yields an empty list rather
+        /// than an error — the engine then falls back to parsing the test
+        /// name, and only then to categories.
+        ///
+        /// Wrapped in try/catch per source because <c>ResolveSelectionSource</c>
+        /// throws on a source whose set was deleted after the test was built,
+        /// and one stale side must not cost us the other.
+        /// </remarks>
+        private static List<string> SelectionNames(Document doc, ClashSelection selection)
+        {
+            var names = new List<string>();
+            if (selection == null) return names;
+
+            SelectionSourceCollection sources;
+            try { sources = selection.Selection?.SelectionSources; }
+            catch { return names; }
+            if (sources == null) return names;
+
+            foreach (var source in sources)
+            {
+                string name = null;
+                try { name = doc.SelectionSets.ResolveSelectionSource(source)?.DisplayName; }
+                catch { }
+                if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name)) names.Add(name);
+            }
+            return names;
         }
 
         private static List<object> DescribeModels(Document doc)

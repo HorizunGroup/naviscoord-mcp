@@ -35,7 +35,14 @@ def _level_from_sides(a: "ElementRef", b: "ElementRef") -> str:
     plan, and it reads like a bug.
     """
     for side in (a, b):
-        value = side.prop("Layer", "Capa", "Nivel", "Level")
+        # `Reference Level` is where Revit puts the storey for anything hosted
+        # on one, which is most of MEP. The add-in already reads it when it
+        # fills the clash's own `level`, so this line changes nothing on a
+        # normal export — it is here for the case where that lookup came back
+        # empty and the property survived in `props` anyway. Measured on the
+        # export that prompted it: recovered zero, which is the honest note to
+        # leave rather than a comment claiming a fix it did not make.
+        value = side.prop("Layer", "Capa", "Nivel", "Level", "Reference Level")
         cleaned = clean_level(value)
         # A layer that is not a storey is worse than no storey at all: it
         # would split the plan into meaningless zones.

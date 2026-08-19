@@ -104,6 +104,13 @@ class RootCauseDetector:
         for (system, hard_discipline), entries in buckets.items():
             if len(entries) < min_clashes:
                 continue
+            # Only crossings a vertical move could actually change. Without
+            # this the statistic is computed over pass-throughs, where the
+            # overlap is the run's own diameter and its tightness says
+            # nothing about elevation.
+            entries = [pair for pair in entries if _is_elevation_candidate(pair[1])]
+            if len(entries) < min_clashes:
+                continue
             overlaps = [_vertical_overlap(clash) for _, clash in entries]
             overlaps = [o for o in overlaps if o > 0.0]
             if len(overlaps) < min_clashes:
@@ -253,10 +260,24 @@ class RootCauseDetector:
                 "El modelo sí tiene pasos definidos en otras partes, así que estos quedaron por fuera."
             )
         else:
-            confidence = 0.9
+            # Finding nothing used to RAISE the confidence to 0.9 and licence
+            # the sentence "the model has not one pass defined". It cannot.
+            #
+            # A sleeve only reaches this export by clashing with something
+            # inside one of the configured tests. On a matrix whose selection
+            # sets hold structure, ducts and pipes, no sleeve was ever
+            # eligible to appear — so zero is what this export would report
+            # whether the project models passes beautifully or not at all.
+            # That is a statement about the tests, not about the model.
+            #
+            # The crossings themselves are unaffected and still reported. What
+            # goes is the certainty about WHY, which is now lower than the
+            # case where sleeves were actually seen, not higher.
+            confidence = 0.7
             context = (
-                "El modelo no tiene un solo paso definido, de modo que ninguno de estos cruces "
-                "está resuelto en papel: todos se van a decidir en obra."
+                "No apareció ningún paso definido en este export — pero los tests corridos "
+                "tampoco podían mostrarlo, porque ningún conjunto de selección incluye "
+                "elementos de paso. Antes de darlo por hecho, confírmalo contra el modelo."
             )
 
         return [
@@ -455,19 +476,74 @@ def _dense_peaks(
     return peaks
 
 
-def _system_key(clash: Clash) -> tuple[str, str] | None:
-    """(system identity of the movable side, discipline of the hard side)."""
-    hard_side, soft_side = None, None
+def _hard_and_soft(clash: Clash) -> tuple[ElementRef, ElementRef] | None:
+    """The side that does not move, and the side that does."""
     for side, other in ((clash.a, clash.b), (clash.b, clash.a)):
         if side.discipline in {"EST", "ARQ"} and other.discipline not in {"EST", "ARQ"}:
-            hard_side, soft_side = side, other
-            break
-    if hard_side is None or soft_side is None:
+            return side, other
+    return None
+
+
+def _system_key(clash: Clash) -> tuple[str, str] | None:
+    """(system identity of the movable side, discipline of the hard side)."""
+    sides = _hard_and_soft(clash)
+    if sides is None:
         return None
+    hard_side, soft_side = sides
     system = soft_side.prop("System Name", "System Type", "Sistema") or soft_side.parent_name
     if not system:
         return None
     return (system, hard_side.discipline)
+
+
+def _is_elevation_candidate(clash: Clash) -> bool:
+    """Could this crossing be explained by the run sitting at the wrong height?
+
+    Only if the run STICKS OUT of what it crosses. A pipe wholly inside the
+    host's vertical range is passing through it, and then the Z overlap this
+    detector measures is the pipe's own diameter — the same number at every
+    crossing, because the pipe is the same pipe. That constancy is precisely
+    what the detector reads as proof of a systematic error, so a clean
+    pass-through produced the most confident finding in the report.
+
+    Measured on a live model: 67 of 67 crossings of two sprinkler branches
+    had a Z overlap equal to the branch's own bounding height, and the claim
+    that the run sat 44 mm too low was published at 0.88 and 0.95 confidence.
+    Its suggested fix — lower the run 50 mm — could not have worked: 40 of
+    the 54 things it crossed were vertical walls and columns, where moving
+    down keeps you inside the wall and merely moves the hole.
+
+    Those crossings are real and they are not free; they are penetrations
+    needing a sleeve, which is what `missing_penetration` already says about
+    them. What they are not is a levelling mistake.
+    """
+    sides = _hard_and_soft(clash)
+    if sides is None:
+        return False
+    hard, soft = sides
+
+    overlap = _vertical_overlap(clash)
+    if overlap <= 0.0:
+        return False
+
+    soft_height = soft.bbox_max[2] - soft.bbox_min[2]
+    hard_height = hard.bbox_max[2] - hard.bbox_min[2]
+    if soft_height <= 0.0 or hard_height <= 0.0:
+        return False
+
+    # A tenth of slack on each side: an overlap that consumes ALL of either
+    # box means that box passes clean through the other, and moving it up or
+    # down carries the crossing with it.
+    #
+    # The test has to run both ways round because the same arithmetic hides
+    # two different geometries. A horizontal branch through a wall reports
+    # its own diameter; a vertical riser through a slab reports the slab's
+    # thickness — 177.8 mm, seven inches, with a standard deviation of
+    # exactly zero across every crossing, which the detector read as the
+    # tightest evidence it had ever seen.
+    if overlap >= soft_height * 0.9:
+        return False
+    return overlap < hard_height * 0.9
 
 
 def _vertical_overlap(clash: Clash) -> float:

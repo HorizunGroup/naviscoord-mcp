@@ -214,15 +214,25 @@ class Profile:
         return self._category_index.get(category.strip().lower())
 
     def discipline_for_filename(self, filename: str) -> str | None:
-        """Match a source filename against the discipline patterns.
+        """Match a source filename against the discipline patterns."""
+        if not filename:
+            return None
+        return self.discipline_for_label(Path(filename).stem)
+
+    def discipline_for_label(self, text: str) -> str | None:
+        """Match any human-authored label against the discipline patterns.
+
+        Filenames are one such label; the name of a clash test and the names
+        of the saved sets on each of its sides are others, and they carry the
+        same trade abbreviations. Matching them with one implementation keeps
+        "STR" meaning structure everywhere it appears.
 
         Tokens are matched as whole segments (split on the usual separators)
         so that ``ele`` does not fire on ``MODELO-ARQ-ELEVACIONES.rvt``.
         """
-        if not filename:
+        if not text:
             return None
-        stem = Path(filename).stem.lower()
-        tokens = {t for t in _split_tokens(stem) if t}
+        tokens = {t for t in _split_tokens(text.lower()) if t}
         best: tuple[int, str] | None = None
         for code, rule in self.disciplines.items():
             for pattern in rule.file_patterns:

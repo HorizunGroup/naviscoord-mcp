@@ -49,6 +49,25 @@ namespace NavisCoord
         public const string ModeContext = "context";
         public const string ModePlan = "plan";
 
+        /// <summary>
+        /// The context shot taken from below the clash instead of above it.
+        /// </summary>
+        /// <remarks>
+        /// Every other mode looks down. That is right for most coordination
+        /// pictures and hopeless for the commonest case of all: a service
+        /// dropping through a slab, where the slab is a horizontal plane
+        /// between the camera and the pipe. Widening does not help — a wider
+        /// shot of the top of a slab is still the top of a slab — and neither
+        /// does isolation, because the occluder IS the other half of the
+        /// clash and hiding it would hide the subject.
+        ///
+        /// Measured on a live model: a copper pipe crossing a slab, 2.25 m of
+        /// pipe against 178 mm of concrete, so 1.29 m of it hanging in clear
+        /// air underneath. Zero orange pixels from closeup, context and plan;
+        /// the whole length of it visible from below.
+        /// </remarks>
+        public const string ModeUnderside = "underside";
+
         /// <summary>How far around the clash each mode is willing to look.</summary>
         /// <remarks>
         /// A fraction of the clash's own size rather than a fixed distance: a
@@ -191,9 +210,15 @@ namespace NavisCoord
 
             var minExtent = Math.Max(1e-6, request.MinExtent);
             var span = Math.Max(clash.LongestSide, minExtent);
-            var reach = Math.Max(
-                span * (mode == ModeCloseup ? CloseupNeighbourhood : ContextNeighbourhood),
-                minExtent);
+
+            // Proportional to the span and nothing else. `minExtent` used to
+            // be a floor here as well, and it is already inside `span` — so a
+            // 54 mm clash was widened to the 0.8 m minimum, then given 0.8 m
+            // of reach on every side, and the frame started at 2.4 m before
+            // margin and aspect had their turn. The floor was doing its job
+            // twice and the picture paid for it: 7.1 m of frame for a pipe the
+            // width of a thumb.
+            var reach = span * (mode == ModeCloseup ? CloseupNeighbourhood : ContextNeighbourhood);
 
             // Only the part of each element near the clash is allowed to
             // enlarge the frame. Without this clamp a single 60 m duct sets
@@ -233,6 +258,7 @@ namespace NavisCoord
             var direction = mode == ModePlan
                 ? worldUp.Negated()
                 : ThreeQuarterDirection(request.BoxA, request.BoxB, worldUp);
+            if (mode == ModeUnderside) direction = Mirrored(direction, worldUp);
 
             var up = mode == ModePlan
                 ? PlanUp(worldUp)
@@ -382,6 +408,58 @@ namespace NavisCoord
         /// element and a lot of nothing. Naming it lets the caller widen to
         /// context instead of shipping the picture.
         /// </remarks>
+        /// <summary>
+        /// The volume where two elements interfere, from their bounds.
+        /// </summary>
+        /// <remarks>
+        /// For a hard clash this is arithmetic, not a lookup: the interference
+        /// IS the intersection of the two boxes. Navisworks also reports a
+        /// box on the result, and it answers a different question — the extent
+        /// of the whole result rather than of the overlap. Trusting it first
+        /// put a 54 mm copper pipe against a slab at 8.5 x 11 m, which pulled
+        /// the camera back to a 35 m frame and rendered the pipe at 0.02% of
+        /// the picture.
+        ///
+        /// <paramref name="reported"/> is therefore only consulted when there
+        /// is no intersection to compute — a clearance test — and only when it
+        /// could plausibly be a clash volume at all.
+        ///
+        /// Returns <see cref="Box3.Empty"/> when neither source yields
+        /// anything usable, leaving the caller to fall back on the contact
+        /// point, which is always available.
+        /// </remarks>
+        public static Box3 ClashVolume(Box3 boxA, Box3 boxB, Box3 reported, double minimum)
+        {
+            var overlap = boxA.Intersection(boxB);
+            if (!overlap.IsEmpty) return overlap.AtLeast(minimum);
+
+            if (!reported.IsEmpty && IsPlausibleClashVolume(reported, boxA, boxB))
+            {
+                return reported.AtLeast(minimum);
+            }
+
+            return Box3.Empty;
+        }
+
+        /// <summary>
+        /// Could this box be where two elements meet?
+        /// </summary>
+        /// <remarks>
+        /// The invariant is physical: whatever two elements do to each other
+        /// happens inside the smaller of them, so a candidate wider than that
+        /// is measuring something else. Twice the smaller side is slack for
+        /// reporting conventions that pad the box; an order of magnitude is
+        /// not slack, it is a different quantity.
+        /// </remarks>
+        public static bool IsPlausibleClashVolume(Box3 candidate, Box3 boxA, Box3 boxB)
+        {
+            if (candidate.IsEmpty) return false;
+            if (boxA.IsEmpty || boxB.IsEmpty) return true;
+            var smaller = Math.Min(boxA.LongestSide, boxB.LongestSide);
+            if (smaller <= 1e-9) return true;
+            return candidate.LongestSide <= smaller * 2.0;
+        }
+
         private static Box3 Absorb(Box3 fit, Box3 side, Box3 neighbourhood, Result result, string label)
         {
             if (side.IsEmpty)
@@ -454,6 +532,23 @@ namespace NavisCoord
             return direction;
         }
 
+        /// <summary>
+        /// The same shot from the other side of the horizontal plane.
+        /// </summary>
+        /// <remarks>
+        /// Flips only the component along world up, so the camera keeps its
+        /// bearing and its distance and simply moves from above the clash to
+        /// below it. A view that was looking down at 20 degrees now looks up
+        /// at 20 degrees, which is what puts a slab behind the lens instead of
+        /// in front of it.
+        /// </remarks>
+        private static Vec3 Mirrored(Vec3 direction, Vec3 worldUp)
+        {
+            var elevation = direction.Dot(worldUp);
+            if (Math.Abs(elevation) < 1e-6) return direction;
+            return direction.Minus(worldUp.Scaled(2.0 * elevation)).Normalized(direction);
+        }
+
         private static Vec3 PlanUp(Vec3 direction)
         {
             // Any vector not parallel to the direction; prefer the one that
@@ -475,6 +570,10 @@ namespace NavisCoord
                 case "planta":
                 case "top":
                     return ModePlan;
+                case ModeUnderside:
+                case "abajo":
+                case "bottom":
+                    return ModeUnderside;
                 default:
                     return ModeCloseup;
             }
@@ -495,6 +594,9 @@ namespace NavisCoord
             {
                 case ModeCloseup: return ModeContext;
                 case ModeContext: return ModePlan;
+                // Last rung, and the only one that moves the camera to the
+                // other side of the obstruction rather than further from it.
+                case ModePlan: return ModeUnderside;
                 default: return null;
             }
         }

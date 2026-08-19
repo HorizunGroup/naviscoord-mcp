@@ -23,11 +23,107 @@ from typing import Any
 from ..model import Clash, ClashExport, ElementRef, Issue
 from ..profile import Profile
 from .cluster import ClashCluster, build_clusters
+from .declared import read_declarations
 from .discipline import DisciplineTagger, TaggingReport
 from .levels import LevelMap, normalise_levels
 from .noise import FilterResult, NoiseFilter, fingerprint
 from .rootcause import RootCause, RootCauseDetector
 from .severity import SeverityScorer, suggest_action
+
+
+def _pair(a: str, b: str) -> tuple[str, str]:
+    """A trade pair with no near or far side, so A×B and B×A are one thing."""
+    return tuple(sorted((a.strip().upper(), b.strip().upper())))  # type: ignore[return-value]
+
+
+@dataclass(slots=True)
+class MatrixCoverage:
+    """How much of the clash matrix actually ran.
+
+    Every count downstream is conditional on this and used not to be. A test
+    that was never run contributes no results, contributes no criticals, and
+    was therefore indistinguishable from a test that ran and found nothing —
+    so a matrix where most tests had never been executed produced the same
+    "no interference stops work" verdict as a genuinely clean model. Absence
+    of evidence was being reported as evidence of absence.
+    """
+
+    total: int = 0
+    ran: int = 0
+    never_run: list[str] = field(default_factory=list)
+    #: Trade pairs the profile says this project has to check, and the ones
+    #: the tests actually compare. Counting only the tests that EXIST answers
+    #: "did everything run", which is a different question from "was
+    #: everything looked at" — and the second is the one a verdict rests on.
+    #: On the reference model all 13 tests ran, so coverage read complete,
+    #: while every one of them had structure on side A: not one architecture
+    #: against services, nothing service against service, no electrical at
+    #: all. Two of the sixteen pairs the profile requires.
+    required_pairs: list[tuple[str, str]] = field(default_factory=list)
+    covered_pairs: list[tuple[str, str]] = field(default_factory=list)
+
+    @property
+    def missing_pairs(self) -> list[tuple[str, str]]:
+        covered = set(self.covered_pairs)
+        return [pair for pair in self.required_pairs if pair not in covered]
+
+    @property
+    def complete(self) -> bool:
+        return self.total > 0 and not self.never_run and not self.missing_pairs
+
+    @property
+    def ratio(self) -> float:
+        return self.ran / self.total if self.total else 0.0
+
+    @classmethod
+    def from_tests(
+        cls,
+        tests: list[dict[str, Any]] | None,
+        declarations: dict[str, Any] | None = None,
+        profile: Profile | None = None,
+    ) -> "MatrixCoverage":
+        out = cls()
+        for entry in tests or []:
+            if not isinstance(entry, dict):
+                continue
+            out.total += 1
+            status = str(entry.get("status", "") or "").strip().lower()
+            exported = int(entry.get("exported", 0) or 0)
+            # "New" is Navisworks for never run OR rules edited since the last
+            # run. Paired with zero results it can only be the former; with
+            # results it is a stale run, which still counts as evidence.
+            if status == "new" and exported == 0:
+                out.never_run.append(str(entry.get("name", "") or ""))
+            else:
+                out.ran += 1
+
+        if profile is not None:
+            for entry in profile.section("clash_matrix").get("pairs", []) or []:
+                if not isinstance(entry, dict):
+                    continue
+                a, b = str(entry.get("a", "")), str(entry.get("b", ""))
+                if a and b:
+                    out.required_pairs.append(_pair(a, b))
+
+        seen: set[tuple[str, str]] = set()
+        for declaration in (declarations or {}).values():
+            side_a = getattr(declaration, "side_a", "")
+            side_b = getattr(declaration, "side_b", "")
+            if side_a and side_b and side_a != side_b:
+                seen.add(_pair(side_a, side_b))
+        out.covered_pairs = sorted(seen)
+        return out
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "tests_total": self.total,
+            "tests_with_evidence": self.ran,
+            "tests_never_run": list(self.never_run),
+            "pairs_required": [list(p) for p in self.required_pairs],
+            "pairs_covered": [list(p) for p in self.covered_pairs],
+            "pairs_missing": [list(p) for p in self.missing_pairs],
+            "complete": self.complete,
+        }
 
 
 @dataclass(slots=True)
@@ -40,6 +136,7 @@ class AnalysisResult:
     raw_clash_count: int = 0
     profile_name: str = ""
     warnings: list[str] = field(default_factory=list)
+    coverage: "MatrixCoverage" = field(default_factory=lambda: MatrixCoverage())
 
     @property
     def compression(self) -> float:
@@ -101,7 +198,30 @@ def analyze(
     )
     result.warnings.extend(profile.validate())
 
-    tagger = DisciplineTagger(profile, discipline_overrides, group_key, group_roles)
+    declarations = read_declarations(export.tests, profile)
+    result.coverage = MatrixCoverage.from_tests(export.tests, declarations, profile)
+    if result.coverage.never_run:
+        missing = ", ".join(f"«{n}»" for n in result.coverage.never_run[:6])
+        if len(result.coverage.never_run) > 6:
+            missing += f" y {len(result.coverage.never_run) - 6} más"
+        result.warnings.append(
+            f"{len(result.coverage.never_run)} de {result.coverage.total} tests nunca "
+            f"se han corrido: {missing}. Los conteos de abajo solo cubren los tests "
+            "que sí tienen resultados; un cero aquí no significa que esos pares estén limpios."
+        )
+    if result.coverage.missing_pairs:
+        pending = ", ".join(f"{a}×{b}" for a, b in result.coverage.missing_pairs[:8])
+        if len(result.coverage.missing_pairs) > 8:
+            pending += f" y {len(result.coverage.missing_pairs) - 8} más"
+        result.warnings.append(
+            f"La matriz compara {len(result.coverage.covered_pairs)} de las "
+            f"{len(result.coverage.required_pairs)} parejas que exige el perfil. "
+            f"Sin tests: {pending}. Que todos los tests hayan corrido no significa "
+            "que se haya mirado todo: de esas parejas este informe no dice nada."
+        )
+    tagger = DisciplineTagger(
+        profile, discipline_overrides, group_key, group_roles, declarations
+    )
     result.tagging = tagger.tag_export(export)
     result.warnings.extend(result.tagging.warnings())
 

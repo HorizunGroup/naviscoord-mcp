@@ -375,22 +375,25 @@ namespace NavisCoord
         private static ClashFraming.Box3 ClashVolume(
             ClashResult result, ClashFraming.Box3 boxA, ClashFraming.Box3 boxB, double minimum)
         {
+            // The geometry decision lives in ClashFraming, which carries no
+            // Autodesk types and is therefore exercised by the test runner.
+            // All this layer does is read the Navisworks side of it.
+            var reported = ClashFraming.Box3.Empty;
             try
             {
-                var reported = result.BoundingBox;
-                if (reported != null && !reported.IsEmpty)
+                var box = result.BoundingBox;
+                if (box != null && !box.IsEmpty)
                 {
-                    return new ClashFraming.Box3(ToVec(reported.Min), ToVec(reported.Max))
-                        .AtLeast(minimum);
+                    reported = new ClashFraming.Box3(ToVec(box.Min), ToVec(box.Max));
                 }
             }
             catch
             {
-                // Fall through to the geometric reconstruction.
+                // Leave it empty; the intersection or the contact point will do.
             }
 
-            var overlap = boxA.Intersection(boxB);
-            if (!overlap.IsEmpty) return overlap.AtLeast(minimum);
+            var volume = ClashFraming.ClashVolume(boxA, boxB, reported, minimum);
+            if (!volume.IsEmpty) return volume;
 
             var centre = ToVec(result.Center);
             return new ClashFraming.Box3(centre, centre).AtLeast(Math.Max(minimum, 1e-3));

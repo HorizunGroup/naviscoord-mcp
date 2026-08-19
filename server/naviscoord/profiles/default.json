@@ -66,7 +66,7 @@
         "Sprinklers", "Fire Protection", "Fire Alarm Devices",
         "Rociadores", "Dispositivos de alarma de incendios", "Protección contra incendios"
       ],
-      "file_patterns": ["rci", "fire", "fp", "incendio", "sprink"]
+      "file_patterns": ["rci", "fire", "fp", "frsp", "incendio", "sprink", "rociador"]
     },
     "ELE": {
       "label": "Eléctrica",
@@ -254,7 +254,17 @@
     "drop_statuses": ["Approved", "Resolved"],
     "insulation_categories": ["Duct Insulations", "Pipe Insulations", "Duct Linings"],
     "insulation_penetration_tolerance_m": 0.03,
-    "pass_through_categories": ["Shafts", "Openings", "Generic Models", "Sleeves", "Pasamuros"],
+    "pass_through_categories": ["Shafts", "Openings", "Sleeves", "Pasamuros"],
+    "_comment_ambiguous_pass_through": "Categorias que no acreditan nada por si solas. 'Generic Models' es el cajon de sastre de Revit: cabe un pasamuros y cabe un panel de fachada. Contarla como prueba de pasamuros vacio un test entero de 700 cruces como 'pasa por un pasamuros por diseno', y le dio a la causa raiz mas grande su evidencia de que el proyecto si modela pasos. Los 255 'pasos' eran fachada: 246 se llamaban 'Grey RAL 9006'. Siguen siendo elegibles, pero tienen que ganarselo por el nombre.",
+    "ambiguous_pass_through_categories": ["Generic Models", "Modelos genericos", "Modelo generico"],
+    "designed_adjacency": {
+      "_comment": "Dos anfitriones de ESPECIALIDADES DISTINTAS que se tocan. El tabique de drywall muere contra el muro de concreto y la ventana se apoya en su vano: en el modelo se solapan el espesor de un acabado y en obra no se hace nada. El corte es por PROFUNDIDAD, no por el par de categorias, porque es lo unico que separa la convencion del defecto: en el modelo de referencia el test tabique-contra-muro tenia mediana 12.4 mm (una placa de yeso) y maximo 51, mientras los mismos tabiques contra vigas llegaban a 247 mm — eso ya es un tabique atravesando estructura y se queda. 25 mm = doble placa, un espesor de acabado. Subelo en obra de acabados gruesos.",
+      "max_contact_m": 0.025,
+      "categories": ["Walls", "Floors", "Ceilings", "Roofs", "Doors", "Windows", "Curtain Panels", "Curtain Wall Mullions", "Muros", "Losas", "Cielos", "Puertas", "Ventanas"],
+      "_comment_ambiguas": "El cajon de sastre no dice que es un elemento, pero su nombre si. En el modelo de referencia 605 persianas de ventana (WIN_BLIND_7'8\"_BLACKOUT) estaban bajo Generic Models rozando su propio muro de concreto 6 mm de mediana: sobrevivian a todas las reglas y eran el 45% de los cruces conservados y el 69% del trabajo asignado a arquitectura. Se les deja identificarse por el nombre, con la red de que igual tienen que ser dos anfitriones de especialidades distintas tocandose por menos de 25 mm.",
+      "ambiguous_categories": ["Generic Models", "Modelos genericos", "Modelo generico"],
+      "name_keywords": ["blind", "persiana", "shade", "louver", "louvre", "parasol", "screen", "curtain", "cortina", "panel de fachada", "cladding"]
+    },
     "pass_through_keywords": ["sleeve", "pasamuro", "pasatubo", "opening", "shaft", "ducto tecnico", "buiton"],
 
     "flush_mounted": {

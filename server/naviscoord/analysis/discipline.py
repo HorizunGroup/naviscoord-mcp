@@ -15,6 +15,7 @@ from typing import Iterable
 
 from ..model import ClashExport, ElementRef
 from ..profile import UNCLASSIFIED, Profile
+from .declared import TestDeclaration
 
 
 @dataclass(slots=True)
@@ -25,6 +26,19 @@ class TaggingReport:
     by_source: dict[str, Counter[str]] = field(default_factory=dict)
     resolved_by: Counter[str] = field(default_factory=Counter)
     unclassified_categories: Counter[str] = field(default_factory=Counter)
+    # element -> the trades different clash tests each declared it to be.
+    # Letting a test's declaration outrank the category buys accuracy at the
+    # cost of trusting how the matrix was set up, and two tests can disagree
+    # about the same element. That disagreement is real information about the
+    # matrix and it gets reported, never silently resolved by whichever test
+    # happened to be read last.
+    declared_by_element: dict[str, set[str]] = field(default_factory=dict)
+    #: Elements already counted. A clash has two sides and an element appears
+    #: in as many clashes as it collides in, so tallying per side counted the
+    #: same wall dozens of times: 3.822 "elements" for a model holding 2.486.
+    #: Every ratio built on that total was inflated, including the one that
+    #: decides whether a file "mixes disciplines".
+    counted: set[str] = field(default_factory=set)
 
     @property
     def total(self) -> int:
@@ -36,8 +50,29 @@ class TaggingReport:
             return 0.0
         return self.by_discipline.get(UNCLASSIFIED, 0) / self.total
 
+    @property
+    def declaration_conflicts(self) -> dict[str, set[str]]:
+        return {
+            element: trades
+            for element, trades in self.declared_by_element.items()
+            if len(trades) > 1
+        }
+
     def warnings(self) -> list[str]:
         out: list[str] = []
+
+        conflicts = self.declaration_conflicts
+        if conflicts:
+            sample = ", ".join(
+                f"{element} ({'/'.join(sorted(trades))})"
+                for element, trades in list(conflicts.items())[:3]
+            )
+            out.append(
+                f"{len(conflicts)} elementos están declarados en dos especialidades "
+                f"distintas por tests distintos: {sample}. La matriz se contradice a sí "
+                "misma; revisa los search sets antes de leer el reparto por responsable."
+            )
+
         ratio = self.unclassified_ratio
         if ratio > 0.25:
             worst = ", ".join(
@@ -68,6 +103,10 @@ class TaggingReport:
             "by_discipline": dict(self.by_discipline.most_common()),
             "resolved_by": dict(self.resolved_by),
             "unclassified_ratio": round(self.unclassified_ratio, 3),
+            "declaration_conflicts": {
+                element: sorted(trades)
+                for element, trades in list(self.declaration_conflicts.items())[:20]
+            },
             "top_unmapped_categories": dict(self.unclassified_categories.most_common(10)),
             "by_source": {k: dict(v.most_common()) for k, v in self.by_source.items()},
             "warnings": self.warnings(),
@@ -90,8 +129,14 @@ class DisciplineTagger:
         overrides: dict[str, str] | None = None,
         group_key: str = "",
         group_roles: dict[str, str] | None = None,
+        declarations: dict[str, TestDeclaration] | None = None,
     ) -> None:
         self.profile = profile
+        # test name -> what the coordinator said each of its two sides is.
+        # Ranked above category because a category is shared by trades that a
+        # clash test exists precisely to tell apart; see analysis/declared.py.
+        self.declarations = declarations or {}
+        self._how = ""
         # source_file -> discipline, set by the user when heuristics are wrong.
         self.overrides = {k.strip().lower(): v for k, v in (overrides or {}).items()}
         # A grouping discovered by reading the model: the property that
@@ -105,16 +150,26 @@ class DisciplineTagger:
     def tag_export(self, export: ClashExport) -> TaggingReport:
         self.report = TaggingReport()
         for clash in export.clashes:
-            for side in (clash.a, clash.b):
-                side.discipline = self.tag(side)
+            declaration = self.declarations.get(clash.test.strip().lower())
+            for name, side in (("a", clash.a), ("b", clash.b)):
+                declared = declaration.for_side(name) if declaration else ""
+                if declared:
+                    self.report.declared_by_element.setdefault(side.path_id, set()).add(
+                        declared
+                    )
+                side.discipline = self.tag(side, declared=declared)
                 self._record(side)
         return self.report
 
-    def tag(self, element: ElementRef) -> str:
+    def tag(self, element: ElementRef, declared: str = "") -> str:
         override = self.overrides.get(element.source_file.strip().lower())
         if override:
             self._resolved("override")
             return override
+
+        if declared:
+            self._resolved("test_declaration")
+            return declared
 
         if self.group_key and self.group_roles:
             value = element.prop(self.group_key)
@@ -166,9 +221,18 @@ class DisciplineTagger:
         return None
 
     def _resolved(self, how: str) -> None:
-        self.report.resolved_by[how] += 1
+        # Remembered, not tallied. The tally happens in `_record`, once per
+        # element, so that `resolved_by` and `total_elements` stay on the same
+        # scale — otherwise "3.000 resolved by category" sits next to "2.486
+        # elements" and neither number can be checked against the other.
+        self._how = how
 
     def _record(self, element: ElementRef) -> None:
+        # Once per element, not once per collision it takes part in.
+        if element.path_id in self.report.counted:
+            return
+        self.report.counted.add(element.path_id)
+        self.report.resolved_by[self._how or "unresolved"] += 1
         self.report.by_discipline[element.discipline] += 1
         source = element.source_file or "(sin archivo)"
         self.report.by_source.setdefault(source, Counter())[element.discipline] += 1

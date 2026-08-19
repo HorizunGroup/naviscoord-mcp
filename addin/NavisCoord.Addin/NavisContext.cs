@@ -26,7 +26,20 @@ namespace NavisCoord
             "Element Id", "Id", "Type", "Family", "Family and Type",
             "System Name", "System Type", "System Classification",
             "Level", "Reference Level", "Workset", "Size", "Diameter",
-            "Category", "Material", "Comments", "Mark"
+            "Category", "Material", "Comments", "Mark",
+            // The storey, on most Revit exports. `Level` is a Revit parameter
+            // and plenty of elements do not carry it; Navisworks puts the
+            // storey in `Layer`, which is what the engine reads first.
+            //
+            // It was not in this list, so it arrived only when a caller
+            // happened to ask for it by name through the profile's harvest
+            // list. An export taken any other way lost the storey on every
+            // element — and the loss is silent, because the level module
+            // falls back to guessing the storey from the median height of
+            // the clashes. Measured: 86% of crossings assigned that way,
+            // with a third of them landing on the wrong floor, under a level
+            // map that looked entirely plausible.
+            "Layer"
         };
 
         // ------------------------------------------------------------ units
