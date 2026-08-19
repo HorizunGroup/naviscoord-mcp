@@ -211,9 +211,29 @@ namespace NavisCoord
             var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             if (item == null) return result;
 
+            // Eight, not four.
+            //
+            // A Revit tree runs File > Level > Category > Family > Type >
+            // Instance > Geometry, so an item that clashed can sit five or
+            // six hops below the ancestors that describe it. Measured on a
+            // real federation: at four, six sides came back with no
+            // properties at all and 453 lost their `Mark`.
+            //
+            // It is also why the same window blind arrived as `Type: Solid`
+            // from one document and `Type: WIN_BLIND_...` from another —
+            // nearest ancestor wins, and how deep the geometry node sits
+            // depends on the tree. First-wins stays: the nearest node is the
+            // most specific. Only the ceiling moves.
+            //
+            // What this does NOT fix, despite being the reason it was looked
+            // at: a document whose tree carries no `Layer` node at all. The
+            // storey lives there, and on a copy saved out of Navisworks it
+            // had gone from every element — not buried deeper, absent. Eight
+            // hops find nothing that is not there, and the honest place for
+            // that failure is the loud warning the level map now prints.
             var current = item;
             var depth = 0;
-            while (current != null && depth < 4)
+            while (current != null && depth < 8)
             {
                 foreach (var category in current.PropertyCategories)
                 {

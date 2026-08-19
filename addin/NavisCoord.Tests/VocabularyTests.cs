@@ -105,7 +105,7 @@ namespace NavisCoord.Tests
             var pinned = new[]
             {
                 new { Rel = System.IO.Path.Combine("server", "naviscoord", "profiles", "default.json"),
-                      Sum = "fe006ffb291c8664" },
+                      Sum = "94eccbf5741ff4c0" },
                 new { Rel = System.IO.Path.Combine("profiles", "example-profile.json"),
                       Sum = "9006367f436753bc" },
             };

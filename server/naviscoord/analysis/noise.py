@@ -273,8 +273,7 @@ class NoiseFilter:
         ambiguous = category in self._ambiguous_pass_categories
         if category in self._pass_categories and not ambiguous:
             return True
-        haystack = f"{element.display_name} {element.parent_name}".lower()
-        return any(keyword in haystack for keyword in self._pass_keywords)
+        return any(keyword in _identity(element) for keyword in self._pass_keywords)
 
     # ------------------------------------------------------------- rules
 
@@ -478,20 +477,39 @@ class NoiseFilter:
         keywords = [k.strip().lower() for k in spec.get("name_keywords", []) if k.strip()]
         if not keywords:
             return False
-        haystack = " ".join(
-            part
-            for part in (
-                element.prop("Type", "Tipo"),
-                element.display_name,
-                element.parent_name,
-            )
-            if part
-        ).lower()
-        return any(keyword in haystack for keyword in keywords)
+        return any(keyword in _identity(element) for keyword in keywords)
 
     def _is_designed_pass_through(self, clash: Clash) -> bool:
         """A sleeve or shaft doing its job is the opposite of a problem."""
         return any(self.is_penetration_element(side) for side in (clash.a, clash.b))
+
+
+def _identity(element: ElementRef) -> str:
+    """Every name the model gives an element, lowercased, in one string.
+
+    Which of them carries the answer depends on how the export was harvested,
+    and that is not something a rule should have to know. The same window
+    blind came back as `Type: WIN_BLIND_7'8"_BLACKOUT` through one property
+    set and `Type: Solid` through another — Navisworks has more than one
+    property tab offering a field called Type, and which one wins depends on
+    the harvest order. `Family` and the parent's name held the blind's real
+    identity in both.
+
+    So all of them are searched. A rule that reads only `Type` works on one
+    export and silently stops working on the next, which is the failure this
+    whole class of bug keeps taking.
+    """
+    return " ".join(
+        part
+        for part in (
+            element.prop("Type", "Tipo"),
+            element.prop("Family", "Familia"),
+            element.prop("Family and Type"),
+            element.display_name,
+            element.parent_name,
+        )
+        if part
+    ).lower()
 
 
 def _is_fitting(element: ElementRef) -> bool:

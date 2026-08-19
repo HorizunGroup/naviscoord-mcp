@@ -133,8 +133,41 @@ buena noticia.
 - El aviso por test saltaba solo al 100%: un test que perdía el 93,7% pasaba
   en silencio. Ahora salta desde el 90% y dice cuántos cruces quedan.
 
+- **Una interferencia profunda y solitaria caía a la banda baja.** Dos de los
+  seis componentes de severidad premian la repetición y la compañía, así que
+  un cruce que ocurre una sola vez tiene que ganar con los otros cuatro y no
+  puede: quedaban 26 problemas en la banda más baja con más de 150 mm dentro
+  de estructura, uno con 194. Son los mismos cruces que hubo que rescatar del
+  filtro de ruido, y rescatarlos para que la puntuación los enterrara no es
+  rescatarlos. A partir de 150 mm contra un lado que no se mueve, la banda no
+  puede bajar de ALTO. Contra algo reruteable la profundidad es una molestia;
+  dentro de estructura es una decisión antes de vaciar.
+- El barrido de propiedades subía solo cuatro ancestros, y un árbol de Revit
+  pone los nodos que describen un elemento cinco o seis saltos por encima: seis
+  lados llegaban sin ninguna propiedad y 453 perdían su `Mark`. Es también por
+  qué la misma persiana llegaba como `Type: Solid` desde un documento y como
+  `Type: WIN_BLIND_…` desde otro. Las reglas de ruido leen ahora todos los
+  nombres del elemento —tipo, familia, nombre y el de su padre— en vez de uno
+  solo, que funcionaba en un export y dejaba de funcionar en el siguiente.
+
 ### Added
 
+- **Fixture de un modelo real en la suite.** Los nueve fallos de esta versión
+  aparecieron en datos reales y todas las pruebas eran sintéticas, escritas a
+  partir de la forma del fallo cuando alguien ya lo había visto. Ese orden es
+  el problema. `tests/fixtures/torre-demo-export.json` son 90 cruces recortados
+  de un modelo de coordinación real, anonimizados, con un ejemplo trabajado de
+  cada trampa: muros de dos especialidades que comparten categoría, persianas
+  bajo `Generic Models`, un ramal cuyo solape es su diámetro, un montante cuyo
+  solape es el espesor de la losa, una etiqueta que abarca seis plantas, e
+  interferencias profundas que tienen que sobrevivir a todo lo anterior. Las
+  aserciones son de comportamiento, no de conteos exactos.
+- `distinct_families` viaja en la evidencia de las causas de tipología
+  repetida. El agrupamiento es posicional —par de disciplinas y celda de medio
+  metro en planta— pero la frase que publica, «es un detalle tipo», es una
+  afirmación sobre los elementos, y nada la comprobaba. Contra el modelo real
+  las 28 causas dieron entre una y tres familias, así que el detector tenía
+  razón; queda como guarda para que la afirmación sea comprobable y no creída.
 - Modo de cámara **`underside`**: la misma toma desde el otro lado del
   obstáculo. Todos los demás modos miran hacia abajo, lo cual es correcto casi
   siempre y desesperado en el caso más común de todos —una instalación bajando

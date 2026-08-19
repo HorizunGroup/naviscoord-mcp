@@ -1,0 +1,6814 @@
+{
+ "schema": "naviscoord.clashexport/1",
+ "document": {
+  "title": "TORRE-DEMO.nwf",
+  "path": "TORRE-DEMO.nwf",
+  "units": "m"
+ },
+ "models": [
+  {
+   "index": 0,
+   "source_file": "TORRE-DEMO.rvt",
+   "source_path": "TORRE-DEMO.rvt"
+  }
+ ],
+ "tests": [
+  {
+   "name": "STR-WALL VS HVAC",
+   "type": "Hard",
+   "tolerance_m": 0.001,
+   "status": "Old",
+   "exported": 216
+  },
+  {
+   "name": "STR-FLR VS HVAC",
+   "type": "Hard",
+   "tolerance_m": 0.001,
+   "status": "Old",
+   "exported": 182
+  },
+  {
+   "name": "STR-WAL VS ARCH-GB-WALL",
+   "type": "Hard",
+   "tolerance_m": 0.001,
+   "status": "Old",
+   "exported": 477
+  },
+  {
+   "name": "STR-WAL VS ARCH-WINDOR",
+   "type": "Hard",
+   "tolerance_m": 0.001,
+   "status": "Old",
+   "exported": 700
+  },
+  {
+   "name": "STR-WALL VS FRSP",
+   "type": "Hard",
+   "tolerance_m": 0.001,
+   "status": "Old",
+   "exported": 103
+  }
+ ],
+ "clashes": [
+  {
+   "guid": "66d5296e-360d-4b88-b721-2fa35601e4ab",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash1",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.3175003875732422,
+   "point": [
+    34.925097689622135,
+    -10.104734789841864,
+    6.184899806213379
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/1/68/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/1/68",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "545930",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.556530816650394,
+     -10.711825231933595,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     35.44238547363281,
+     -8.8259717376709,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/1/0/113/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/1/0/113",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1165161",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "12\"x8\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 8",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.88015059814446,
+     -11.234123583984605,
+     6.184899806213379
+    ],
+    "bbox_max": [
+     35.50307711791986,
+     -9.611197064209206,
+     6.388100193786621
+    ]
+   }
+  },
+  {
+   "guid": "20d34c16-6e94-4b3c-a5b9-a100864df9ab",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash2",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.3175003875732422,
+   "point": [
+    32.11727654505806,
+    -7.476518524638404,
+    6.184899806213379
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/1/66/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/1/66",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "449305",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     31.670678485107423,
+     -8.8259717376709,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     33.556530816650394,
+     -6.9401176620483405,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/1/0/108/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/1/0/108",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1164222",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "12\"x8\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 11",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     31.14838013305659,
+     -8.502352537536833,
+     6.184899806213379
+    ],
+    "bbox_max": [
+     32.77130665283199,
+     -6.879425436401569,
+     6.388100193786621
+    ]
+   }
+  },
+  {
+   "guid": "deead615-f1bf-480b-b5b9-1202c78b0611",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash3",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.31750009689331055,
+   "point": [
+    32.17421376785777,
+    -7.5334557658680055,
+    3.0352999031066896
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/13/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/13",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586550",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     31.670678485107423,
+     -8.8259717376709,
+     0
+    ],
+    "bbox_max": [
+     33.556530816650394,
+     -6.9401176620483405,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/114/1/3/0/0/102/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/114/1/3/0/0/102",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "GROUND FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1210606",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "12\"x8\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 9",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     31.14838013305664,
+     -8.502352537536622,
+     3.0352999031066896
+    ],
+    "bbox_max": [
+     32.77130665283203,
+     -6.879425436401368,
+     3.2385
+    ]
+   }
+  },
+  {
+   "guid": "709c0064-b70b-4415-bfeb-d4597d7f78a0",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash4",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.31750009689331055,
+   "point": [
+    35.07508173065186,
+    -10.254718830871582,
+    3.0352999031066896
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/14/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/14",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586586",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.556530816650394,
+     -10.711825231933595,
+     0
+    ],
+    "bbox_max": [
+     35.44238547363281,
+     -8.8259717376709,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/114/1/3/0/0/107/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/114/1/3/0/0/107",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "GROUND FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1210665",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "12\"x8\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 23",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.88015059814453,
+     -11.234123583984376,
+     3.0352999031066896
+    ],
+    "bbox_max": [
+     35.50307711791992,
+     -9.611197064208985,
+     3.2385
+    ]
+   }
+  },
+  {
+   "guid": "b2f2ab5a-43de-4550-91ea-1c57057414d8",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash5",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.3157260129899733,
+   "point": [
+    22.729903239621397,
+    -14.354380572888006,
+    2.984500096893311
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/28/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/28",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "641695",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     22.33407861328125,
+     -14.840008135986329,
+     0
+    ],
+    "bbox_max": [
+     24.112570056152347,
+     -12.971712872314454,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/114/1/3/0/0/8/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/114/1/3/0/0/8",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "GROUND FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1206157",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "18\"x12\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 6",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     22.683492169189453,
+     -14.759890322521315,
+     2.984500096893311
+    ],
+    "bbox_max": [
+     23.140692169189453,
+     -10.765178952026368,
+     3.2893000968933106
+    ]
+   }
+  },
+  {
+   "guid": "0c65bf75-b67e-4c55-8a22-505a8ccb8437",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash6",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.31208736249385827,
+   "point": [
+    25.846073670703486,
+    -21.834649770778785,
+    3.0099
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/4/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/4",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586466",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     25.256997875976563,
+     -22.33392280883789,
+     0
+    ],
+    "bbox_max": [
+     26.26729899902344,
+     -21.323621685791018,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/114/1/3/0/0/91/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/114/1/3/0/0/91",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "GROUND FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1209433",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "14\"x10\"",
+     "System Classification": "Return Air",
+     "System Name": "Mechanical Return Air 7",
+     "System Type": "MechanicalSystemType \"Return Air\", #607129",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     21.268457611083985,
+     -22.495736187744143,
+     3.0099
+    ],
+    "bbox_max": [
+     26.30118995361328,
+     -17.46300268249512,
+     3.2638999031066898
+    ]
+   }
+  },
+  {
+   "guid": "6c4594e4-e42e-4474-96a6-939568321ad1",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash7",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.3115391235351563,
+   "point": [
+    12.276104168701172,
+    -11.956332989501954,
+    3.0099
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/1/18/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/1/18",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "641362",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     12.276104168701172,
+     -12.250737112426759,
+     0
+    ],
+    "bbox_max": [
+     12.479304556274414,
+     -10.1679375,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/114/1/3/0/0/79/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/114/1/3/0/0/79",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "GROUND FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1209056",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "24\"x10\"",
+     "System Classification": "Return Air",
+     "System Name": "Mechanical Return Air 2",
+     "System Type": "MechanicalSystemType \"Return Air\", #607129",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     10.504843335978348,
+     -11.956332989501954,
+     3.0099
+    ],
+    "bbox_max": [
+     12.587643384425006,
+     -11.346732989501954,
+     3.2638999031066898
+    ]
+   }
+  },
+  {
+   "guid": "d6900548-9237-4f4a-b051-92bd538c930e",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash8",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.2921001937866211,
+   "point": [
+    31.673706207275266,
+    -19.31175844116211,
+    6.2103
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/3/8/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/3/8",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "633646",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     30.259059997558595,
+     -19.31175844116211,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     32.29076621704102,
+     -19.108559216308596,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/1/0/86/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/1/0/86",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1160585",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "10\"x6\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 4",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     31.67370620727526,
+     -20.70677798336343,
+     6.2103
+    ],
+    "bbox_max": [
+     31.92770698242175,
+     -18.968682870483605,
+     6.3627
+    ]
+   }
+  },
+  {
+   "guid": "42dfda01-3f6c-4317-97cc-6a0a5e93c97d",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash9",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.2921001937866211,
+   "point": [
+    21.396324224853437,
+    -12.123435580444337,
+    6.2103
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/1/48/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/1/48",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "407752",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     19.388137500000003,
+     -12.250435968017579,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     22.0551375,
+     -12.123435580444337,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/1/0/81/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/1/0/81",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1160292",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "10\"x6\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 6",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     21.396324224853423,
+     -14.36639653397354,
+     6.2103
+    ],
+    "bbox_max": [
+     21.65032499999993,
+     -10.734195959472796,
+     6.3627
+    ]
+   }
+  },
+  {
+   "guid": "9eb4a1c3-a44a-4cd6-887a-693807be8e2d",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash10",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.2921001937866211,
+   "point": [
+    23.070745275878906,
+    -10.708796347046048,
+    6.240381539041986
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/3/7/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/3/7",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "629943",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     23.070745275878906,
+     -12.123443719482422,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     23.273944500732423,
+     -10.0917375,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/1/0/78/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/1/0/78",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1160209",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "10\"x6\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 6",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     21.675725231786707,
+     -10.70879634704605,
+     6.2103
+    ],
+    "bbox_max": [
+     23.413820157857874,
+     -10.45479673461928,
+     6.3627
+    ]
+   }
+  },
+  {
+   "guid": "4ae09ca0-bb9f-4f15-bd79-3449f7d3a790",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash11",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.2921001937866211,
+   "point": [
+    30.131765441894533,
+    -20.83822993467399,
+    6.2103
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/1/44/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/1/44",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "407121",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     30.131765441894533,
+     -22.867064685058594,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     30.25876466674805,
+     -20.32706390991211,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/1/0/89/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/1/0/89",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1160592",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "10\"x6\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 4",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     28.016106207275257,
+     -20.986177166748256,
+     6.2103
+    ],
+    "bbox_max": [
+     31.648307757568226,
+     -20.732178717041197,
+     6.3627
+    ]
+   }
+  },
+  {
+   "guid": "aa834e76-b521-4570-abd0-6bf3d57d0c5b",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash12",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.2920999031066895,
+   "point": [
+    34.19576621704102,
+    -18.157632690961055,
+    3.060700096893311
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/1/20/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/1/20",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "684653",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.99256466674805,
+     -19.108166217041017,
+     0
+    ],
+    "bbox_max": [
+     34.19576621704102,
+     -12.377165441894531,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/114/1/3/0/0/47/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/114/1/3/0/0/47",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "GROUND FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1207203",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "12\"x6\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 10",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.87448303220064,
+     -18.38007461242676,
+     3.060700096893311
+    ],
+    "bbox_max": [
+     35.063522552490234,
+     -18.07527461242676,
+     3.2131000968933106
+    ]
+   }
+  },
+  {
+   "guid": "dd7d0a78-39e3-4598-9976-e9c93a6617a5",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash105",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0986857457668815,
+   "point": [
+    20.313930126827618,
+    -16.94995833954261,
+    3.124905328846204
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/8/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/8",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586508",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     20.048580908203125,
+     -17.125505841064452,
+     0
+    ],
+    "bbox_max": [
+     21.05888203125,
+     -16.11520471801758,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/114/1/3/1/0/0/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/114/1/3/1/0/0",
+    "parent_name": "Round Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "GROUND FLOOR",
+     "Family": "Round Duct",
+     "Category": "Ducts",
+     "Id": "1206279",
+     "Diameter": "DoubleLength:0,5",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "6\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 2",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     20.31289500732422,
+     -17.116230825805665,
+     3.060700096893311
+    ],
+    "bbox_max": [
+     20.46529500732422,
+     -11.12145711153727,
+     3.2131000968933106
+    ]
+   }
+  },
+  {
+   "guid": "ff4b8dc6-70c7-4b25-9324-65834041acf5",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash106",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0984242248533559,
+   "point": [
+    30.131765441894533,
+    -24.60742588732949,
+    6.2923412750683045
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/1/63/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/1/63",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "420978",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     30.131765441894533,
+     -24.924764666748047,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     30.25876466674805,
+     -24.314864685058595,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/0/0/84/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/0/0/84",
+    "parent_name": "Round Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Round Duct",
+     "Category": "Ducts",
+     "Id": "1160559",
+     "Diameter": "DoubleLength:0,333333333333333",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "4\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 20",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     25.340690441894374,
+     -24.708510424804885,
+     6.235700193786621
+    ],
+    "bbox_max": [
+     30.230190618277376,
+     -24.606909649658366,
+     6.337299806213379
+    ]
+   }
+  },
+  {
+   "guid": "cb2ceb43-1788-4d9d-a715-ee3c6fe76893",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash107",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.09816145019523481,
+   "point": [
+    19.515136724853516,
+    -12.001603058751686,
+    6.273556634505425
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/1/49/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/1/49",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "407827",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     19.388137500000003,
+     -12.123435580444337,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     19.515136724853516,
+     -10.0917375,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/0/0/22/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/0/0/22",
+    "parent_name": "Round Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Round Duct",
+     "Category": "Ducts",
+     "Id": "1053172",
+     "Diameter": "DoubleLength:0,333333333333333",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "4\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 36",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.826393289199977,
+     -12.10151250000015,
+     6.235700193786621
+    ],
+    "bbox_max": [
+     23.391148974609298,
+     -11.999912887573357,
+     6.337299806213379
+    ]
+   }
+  },
+  {
+   "guid": "831f8995-33c2-4ad3-9526-23b73e118566",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash108",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0981230804442217,
+   "point": [
+    17.674507189068283,
+    -12.250435968017579,
+    6.292323402767743
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/1/71/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/1/71",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "633774",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.330770056152346,
+     -12.250435968017579,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     18.06733788757324,
+     -12.123435580444337,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/0/0/21/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/0/0/21",
+    "parent_name": "Round Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Round Duct",
+     "Category": "Ducts",
+     "Id": "1053164",
+     "Diameter": "DoubleLength:0,333333333333333",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "4\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 36",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.67399329223622,
+     -17.04181240308602,
+     6.235700193786621
+    ],
+    "bbox_max": [
+     17.775592904663007,
+     -12.152312596872639,
+     6.337299806213379
+    ]
+   }
+  },
+  {
+   "guid": "6a97824f-e3f8-49b9-acbc-9b8647bc19be",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash109",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.09733551099917677,
+   "point": [
+    25.229564666748047,
+    -24.78186509413659,
+    6.286500000002355
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/0/189/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/0/189",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "420412",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     25.127966217041017,
+     -24.899366217041017,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     25.229564666748047,
+     -24.639014666748047,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/0/0/0/0/6/0/0/0",
+    "display_name": "",
+    "category": "Air Terminals",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/0/0/0/0/6/0/0",
+    "parent_name": "DHEB-44",
+    "props": {
+     "Type": "Solid",
+     "Layer": "<No level>",
+     "Family": "DHEB-44",
+     "Category": "Air Terminals",
+     "Id": "1160567",
+     "Size": "4\"ø-4\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 15,Mechanical Exhaust Air 20",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     25.11209071517068,
+     -24.883465097164507,
+     6.235699998488421
+    ],
+    "bbox_max": [
+     25.34069071517068,
+     -24.60691006643712,
+     6.337300001516337
+    ]
+   }
+  },
+  {
+   "guid": "888402d3-4c65-477e-a03d-a40d8417113d",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash110",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.09206728971466066,
+   "point": [
+    17.59979667568982,
+    -17.152937887573245,
+    6.292891414789205
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/0/205/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/0/205",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "468451",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.406970056152346,
+     -17.2545375,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     17.76253788757324,
+     -17.152937887573245,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/0/2/0/1/0/0/0",
+    "display_name": "",
+    "category": "Air Terminals",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/0/2/0/1/0/0",
+    "parent_name": "DHEB-44",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "DHEB-44",
+     "Category": "Air Terminals",
+     "Id": "1062613",
+     "Size": "4\"ø-4\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 17,Mechanical Exhaust Air 36",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.499038117985574,
+     -17.270412499979333,
+     6.235699998488421
+    ],
+    "bbox_max": [
+     17.77559314871296,
+     -17.041812499979333,
+     6.337300001516337
+    ]
+   }
+  },
+  {
+   "guid": "5aece214-77bf-4486-85b9-47eca8970a15",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash111",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0895015136719527,
+   "point": [
+    23.070745275878906,
+    -12.003907077049668,
+    6.306162039850754
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/3/7/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/3/7",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "629943",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     23.070745275878906,
+     -12.123443719482422,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     23.273944500732423,
+     -10.0917375,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/0/0/22/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/0/0/22",
+    "parent_name": "Round Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Round Duct",
+     "Category": "Ducts",
+     "Id": "1053172",
+     "Diameter": "DoubleLength:0,333333333333333",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "4\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 36",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.826393289199977,
+     -12.10151250000015,
+     6.235700193786621
+    ],
+    "bbox_max": [
+     23.391148974609298,
+     -11.999912887573357,
+     6.337299806213379
+    ]
+   }
+  },
+  {
+   "guid": "2d97bb68-0957-4e16-9e2a-98dde66e6d7c",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash112",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.08905154113762452,
+   "point": [
+    10.844932223510678,
+    -9.964737112426759,
+    6.121400193786622
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/1/76/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/1/76",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "751983",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     10.52349486694336,
+     -10.0917375,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     12.479304556274414,
+     -9.964737112426759,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/4/1/0/129/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/4/1/0/129",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1167214",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "8\"x4\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 1",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     10.844932223510678,
+     -10.12968634643562,
+     6.121400193786622
+    ],
+    "bbox_max": [
+     11.04813261108392,
+     -9.875685571289134,
+     6.222999806213379
+    ]
+   }
+  },
+  {
+   "guid": "74601a3a-84f1-49d6-b01f-f872449bb624",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash113",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.08854473507538801,
+   "point": [
+    17.673993152497854,
+    -17.152937887573245,
+    6.286500000002355
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/8/11/0",
+    "display_name": "Rigid insulation",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/8/11",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Rigid insulation",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1015084",
+     "Workset": "AA"
+    },
+    "bbox_min": [
+     17.50857083129883,
+     -17.152937887573245,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     17.76253788757324,
+     -17.1021375,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/0/2/0/1/0/0/0",
+    "display_name": "",
+    "category": "Air Terminals",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/0/2/0/1/0/0",
+    "parent_name": "DHEB-44",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "DHEB-44",
+     "Category": "Air Terminals",
+     "Id": "1062613",
+     "Size": "4\"ø-4\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 17,Mechanical Exhaust Air 36",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.499038117985574,
+     -17.270412499979333,
+     6.235699998488421
+    ],
+    "bbox_max": [
+     17.77559314871296,
+     -17.041812499979333,
+     6.337300001516337
+    ]
+   }
+  },
+  {
+   "guid": "2ec5bb47-8265-4225-b33a-3f6e53a59d2a",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash114",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.08572499394443849,
+   "point": [
+    34.84294305358447,
+    -0.0333375,
+    3.117177988874909
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/0/136/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/0/136",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586517",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.8661375,
+     -0.13493750302791596,
+     0
+    ],
+    "bbox_max": [
+     35.593239056396484,
+     -0.0333375,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/114/0/0/1/0/0/0/0/0",
+    "display_name": "",
+    "category": "Air Terminals",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/114/0/0/1/0/0/0/0",
+    "parent_name": "6SEB",
+    "props": {
+     "Type": "Solid",
+     "Layer": "<No level>",
+     "Family": "6SEB",
+     "Category": "Air Terminals",
+     "Id": "1210551",
+     "Size": "6\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 8",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.69313950665511,
+     -0.11906249394443849,
+     3.0606999999999966
+    ],
+    "bbox_max": [
+     34.84553950665511,
+     0.13493749999973048,
+     3.2130999999999967
+    ]
+   }
+  },
+  {
+   "guid": "9d7b9789-1e87-4158-80d9-5b0a14d3b47c",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash115",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.08572499394443828,
+   "point": [
+    34.84553950665511,
+    -0.0333375,
+    6.286500000002357
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/0/166/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/0/166",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "417647",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.8661375,
+     -0.13493750302791596,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     35.593239056396484,
+     -0.0333375,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/0/4/0/0/0/0/0",
+    "display_name": "",
+    "category": "Air Terminals",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/0/4/0/0/0/0",
+    "parent_name": "6SEB",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "6SEB",
+     "Category": "Air Terminals",
+     "Id": "1067419",
+     "Size": "6\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 7",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.69313950665511,
+     -0.11906249394443832,
+     6.210300000002382
+    ],
+    "bbox_max": [
+     34.84553950665511,
+     0.13493749999973043,
+     6.362700000002382
+    ]
+   }
+  },
+  {
+   "guid": "d7319936-3cfe-4894-8faf-9e775d99075f",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash116",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.08572317039583296,
+   "point": [
+    42.34916389160156,
+    -7.689363708495127,
+    6.286500000002357
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/0/178/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/0/178",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "419621",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.24756544189454,
+     -8.516365635681153,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     42.34916389160156,
+     -6.789264660644531,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/0/0/3/0/0/0/0/0",
+    "display_name": "",
+    "category": "Air Terminals",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/0/0/3/0/0/0/0",
+    "parent_name": "6SEB",
+    "props": {
+     "Type": "Solid",
+     "Layer": "<No level>",
+     "Family": "6SEB",
+     "Category": "Air Terminals",
+     "Id": "1165146",
+     "Size": "6\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 9",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.26344072120573,
+     -7.689363708495127,
+     6.210300000002382
+    ],
+    "bbox_max": [
+     42.5174407151499,
+     -7.536963708495127,
+     6.362700000002382
+    ]
+   }
+  },
+  {
+   "guid": "9ed1d369-0d24-4006-892c-1b3334d8f6b6",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash117",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.08572317039582435,
+   "point": [
+    42.34916389160156,
+    -7.679154843078814,
+    3.175000000000011
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/0/148/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/0/148",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586530",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.24756544189454,
+     -8.516365635681153,
+     0
+    ],
+    "bbox_max": [
+     42.34916389160156,
+     -6.789264660644531,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/114/0/0/1/0/1/0/0/0",
+    "display_name": "",
+    "category": "Air Terminals",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/114/0/0/1/0/1/0/0",
+    "parent_name": "6SEB",
+    "props": {
+     "Type": "Solid",
+     "Layer": "<No level>",
+     "Family": "6SEB",
+     "Category": "Air Terminals",
+     "Id": "1210654",
+     "Size": "6\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 23",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.26344072120574,
+     -7.689363708494865,
+     3.060700000000011
+    ],
+    "bbox_max": [
+     42.51744071514991,
+     -7.536963708494865,
+     3.213100000000011
+    ]
+   }
+  },
+  {
+   "guid": "9db5a544-5ba3-4bfa-b528-f1b83030eaea",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash118",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.077855712890625,
+   "point": [
+    13.854765948486328,
+    -11.097791207885743,
+    3.1369000968933105
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/27/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/27",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "641133",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     12.479304556274414,
+     -11.097791207885743,
+     0
+    ],
+    "bbox_max": [
+     14.206537500000001,
+     -10.9707908203125,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/114/1/3/1/0/15/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/114/1/3/1/0/15",
+    "parent_name": "Round Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "GROUND FLOOR",
+     "Family": "Round Duct",
+     "Category": "Ducts",
+     "Id": "1208759",
+     "Diameter": "DoubleLength:0,5",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "6\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 6",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     13.702365948486328,
+     -18.47373760988973,
+     3.060700096893311
+    ],
+    "bbox_max": [
+     13.854765948486328,
+     -11.019935494995117,
+     3.2131000968933106
+    ]
+   }
+  },
+  {
+   "guid": "4d59670c-91c5-400e-b7da-261146d8d503",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash119",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06912136230446422,
+   "point": [
+    34.36015385742162,
+    -38.73125216674805,
+    21.793200000000002
+   ],
+   "level": "Level \"8 FLOOR\", #978379",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/9/5/0/1/77/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/9/5/0/1/77",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "8 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "760129",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.11956621704102,
+     -38.73125216674805,
+     21.793200000000002
+    ],
+    "bbox_max": [
+     35.124453717041014,
+     -38.604252941894536,
+     24.638000775146487
+    ]
+   },
+   "b": {
+    "path_id": "0/110/8/2/0/0/0/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/8/2/0/0/0",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "8 FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1122178",
+     "Reference Level": "Level \"8 FLOOR\", #978379",
+     "Size": "24\"x24\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 35",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.36015385742162,
+     -39.27173312988304,
+     20.091399224853518
+    ],
+    "bbox_max": [
+     34.96975385742162,
+     -38.662130804443585,
+     24.815800000000248
+    ]
+   }
+  },
+  {
+   "guid": "0b2a62d8-6300-4122-9a00-9702e8d2f1bc",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash120",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06912136230446422,
+   "point": [
+    34.36015385742162,
+    -38.73125216674805,
+    21.615399224853515
+   ],
+   "level": "Level \"8 FLOOR\", #978379",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/8/5/0/2/77/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/8/5/0/2/77",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "7 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1593569",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.11956621704102,
+     -38.73125216674805,
+     18.770599612426757
+    ],
+    "bbox_max": [
+     35.124453717041014,
+     -38.604252941894536,
+     21.615399224853515
+    ]
+   },
+   "b": {
+    "path_id": "0/110/8/2/0/0/0/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/8/2/0/0/0",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "8 FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1122178",
+     "Reference Level": "Level \"8 FLOOR\", #978379",
+     "Size": "24\"x24\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 35",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.36015385742162,
+     -39.27173312988304,
+     20.091399224853518
+    ],
+    "bbox_max": [
+     34.96975385742162,
+     -38.662130804443585,
+     24.815800000000248
+    ]
+   }
+  },
+  {
+   "guid": "ccbe2e00-a4ff-4b12-8faa-f54228af2e2e",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash121",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06912136230446356,
+   "point": [
+    34.46175463256811,
+    -38.73125216674805,
+    12.547600387573242
+   ],
+   "level": "Level \"8 FLOOR\", #978379",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/5/5/0/2/77/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/5/5/0/2/77",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "4th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1461252",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.11956621704102,
+     -38.73125216674805,
+     9.702800193786622
+    ],
+    "bbox_max": [
+     35.124453717041014,
+     -38.604252941894536,
+     12.547600387573242
+    ]
+   },
+   "b": {
+    "path_id": "0/110/8/2/0/0/4/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/8/2/0/0/4",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "8 FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1126136",
+     "Reference Level": "Level \"8 FLOOR\", #978379",
+     "Size": "24\"x16\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 35",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.46175463256811,
+     -39.27173312988304,
+     10.947399883709918
+    ],
+    "bbox_max": [
+     34.868155407714596,
+     -38.662130804443585,
+     19.846116522216796
+    ]
+   }
+  },
+  {
+   "guid": "6ab7f6e7-bba9-4e00-9721-499388ee8f73",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash122",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06912136230446356,
+   "point": [
+    34.46175463256811,
+    -38.73125216674805,
+    15.570199612426759
+   ],
+   "level": "Level \"8 FLOOR\", #978379",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/6/5/0/2/77/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/6/5/0/2/77",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "5 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1462339",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.11956621704102,
+     -38.73125216674805,
+     12.7254
+    ],
+    "bbox_max": [
+     35.124453717041014,
+     -38.604252941894536,
+     15.570199612426759
+    ]
+   },
+   "b": {
+    "path_id": "0/110/8/2/0/0/4/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/8/2/0/0/4",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "8 FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1126136",
+     "Reference Level": "Level \"8 FLOOR\", #978379",
+     "Size": "24\"x16\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 35",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.46175463256811,
+     -39.27173312988304,
+     10.947399883709918
+    ],
+    "bbox_max": [
+     34.868155407714596,
+     -38.662130804443585,
+     19.846116522216796
+    ]
+   }
+  },
+  {
+   "guid": "eecf5159-f7d5-4f01-8398-a5637c8dcf44",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash123",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06912136230446356,
+   "point": [
+    34.46175463256811,
+    -38.73125216674805,
+    18.5928
+   ],
+   "level": "Level \"8 FLOOR\", #978379",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/7/5/0/2/77/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/7/5/0/2/77",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "6 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1463421",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.11956621704102,
+     -38.73125216674805,
+     15.748000387573242
+    ],
+    "bbox_max": [
+     35.124453717041014,
+     -38.604252941894536,
+     18.5928
+    ]
+   },
+   "b": {
+    "path_id": "0/110/8/2/0/0/4/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/8/2/0/0/4",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "8 FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1126136",
+     "Reference Level": "Level \"8 FLOOR\", #978379",
+     "Size": "24\"x16\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 35",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.46175463256811,
+     -39.27173312988304,
+     10.947399883709918
+    ],
+    "bbox_max": [
+     34.868155407714596,
+     -38.662130804443585,
+     19.846116522216796
+    ]
+   }
+  },
+  {
+   "guid": "350b31d2-03df-4316-b602-5e4bdcedb4b3",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash124",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06912136230446356,
+   "point": [
+    34.665554911260315,
+    -38.73125216674805,
+    19.846116522216796
+   ],
+   "level": "Level \"8 FLOOR\", #978379",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/8/5/0/2/77/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/8/5/0/2/77",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "7 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1593569",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.11956621704102,
+     -38.73125216674805,
+     18.770599612426757
+    ],
+    "bbox_max": [
+     35.124453717041014,
+     -38.604252941894536,
+     21.615399224853515
+    ]
+   },
+   "b": {
+    "path_id": "0/110/8/2/0/0/4/0",
+    "display_name": "",
+    "category": "Ducts",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/8/2/0/0/4",
+    "parent_name": "Rectangular Duct",
+    "props": {
+     "Type": "Solid",
+     "Layer": "8 FLOOR",
+     "Family": "Rectangular Duct",
+     "Category": "Ducts",
+     "Id": "1126136",
+     "Reference Level": "Level \"8 FLOOR\", #978379",
+     "Size": "24\"x16\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 35",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.46175463256811,
+     -39.27173312988304,
+     10.947399883709918
+    ],
+    "bbox_max": [
+     34.868155407714596,
+     -38.662130804443585,
+     19.846116522216796
+    ]
+   }
+  },
+  {
+   "guid": "405d9029-cf93-4d4f-9d42-5da752848903",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash125",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06912038015980508,
+   "point": [
+    34.58986208639464,
+    -38.73125216674805,
+    20.09140000000026
+   ],
+   "level": "Level \"8 FLOOR\", #978379",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/8/5/0/2/77/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/8/5/0/2/77",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "7 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1593569",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.11956621704102,
+     -38.73125216674805,
+     18.770599612426757
+    ],
+    "bbox_max": [
+     35.124453717041014,
+     -38.604252941894536,
+     21.615399224853515
+    ]
+   },
+   "b": {
+    "path_id": "0/110/8/1/0/0/2/0/0/0",
+    "display_name": "",
+    "category": "Duct Fittings",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/8/1/0/0/2/0/0",
+    "parent_name": "45 Degree",
+    "props": {
+     "Type": "Solid",
+     "Layer": "8 FLOOR",
+     "Family": "Rectangular Transition - Angle",
+     "Category": "Duct Fittings",
+     "Id": "1126149",
+     "Level": "Level \"8 FLOOR\", #978379",
+     "Size": "24\"x24\"-24\"x16\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 35",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.36015499482113,
+     -39.27173178658825,
+     19.84611589846637
+    ],
+    "bbox_max": [
+     34.96975499482113,
+     -38.66213178658825,
+     20.09140000000026
+    ]
+   }
+  },
+  {
+   "guid": "99bff972-cdd3-4a6e-bba3-8f4a99170c67",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash126",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0691203801598044,
+   "point": [
+    34.61337714971541,
+    -38.73125216674805,
+    10.947400000000258
+   ],
+   "level": "Level \"8 FLOOR\", #978379",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/5/5/0/2/77/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/5/5/0/2/77",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "4th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1461252",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.11956621704102,
+     -38.73125216674805,
+     9.702800193786622
+    ],
+    "bbox_max": [
+     35.124453717041014,
+     -38.604252941894536,
+     12.547600387573242
+    ]
+   },
+   "b": {
+    "path_id": "0/110/8/1/0/0/3/0/0/0",
+    "display_name": "",
+    "category": "Duct Fittings",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/8/1/0/0/3/0/0",
+    "parent_name": "45 Degree",
+    "props": {
+     "Type": "Solid",
+     "Layer": "8 FLOOR",
+     "Family": "Rectangular Transition - Angle",
+     "Category": "Duct Fittings",
+     "Id": "1126177",
+     "Level": "Level \"8 FLOOR\", #978379",
+     "Size": "24\"x16\"-16\"x16\"",
+     "System Classification": "Supply Air",
+     "System Name": "Mechanical Supply Air 35",
+     "System Type": "MechanicalSystemType \"Supply Air\", #607128",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.46175498876528,
+     -39.27173178658825,
+     10.702115898466367
+    ],
+    "bbox_max": [
+     34.868155000876946,
+     -38.66213178658825,
+     10.947400000000258
+    ]
+   }
+  },
+  {
+   "guid": "b282b3fd-4090-4279-804b-fdc2c2404799",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash127",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06032500192299515,
+   "point": [
+    1.9637283920288087,
+    -14.942837564268638,
+    6.286500000002355
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/0/144/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/0/144",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "399094",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     1.9637283920288087,
+     -15.933737887573242,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     2.065328440475464,
+     -12.860337112426759,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/0/3/0/1/0/0/0",
+    "display_name": "",
+    "category": "Air Terminals",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/0/3/0/1/0/0",
+    "parent_name": "4SEB",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "4SEB",
+     "Category": "Air Terminals",
+     "Id": "1066476",
+     "Size": "4\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 1",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     1.7954533939518031,
+     -15.044437567296555,
+     6.235699998488421
+    ],
+    "bbox_max": [
+     2.024053393951804,
+     -14.942837564268638,
+     6.337300001516337
+    ]
+   }
+  },
+  {
+   "guid": "85fbc3db-ba42-40f1-ab71-e3745c7b8ef3",
+   "test": "STR-WALL VS HVAC",
+   "name": "Clash128",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06032500002066683,
+   "point": [
+    17.562986131458132,
+    -17.1021375,
+    6.335569029774661
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/0/203/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/0/203",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "468214",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.406970056152346,
+     -17.1021375,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     17.76253788757324,
+     -17.000537887573245,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/110/2/0/2/0/1/0/0/0",
+    "display_name": "",
+    "category": "Air Terminals",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/2/0/2/0/1/0/0",
+    "parent_name": "DHEB-44",
+    "props": {
+     "Type": "Solid",
+     "Layer": "2th FLOOR",
+     "Family": "DHEB-44",
+     "Category": "Air Terminals",
+     "Id": "1062613",
+     "Size": "4\"ø-4\"ø",
+     "System Classification": "Exhaust Air",
+     "System Name": "Mechanical Exhaust Air 17,Mechanical Exhaust Air 36",
+     "System Type": "MechanicalSystemType \"Exhaust Air\", #607130",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.499038117985574,
+     -17.270412499979333,
+     6.235699998488421
+    ],
+    "bbox_max": [
+     17.77559314871296,
+     -17.041812499979333,
+     6.337300001516337
+    ]
+   }
+  },
+  {
+   "guid": "4f4ca4eb-ded2-4f9e-b8ed-8706ae965277",
+   "test": "STR-FLR VS HVAC",
+   "name": "Clash1",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.09035494995117188,
+   "point": [
+    27.54847751078226,
+    -39.9427003575173,
+    15.748000387573242
+   ],
+   "level": "Level \"6 FLOOR\", #375279",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/7/0/0/2/5/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Floors",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/7/0/0/2/5",
+    "parent_name": "Floor",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "6 FLOOR",
+     "Family": "Floor",
+     "Category": "Floors",
+     "Id": "1463611",
+     "Level": "Level \"6 FLOOR\", #375279",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     23.299166217041016,
+     -40.0885669921875,
+     15.570199612426759
+    ],
+    "bbox_max": [
+     43.111163891601564,
+     -28.73476466674805,
+     15.748000387573242
+    ]
+   },
+   "b": {
+    "path_id": "0/110/1/2/0/0/101/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/1/2/0/0/101",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "1220418",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Other",
+     "System Name": "Refrigerating 83",
+     "System Type": "PipingSystemType \"Refrigerating\", #1060600",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     27.495286834716538,
+     -39.975838989257994,
+     1.5573375
+    ],
+    "bbox_max": [
+     27.549234704589587,
+     -39.9218887939455,
+     24.815799224853517
+    ]
+   }
+  },
+  {
+   "guid": "382af134-35f6-4e78-ae17-f19f50d26f71",
+   "test": "STR-FLR VS HVAC",
+   "name": "Clash2",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.08928873596191407,
+   "point": [
+    27.495544968180983,
+    -39.94577270328222,
+    12.547600387573242
+   ],
+   "level": "Level \"5 FLOOR\", #375270",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/6/0/0/2/5/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Floors",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/6/0/0/2/5",
+    "parent_name": "Floor",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "5 FLOOR",
+     "Family": "Floor",
+     "Category": "Floors",
+     "Id": "1462529",
+     "Level": "Level \"5 FLOOR\", #375270",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     23.299166217041016,
+     -40.0885669921875,
+     12.547600387573242
+    ],
+    "bbox_max": [
+     43.111163891601564,
+     -28.73476466674805,
+     12.7254
+    ]
+   },
+   "b": {
+    "path_id": "0/110/1/2/0/0/101/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/1/2/0/0/101",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "1220418",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Other",
+     "System Name": "Refrigerating 83",
+     "System Type": "PipingSystemType \"Refrigerating\", #1060600",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     27.495286834716538,
+     -39.975838989257994,
+     1.5573375
+    ],
+    "bbox_max": [
+     27.549234704589587,
+     -39.9218887939455,
+     24.815799224853517
+    ]
+   }
+  },
+  {
+   "guid": "cc74fd90-1e5c-41de-87fa-cb6957266027",
+   "test": "STR-FLR VS HVAC",
+   "name": "Clash3",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.088348095703125,
+   "point": [
+    38.292327055607025,
+    -18.686206994892487,
+    24.815799224853517
+   ],
+   "level": "Level \"ROOF LEVEL\", #375304",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/10/0/0/0/3/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Floors",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/10/0/0/0/3",
+    "parent_name": "Floor",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "ROOF LEVEL",
+     "Family": "Floor",
+     "Category": "Floors",
+     "Id": "760630",
+     "Level": "Level \"ROOF LEVEL\", #375304",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     23.299166217041016,
+     -31.020764666748047,
+     24.638000775146487
+    ],
+    "bbox_max": [
+     43.111163891601564,
+     -11.691365441894531,
+     24.815799224853517
+    ]
+   },
+   "b": {
+    "path_id": "0/110/1/2/0/0/67/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/1/2/0/0/67",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "1219045",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Other",
+     "System Name": "Refrigerating 39",
+     "System Type": "PipingSystemType \"Refrigerating\", #1060600",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     38.26303888549793,
+     -18.686450097656497,
+     23.3505375
+    ],
+    "bbox_max": [
+     38.31698908081043,
+     -18.632499902343998,
+     25.6032
+    ]
+   }
+  },
+  {
+   "guid": "b19a541a-1300-4127-8441-f2136e2b3c2f",
+   "test": "STR-FLR VS HVAC",
+   "name": "Clash4",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.088348095703125,
+   "point": [
+    34.130234593448876,
+    -9.225780960346562,
+    24.815799224853517
+   ],
+   "level": "Level \"ROOF LEVEL\", #375304",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/10/0/0/0/4/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Floors",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/10/0/0/0/4",
+    "parent_name": "Floor",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "ROOF LEVEL",
+     "Family": "Floor",
+     "Category": "Floors",
+     "Id": "760663",
+     "Level": "Level \"ROOF LEVEL\", #375304",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     19.159537500000003,
+     -11.691365151214601,
+     24.638000775146487
+    ],
+    "bbox_max": [
+     43.45276164550781,
+     1.070227988433838,
+     24.815799224853517
+    ]
+   },
+   "b": {
+    "path_id": "0/110/1/2/0/0/17/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/1/2/0/0/17",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "1216712",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Other",
+     "System Name": "Refrigerating 120",
+     "System Type": "PipingSystemType \"Refrigerating\", #1060600",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     34.100946423339785,
+     -9.226024063110573,
+     23.3505375
+    ],
+    "bbox_max": [
+     34.15489661865229,
+     -9.172074449157936,
+     25.6032
+    ]
+   }
+  },
+  {
+   "guid": "c4727b9b-b94d-494b-9548-6ec8bb45c0a1",
+   "test": "STR-FLR VS HVAC",
+   "name": "Clash5",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.088348095703125,
+   "point": [
+    25.392458635196917,
+    -10.144360937763498,
+    24.815799224853517
+   ],
+   "level": "Level \"ROOF LEVEL\", #375304",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/10/0/0/0/2/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Floors",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/10/0/0/0/2",
+    "parent_name": "Floor",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "ROOF LEVEL",
+     "Family": "Floor",
+     "Category": "Floors",
+     "Id": "760596",
+     "Level": "Level \"ROOF LEVEL\", #375304",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.406970056152346,
+     -25.05176650772095,
+     24.638000775146487
+    ],
+    "bbox_max": [
+     33.99256466674805,
+     -8.389937015533448,
+     24.815799224853517
+    ]
+   },
+   "b": {
+    "path_id": "0/110/1/2/0/0/60/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/1/2/0/0/60",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "1218600",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Other",
+     "System Name": "Refrigerating 40",
+     "System Type": "PipingSystemType \"Refrigerating\", #1060600",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     25.36317279052728,
+     -10.14460404052751,
+     23.3505375
+    ],
+    "bbox_max": [
+     25.417120660400325,
+     -10.090653845215009,
+     25.6032
+    ]
+   }
+  },
+  {
+   "guid": "8db9eaf5-bb53-4f91-ba62-836b86002f99",
+   "test": "STR-FLR VS HVAC",
+   "name": "Clash6",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.088348095703125,
+   "point": [
+    38.29232705560697,
+    -26.382406515399857,
+    24.815799224853517
+   ],
+   "level": "Level \"ROOF LEVEL\", #375304",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/10/0/0/0/3/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Floors",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/10/0/0/0/3",
+    "parent_name": "Floor",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "ROOF LEVEL",
+     "Family": "Floor",
+     "Category": "Floors",
+     "Id": "760630",
+     "Level": "Level \"ROOF LEVEL\", #375304",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     23.299166217041016,
+     -31.020764666748047,
+     24.638000775146487
+    ],
+    "bbox_max": [
+     43.111163891601564,
+     -11.691365441894531,
+     24.815799224853517
+    ]
+   },
+   "b": {
+    "path_id": "0/110/1/2/0/0/83/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/1/2/0/0/83",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "1219489",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Other",
+     "System Name": "Refrigerating 82",
+     "System Type": "PipingSystemType \"Refrigerating\", #1060600",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     38.26303888549788,
+     -26.382650097656498,
+     23.3505375
+    ],
+    "bbox_max": [
+     38.31698908081038,
+     -26.328699902344,
+     25.6032
+    ]
+   }
+  },
+  {
+   "guid": "7db88e40-3aab-4639-abb4-79f30ba1799b",
+   "test": "STR-FLR VS HVAC",
+   "name": "Clash7",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.088348095703125,
+   "point": [
+    8.17379172198851,
+    -3.499379741260811,
+    24.815799224853517
+   ],
+   "level": "Level \"ROOF LEVEL\", #375304",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/10/0/0/0/6/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Floors",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/10/0/0/0/6",
+    "parent_name": "Floor",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "ROOF LEVEL",
+     "Family": "Floor",
+     "Category": "Floors",
+     "Id": "760736",
+     "Level": "Level \"ROOF LEVEL\", #375304",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     -0.1190625,
+     -19.083337500000003,
+     24.638000775146487
+    ],
+    "bbox_max": [
+     11.488737112426758,
+     0.7286625,
+     24.815799224853517
+    ]
+   },
+   "b": {
+    "path_id": "0/110/1/2/0/0/35/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/1/2/0/0/35",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "1217800",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Other",
+     "System Name": "Refrigerating 119",
+     "System Type": "PipingSystemType \"Refrigerating\", #1060600",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     8.144504031372048,
+     -3.4996227241516644,
+     23.3505375
+    ],
+    "bbox_max": [
+     8.198453645324685,
+     -3.445673110199028,
+     25.6032
+    ]
+   }
+  },
+  {
+   "guid": "32474965-48c7-4b9f-b641-c9fb6166a7df",
+   "test": "STR-FLR VS HVAC",
+   "name": "Clash8",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.088348095703125,
+   "point": [
+    15.83441017291624,
+    -4.101548679615242,
+    24.815799224853517
+   ],
+   "level": "Level \"ROOF LEVEL\", #375304",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/10/0/0/0/1/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Floors",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/10/0/0/0/1",
+    "parent_name": "Floor",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "ROOF LEVEL",
+     "Family": "Floor",
+     "Category": "Floors",
+     "Id": "760553",
+     "Level": "Level \"ROOF LEVEL\", #375304",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     10.650518508911134,
+     -18.473737500000002,
+     24.638000775146487
+    ],
+    "bbox_max": [
+     19.159537500000003,
+     0.7286625,
+     24.815799224853517
+    ]
+   },
+   "b": {
+    "path_id": "0/110/1/2/0/0/42/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/1/2/0/0/42",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "1218069",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Other",
+     "System Name": "Refrigerating 24",
+     "System Type": "PipingSystemType \"Refrigerating\", #1060600",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     15.80512248229978,
+     -4.101791782379253,
+     23.3505375
+    ],
+    "bbox_max": [
+     15.85907267761228,
+     -4.047842168426616,
+     25.6032
+    ]
+   }
+  },
+  {
+   "guid": "5770a323-aa41-418e-82ae-a36873e78763",
+   "test": "STR-FLR VS HVAC",
+   "name": "Clash9",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.08834809570312499,
+   "point": [
+    33.560094016543694,
+    -8.655640761066772,
+    24.815799224853517
+   ],
+   "level": "Level \"ROOF LEVEL\", #375304",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/10/0/0/0/4/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Floors",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/10/0/0/0/4",
+    "parent_name": "Floor",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "ROOF LEVEL",
+     "Family": "Floor",
+     "Category": "Floors",
+     "Id": "760663",
+     "Level": "Level \"ROOF LEVEL\", #375304",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     19.159537500000003,
+     -11.691365151214601,
+     24.638000775146487
+    ],
+    "bbox_max": [
+     43.45276164550781,
+     1.070227988433838,
+     24.815799224853517
+    ]
+   },
+   "b": {
+    "path_id": "0/110/1/2/0/0/8/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/1/2/0/0/8",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "1215629",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Other",
+     "System Name": "Refrigerating 81",
+     "System Type": "PipingSystemType \"Refrigerating\", #1060600",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.530806805419864,
+     -8.655883863830784,
+     23.3505375
+    ],
+    "bbox_max": [
+     33.58475700073237,
+     -8.601934249878147,
+     25.6032
+    ]
+   }
+  },
+  {
+   "guid": "5ac32a92-4c2c-4abd-be96-2fb35f8ecec2",
+   "test": "STR-FLR VS HVAC",
+   "name": "Clash10",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.08834809570312499,
+   "point": [
+    23.486233128605164,
+    -4.101548679615291,
+    24.815799224853517
+   ],
+   "level": "Level \"ROOF LEVEL\", #375304",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/10/0/0/0/4/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Floors",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/10/0/0/0/4",
+    "parent_name": "Floor",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "ROOF LEVEL",
+     "Family": "Floor",
+     "Category": "Floors",
+     "Id": "760663",
+     "Level": "Level \"ROOF LEVEL\", #375304",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     19.159537500000003,
+     -11.691365151214601,
+     24.638000775146487
+    ],
+    "bbox_max": [
+     43.45276164550781,
+     1.070227988433838,
+     24.815799224853517
+    ]
+   },
+   "b": {
+    "path_id": "0/110/1/2/0/0/51/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/110/1/2/0/0/51",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "1218292",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Other",
+     "System Name": "Refrigerating 32",
+     "System Type": "PipingSystemType \"Refrigerating\", #1060600",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     23.45694495849607,
+     -4.101791782379302,
+     23.3505375
+    ],
+    "bbox_max": [
+     23.51089515380857,
+     -4.047842168426666,
+     25.6032
+    ]
+   }
+  },
+  {
+   "guid": "00137ae0-8ecc-425c-bf22-ceb836b145ac",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash1",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0511382371231846,
+   "point": [
+    34.1217051838843,
+    -12.377165441894531,
+    2.1308022760170267
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/1/20/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/1/20",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "684653",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.99256466674805,
+     -19.108166217041017,
+     0
+    ],
+    "bbox_max": [
+     34.19576621704102,
+     -12.377165441894531,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/102/2/6/0/1/3/0",
+    "display_name": "Gypsum Wall Board X",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/102/2/6/0/1/3",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board X",
+     "Layer": "ARC_2ND",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "376597",
+     "Workset": "UNIT-H GF"
+    },
+    "bbox_min": [
+     32.68315920575114,
+     -12.428303679017722,
+     -2.544737753851223e-13
+    ],
+    "bbox_max": [
+     34.18406875470134,
+     -10.927392967347796,
+     3.3527999999997458
+    ]
+   }
+  },
+  {
+   "guid": "33577eed-8a60-4f95-97e1-e7684d9a0411",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash2",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0511382371231846,
+   "point": [
+    34.09925481406265,
+    -12.377165441894531,
+    1.7603740001030979
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/1/20/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/1/20",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "684653",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.99256466674805,
+     -19.108166217041017,
+     0
+    ],
+    "bbox_max": [
+     34.19576621704102,
+     -12.377165441894531,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/102/2/6/0/1/1/0",
+    "display_name": "Gypsum Wall Board X",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/102/2/6/0/1/1",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board X",
+     "Layer": "ARC_2ND",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "376521",
+     "Workset": "UNIT-H GF"
+    },
+    "bbox_min": [
+     32.6719343095109,
+     -12.428303679017722,
+     -2.544737753851223e-13
+    ],
+    "bbox_max": [
+     34.161617799501144,
+     -10.938620189027484,
+     3.3527999999997458
+    ]
+   }
+  },
+  {
+   "guid": "d6cc337b-c7e0-4bcf-963b-12c046108af1",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash3",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0284719733873095,
+   "point": [
+    29.68726466674805,
+    -38.22411497265489,
+    18.5497072716214
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/7/5/0/6/9/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/7/5/0/6/9",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "6 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1463378",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     29.68726466674805,
+     -40.0752422241211,
+     15.748000387573242
+    ],
+    "bbox_max": [
+     29.83966466674805,
+     -38.19564299926758,
+     18.5928
+    ]
+   },
+   "b": {
+    "path_id": "0/58/1/15/0/1/23/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/58/1/15/0/1/23",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "ARC_2ND",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "306068",
+     "Workset": "UNIT-C"
+    },
+    "bbox_min": [
+     27.431428216858706,
+     -38.22411497265489,
+     17.86255
+    ],
+    "bbox_max": [
+     29.715840813752017,
+     -38.20823977886827,
+     18.59280019378662
+    ]
+   }
+  },
+  {
+   "guid": "699bdc41-356e-40ed-813a-2820593226d8",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash4",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0284719733873095,
+   "point": [
+    29.68726466674805,
+    -38.22411497265489,
+    15.527106884048157
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/6/5/0/6/9/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/6/5/0/6/9",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "5 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1462296",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     29.68726466674805,
+     -40.0752422241211,
+     12.7254
+    ],
+    "bbox_max": [
+     29.83966466674805,
+     -38.19564299926758,
+     15.570199612426759
+    ]
+   },
+   "b": {
+    "path_id": "0/44/1/15/0/1/23/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/44/1/15/0/1/23",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "ARC_2ND",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "306068",
+     "Workset": "UNIT-C"
+    },
+    "bbox_min": [
+     27.431428216858706,
+     -38.22411497265489,
+     14.839949999999998
+    ],
+    "bbox_max": [
+     29.715840813752017,
+     -38.20823977886827,
+     15.57020019378662
+    ]
+   }
+  },
+  {
+   "guid": "35f73acb-ad9e-45d2-9607-b548b1235379",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash5",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0284719733873095,
+   "point": [
+    29.68726466674805,
+    -38.22411497265489,
+    21.572306496474916
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/8/5/0/6/9/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/8/5/0/6/9",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "7 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1593526",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     29.68726466674805,
+     -40.0752422241211,
+     18.770599612426757
+    ],
+    "bbox_max": [
+     29.83966466674805,
+     -38.19564299926758,
+     21.615399224853515
+    ]
+   },
+   "b": {
+    "path_id": "0/72/1/15/0/1/23/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/72/1/15/0/1/23",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "ARC_2ND",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "306068",
+     "Workset": "UNIT-C"
+    },
+    "bbox_min": [
+     27.431428216858706,
+     -38.22411497265489,
+     20.885149999999996
+    ],
+    "bbox_max": [
+     29.715840813752017,
+     -38.20823977886827,
+     21.615400193786616
+    ]
+   }
+  },
+  {
+   "guid": "52cae989-1217-455b-bc94-91812f355b43",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash6",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0284719733873095,
+   "point": [
+    29.68726466674805,
+    -38.22411497265489,
+    9.48190726281502
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/4/6/0/5/9/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/4/6/0/5/9",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "3th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "658502",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     29.68726466674805,
+     -40.0752422241211,
+     6.68019980621338
+    ],
+    "bbox_max": [
+     29.83966466674805,
+     -38.19564299926758,
+     9.525
+    ]
+   },
+   "b": {
+    "path_id": "0/16/1/15/0/1/23/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/16/1/15/0/1/23",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "ARC_2ND",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "306068",
+     "Workset": "UNIT-C"
+    },
+    "bbox_min": [
+     27.431428216858706,
+     -38.22411497265489,
+     8.79475
+    ],
+    "bbox_max": [
+     29.715840813752017,
+     -38.20823977886827,
+     9.525000193786623
+    ]
+   }
+  },
+  {
+   "guid": "5475f76c-c134-433e-a415-3c796b6ce556",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash7",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0284719733873095,
+   "point": [
+    29.68726466674805,
+    -38.22411497265489,
+    12.504507650388263
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/5/5/0/6/9/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/5/5/0/6/9",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "4th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1461209",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     29.68726466674805,
+     -40.0752422241211,
+     9.702800193786622
+    ],
+    "bbox_max": [
+     29.83966466674805,
+     -38.19564299926758,
+     12.547600387573242
+    ]
+   },
+   "b": {
+    "path_id": "0/30/1/15/0/1/23/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/30/1/15/0/1/23",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "ARC_2ND",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "306068",
+     "Workset": "UNIT-C"
+    },
+    "bbox_min": [
+     27.431428216858706,
+     -38.22411497265489,
+     11.81735
+    ],
+    "bbox_max": [
+     29.715840813752017,
+     -38.20823977886827,
+     12.54760019378662
+    ]
+   }
+  },
+  {
+   "guid": "7b7ca0b6-c983-46fe-8919-ee2048f315f5",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash8",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0284719733873095,
+   "point": [
+    29.68726466674805,
+    -38.22411497265489,
+    24.59490802915513
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/9/5/0/5/9/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/9/5/0/5/9",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "8 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "759962",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     29.68726466674805,
+     -40.0752422241211,
+     21.793200000000002
+    ],
+    "bbox_max": [
+     29.83966466674805,
+     -38.19564299926758,
+     24.638000775146487
+    ]
+   },
+   "b": {
+    "path_id": "0/86/1/15/0/1/23/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/86/1/15/0/1/23",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "ARC_2ND",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "306068",
+     "Workset": "UNIT-C"
+    },
+    "bbox_min": [
+     27.431428216858706,
+     -38.22411497265489,
+     23.907749999999997
+    ],
+    "bbox_max": [
+     29.715840813752017,
+     -38.20823977886827,
+     24.638000193786617
+    ]
+   }
+  },
+  {
+   "guid": "5ff4201b-eb45-4290-8ff3-3dc1a8e23245",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash116",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015875387573204648,
+   "point": [
+    26.7033375,
+    -7.951485968003398,
+    0.3968750121113076
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/2/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/2",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586323",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -8.1867375,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -7.6914375,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/1/0/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/1/0",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "2893",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     25.931915594482387,
+     -7.967360774230933,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -7.951485580444311,
+     0.3968750121113076
+    ]
+   }
+  },
+  {
+   "guid": "469dbcca-738d-4133-837c-ab14f8c11e22",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash117",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015875387573204648,
+   "point": [
+    26.7033375,
+    -6.290960774230933,
+    1.3840127567570013
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/32/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/32",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1661326",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -7.3866375,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -4.732337596893311,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/3/5/0",
+    "display_name": "Gypsum Wall Board",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/3/5",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "3000",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     25.864919683837854,
+     -6.30683538665769,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -6.290960774230933,
+     3.352799999999644
+    ]
+   }
+  },
+  {
+   "guid": "7b48bf4c-0e0b-4870-b9f2-3075e7657e8b",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash118",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015875387573204648,
+   "point": [
+    26.7033375,
+    -3.9001857742309323,
+    0
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/31/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/31",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1661313",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -4.427537646853924,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -0.1349374530673027,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/3/7/0",
+    "display_name": "Gypsum Wall Board",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/3/7",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "3002",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     25.915937499999963,
+     -3.9001857742309323,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -3.8843105804443114,
+     3.4798000968929546
+    ]
+   }
+  },
+  {
+   "guid": "5286727f-e48a-4765-a363-56d0d42409a0",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash119",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015875387573204648,
+   "point": [
+    26.719212887573207,
+    -4.011310677337577,
+    3.3528000000000002
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/31/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/31",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1661313",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -4.427537646853924,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -0.1349374530673027,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/3/6/1",
+    "display_name": "Gypsum Wall Board X",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/3/6",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board X",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "3001",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     26.719212887573207,
+     -4.0113106773376215,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -3.9954357742309323,
+     3.4798000968929546
+    ]
+   }
+  },
+  {
+   "guid": "e46f2426-d450-4f25-8347-e31545342405",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash120",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015875387573204648,
+   "point": [
+    26.719212887573207,
+    -4.427537646853924,
+    2.933687210005935
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/31/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/31",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1661313",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -4.427537646853924,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -0.1349374530673027,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/4/2/0",
+    "display_name": "Gypsum Wall Board X",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/4/2",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board X",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "504113",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     26.703337112426723,
+     -6.290960774230933,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -4.0113106773376215,
+     3.352799999999644
+    ]
+   }
+  },
+  {
+   "guid": "6b02a19e-ea91-413b-bedb-7dd2aaf59f2d",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash121",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015875387573204648,
+   "point": [
+    26.719212887573207,
+    -4.427537646853924,
+    0
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/31/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/31",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1661313",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -4.427537646853924,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -0.1349374530673027,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/1/9/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/1/9",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "629233",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     26.703337112426723,
+     -6.290960774230933,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -4.364037403106665,
+     0.3968750121113076
+    ]
+   }
+  },
+  {
+   "guid": "8eda77c5-4723-4f39-baa3-a5f6beb0e58a",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash122",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015875387573204648,
+   "point": [
+    26.719212887573207,
+    -4.732337596893311,
+    1.060451803186812
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/32/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/32",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1661326",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -7.3866375,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -4.732337596893311,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/4/2/0",
+    "display_name": "Gypsum Wall Board X",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/4/2",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board X",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "504113",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     26.703337112426723,
+     -6.290960774230933,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -4.0113106773376215,
+     3.352799999999644
+    ]
+   }
+  },
+  {
+   "guid": "e6ea6afa-f783-4099-97fe-0ba4dd42da62",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash123",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015875387573204648,
+   "point": [
+    26.719212887573207,
+    -7.3866375,
+    0.2503895281496915
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/32/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/32",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1661326",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -7.3866375,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -4.732337596893311,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/1/7/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/1/7",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "504953",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     26.703337112426723,
+     -7.951485580444311,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -6.42113538665769,
+     0.3968750121113076
+    ]
+   }
+  },
+  {
+   "guid": "2af5d5b9-3ff2-4dd6-b761-a82cc1e9beb0",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash124",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015875387573204648,
+   "point": [
+    26.7033375,
+    -6.405260774230933,
+    0.007375154815161707
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/32/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/32",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1661326",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -7.3866375,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -4.732337596893311,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/1/1/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/1/1",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "2895",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     25.864919683837854,
+     -6.42113538665769,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -6.405260774230933,
+     0.3968750121113076
+    ]
+   }
+  },
+  {
+   "guid": "a467aeda-25e3-4bec-9b64-8b95046a75ce",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash153",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015864010929605727,
+   "point": [
+    26.719212887573207,
+    -7.6914375,
+    0
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/2/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/2",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586323",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -8.1867375,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -7.6914375,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/1/7/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/1/7",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "504953",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     26.703337112426723,
+     -7.951485580444311,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -6.42113538665769,
+     0.3968750121113076
+    ]
+   }
+  },
+  {
+   "guid": "b6b3e60c-3349-492f-ba75-792a20f338c2",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash154",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015864010929605727,
+   "point": [
+    26.719212887573207,
+    -4.732337596893311,
+    0
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/32/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/32",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1661326",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     26.7033375,
+     -7.3866375,
+     0
+    ],
+    "bbox_max": [
+     26.830336724853517,
+     -4.732337596893311,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/1/9/0",
+    "display_name": "Gypsum Wall Board Green",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/1/9",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board Green",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "629233",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     26.703337112426723,
+     -6.290960774230933,
+     -3.562632855391712e-13
+    ],
+    "bbox_max": [
+     26.719212887573207,
+     -4.364037403106665,
+     0.3968750121113076
+    ]
+   }
+  },
+  {
+   "guid": "6a2211fd-9e11-400e-8c0d-25e860de98e8",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash177",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.012918203735389103,
+   "point": [
+    21.851938275146484,
+    -8.2732537307739,
+    2.228849999999644
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/1/2/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/1/2",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586452",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     15.603537112426759,
+     -8.38993730621338,
+     0
+    ],
+    "bbox_max": [
+     21.851938275146484,
+     -8.1867375,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/6/0/0",
+    "display_name": "Gypsum Wall Board X",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/6/0",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board X",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "94589",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     21.839020071411095,
+     -8.28595353698728,
+     2.228849999999644
+    ],
+    "bbox_max": [
+     22.85422670898434,
+     -8.2732537307739,
+     3.352799999999644
+    ]
+   }
+  },
+  {
+   "guid": "49c71d37-b046-4dcc-bcf7-db6851a2fc5b",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash255",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.011747802981270023,
+   "point": [
+    21.851938275146484,
+    -8.3780287307739,
+    3.1600693903619117
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/1/2/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/1/2",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586452",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     15.603537112426759,
+     -8.38993730621338,
+     0
+    ],
+    "bbox_max": [
+     21.851938275146484,
+     -8.1867375,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/103/1/16/0/6/1/0",
+    "display_name": "Gypsum Wall Board X",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/103/1/16/0/6/1",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board X",
+     "Layer": "GF",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "94653",
+     "Workset": "UNIT-E GF"
+    },
+    "bbox_min": [
+     21.839020071411095,
+     -8.39072853698728,
+     2.228849999999644
+    ],
+    "bbox_max": [
+     22.85422670898434,
+     -8.3780287307739,
+     3.352799999999644
+    ]
+   }
+  },
+  {
+   "guid": "1a720fa1-c6dd-4cca-a78c-7ff4d62ca10d",
+   "test": "STR-WAL VS ARCH-GB-WALL",
+   "name": "Clash305",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.0082692626953125,
+   "point": [
+    34.008440441894535,
+    -40.450219335937504,
+    3.984637000091209
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/1/56/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/1/56",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "412501",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.99256466674805,
+     -42.37513905029297,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     34.11956621704102,
+     -40.450219335937504,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/1/2/6/0/8/2/0",
+    "display_name": "Gypsum Wall Board X",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/1/2/6/0/8/2",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Gypsum Wall Board X",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1279510",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.99256466674805,
+     -40.45848859863281,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     34.008440441894535,
+     -38.73125216674805,
+     6.502400193786621
+    ]
+   }
+  },
+  {
+   "guid": "81d0e22e-9626-4844-a5c9-67f1c5811035",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash37",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.03474480592291125,
+   "point": [
+    42.39678718360332,
+    -41.79005383300782,
+    15.537417918346035
+   ],
+   "level": "Level \"ARC_2ND\", #2795",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/6/5/0/1/240/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/6/5/0/1/240",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "5 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1462250",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.34916389160156,
+     -41.89165693359375,
+     12.7254
+    ],
+    "bbox_max": [
+     42.50156389160156,
+     -41.79005383300782,
+     15.570199612426759
+    ]
+   },
+   "b": {
+    "path_id": "0/48/1/8/0/1/0/0/0/1",
+    "display_name": "POLYSCREEN 403_White_28002",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/48/1/8/0/1/0/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "POLYSCREEN 403_White_28002",
+     "Layer": "ARC_2ND",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "213178",
+     "Workset": "UNIT-G",
+     "Level": "Level \"ARC_2ND\", #2795",
+     "Mark": "4",
+     "Comments": "POLYSCREEN 403"
+    },
+    "bbox_min": [
+     42.35336571632037,
+     -41.82479863893072,
+     15.510584079438951
+    ],
+    "bbox_max": [
+     42.39736571502099,
+     -39.54904219972174,
+     15.55458407813957
+    ]
+   }
+  },
+  {
+   "guid": "73671357-b8e4-4da6-bde0-bf254c8dd3b2",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash38",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.03474480592291125,
+   "point": [
+    42.39678718360332,
+    -41.79005383300782,
+    18.560017918346038
+   ],
+   "level": "Level \"ARC_2ND\", #2795",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/7/5/0/1/240/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/7/5/0/1/240",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "6 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1463332",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.34916389160156,
+     -41.89165693359375,
+     15.748000387573242
+    ],
+    "bbox_max": [
+     42.50156389160156,
+     -41.79005383300782,
+     18.5928
+    ]
+   },
+   "b": {
+    "path_id": "0/62/1/8/0/1/0/0/0/1",
+    "display_name": "POLYSCREEN 403_White_28002",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/62/1/8/0/1/0/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "POLYSCREEN 403_White_28002",
+     "Layer": "ARC_2ND",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "213178",
+     "Workset": "UNIT-G",
+     "Level": "Level \"ARC_2ND\", #2795",
+     "Mark": "4",
+     "Comments": "POLYSCREEN 403"
+    },
+    "bbox_min": [
+     42.35336571632037,
+     -41.82479863893072,
+     18.533184079438954
+    ],
+    "bbox_max": [
+     42.39736571502099,
+     -39.54904219972174,
+     18.57718407813957
+    ]
+   }
+  },
+  {
+   "guid": "98ba5535-64de-43d3-91c2-7d844b736905",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash39",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.03474480592291125,
+   "point": [
+    42.39678718360332,
+    -41.79005383300782,
+    21.582617918346035
+   ],
+   "level": "Level \"ARC_2ND\", #2795",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/8/5/0/1/240/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/8/5/0/1/240",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "7 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1593480",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.34916389160156,
+     -41.89165693359375,
+     18.770599612426757
+    ],
+    "bbox_max": [
+     42.50156389160156,
+     -41.79005383300782,
+     21.615399224853515
+    ]
+   },
+   "b": {
+    "path_id": "0/76/1/8/0/1/0/0/0/1",
+    "display_name": "POLYSCREEN 403_White_28002",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/76/1/8/0/1/0/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "POLYSCREEN 403_White_28002",
+     "Layer": "ARC_2ND",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "213178",
+     "Workset": "UNIT-G",
+     "Level": "Level \"ARC_2ND\", #2795",
+     "Mark": "4",
+     "Comments": "POLYSCREEN 403"
+    },
+    "bbox_min": [
+     42.35336571632037,
+     -41.82479863893072,
+     21.55578407943895
+    ],
+    "bbox_max": [
+     42.39736571502099,
+     -39.54904219972174,
+     21.599784078139567
+    ]
+   }
+  },
+  {
+   "guid": "91a7f73a-346d-4791-bf67-fcd851711dd4",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash40",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.03474480592291125,
+   "point": [
+    42.39678718360332,
+    -41.79005383300782,
+    24.605217918346035
+   ],
+   "level": "Level \"ARC_2ND\", #2795",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/9/5/0/0/240/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/9/5/0/0/240",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "8 FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "759909",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.34916389160156,
+     -41.89165693359375,
+     21.793200000000002
+    ],
+    "bbox_max": [
+     42.50156389160156,
+     -41.79005383300782,
+     24.638000775146487
+    ]
+   },
+   "b": {
+    "path_id": "0/90/1/8/0/1/0/0/0/1",
+    "display_name": "POLYSCREEN 403_White_28002",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/90/1/8/0/1/0/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "POLYSCREEN 403_White_28002",
+     "Layer": "ARC_2ND",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "213178",
+     "Workset": "UNIT-G",
+     "Level": "Level \"ARC_2ND\", #2795",
+     "Mark": "4",
+     "Comments": "POLYSCREEN 403"
+    },
+    "bbox_min": [
+     42.35336571632037,
+     -41.82479863893072,
+     24.57838407943895
+    ],
+    "bbox_max": [
+     42.39736571502099,
+     -39.54904219972174,
+     24.62238407813957
+    ]
+   }
+  },
+  {
+   "guid": "3239b4e1-f49e-4c17-a590-c2039fcd9e93",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash41",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.03474480592291124,
+   "point": [
+    42.39678718360332,
+    -41.79005383300782,
+    12.514817918346038
+   ],
+   "level": "Level \"ARC_2ND\", #2795",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/5/5/0/1/240/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/5/5/0/1/240",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "4th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1461163",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.34916389160156,
+     -41.89165693359375,
+     9.702800193786622
+    ],
+    "bbox_max": [
+     42.50156389160156,
+     -41.79005383300782,
+     12.547600387573242
+    ]
+   },
+   "b": {
+    "path_id": "0/34/1/8/0/1/0/0/0/1",
+    "display_name": "POLYSCREEN 403_White_28002",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/34/1/8/0/1/0/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "POLYSCREEN 403_White_28002",
+     "Layer": "ARC_2ND",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "213178",
+     "Workset": "UNIT-G",
+     "Level": "Level \"ARC_2ND\", #2795",
+     "Mark": "4",
+     "Comments": "POLYSCREEN 403"
+    },
+    "bbox_min": [
+     42.35336571632037,
+     -41.82479863893072,
+     12.487984079438954
+    ],
+    "bbox_max": [
+     42.39736571502099,
+     -39.54904219972174,
+     12.531984078139573
+    ]
+   }
+  },
+  {
+   "guid": "8c6611c2-65fa-4841-a33c-6a485c114adf",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash42",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.03474480592291124,
+   "point": [
+    42.39678718360332,
+    -41.79005383300782,
+    6.469617918346037
+   ],
+   "level": "Level \"ARC_2ND\", #2795",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/0/241/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/0/241",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "548264",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.34916389160156,
+     -41.89165693359375,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     42.50156389160156,
+     -41.79005383300782,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/6/1/8/0/1/0/0/0/1",
+    "display_name": "POLYSCREEN 403_White_28002",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/6/1/8/0/1/0/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "POLYSCREEN 403_White_28002",
+     "Layer": "ARC_2ND",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "213178",
+     "Workset": "UNIT-G",
+     "Level": "Level \"ARC_2ND\", #2795",
+     "Mark": "4",
+     "Comments": "POLYSCREEN 403"
+    },
+    "bbox_min": [
+     42.35336571632037,
+     -41.82479863893072,
+     6.442784079438954
+    ],
+    "bbox_max": [
+     42.39736571502099,
+     -39.54904219972174,
+     6.486784078139573
+    ]
+   }
+  },
+  {
+   "guid": "8284d041-b493-4d66-a5f6-3f68e9bc07a5",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash43",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.03474480592291124,
+   "point": [
+    42.39678718360332,
+    -41.79005383300782,
+    9.492217918346036
+   ],
+   "level": "Level \"ARC_2ND\", #2795",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/4/6/0/0/242/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/4/6/0/0/242",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "3th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "658447",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.34916389160156,
+     -41.89165693359375,
+     6.68019980621338
+    ],
+    "bbox_max": [
+     42.50156389160156,
+     -41.79005383300782,
+     9.525
+    ]
+   },
+   "b": {
+    "path_id": "0/20/1/8/0/1/0/0/0/1",
+    "display_name": "POLYSCREEN 403_White_28002",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/20/1/8/0/1/0/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "POLYSCREEN 403_White_28002",
+     "Layer": "ARC_2ND",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "213178",
+     "Workset": "UNIT-G",
+     "Level": "Level \"ARC_2ND\", #2795",
+     "Mark": "4",
+     "Comments": "POLYSCREEN 403"
+    },
+    "bbox_min": [
+     42.35336571632037,
+     -41.82479863893072,
+     9.465384079438953
+    ],
+    "bbox_max": [
+     42.39736571502099,
+     -39.54904219972174,
+     9.509384078139572
+    ]
+   }
+  },
+  {
+   "guid": "06b51bde-06d4-4019-b507-89afdcfa2a5b",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash59",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.016244526863183333,
+   "point": [
+    33.76453672485352,
+    -0.08928749981531632,
+    2.8995625003817347
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/0/176/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/0/176",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586572",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     33.76453672485352,
+     -0.1349375075697899,
+     0
+    ],
+    "bbox_max": [
+     33.8661375,
+     0.11906250454187393,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/101/0/0/0/1/0/0/0/0",
+    "display_name": "Grey RAL 9006",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/101/0/0/0/1/0/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "Grey RAL 9006",
+     "Layer": "<No level>",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "282751",
+     "Workset": "UNIT-H GF",
+     "Comments": "POLYSCREEN 403",
+     "Mark": "28002"
+    },
+    "bbox_min": [
+     31.425781248283474,
+     -0.15358750170478358,
+     2.817950794005659
+    ],
+    "bbox_max": [
+     33.780781251716704,
+     -0.08928749981531632,
+     2.8995625003817347
+    ]
+   }
+  },
+  {
+   "guid": "7418dbaa-db43-4c20-aac0-0fcecaec4885",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash60",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.016243866033979645,
+   "point": [
+    42.24756544189454,
+    -8.601721963433794,
+    2.851673927983048
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/0/189/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/0/189",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586589",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.24756544189454,
+     -8.617965829467774,
+     0
+    ],
+    "bbox_max": [
+     42.50156389160156,
+     -8.516365635681153,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/102/0/0/0/1/0/0/0/0",
+    "display_name": "Grey RAL 9006",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/102/0/0/0/1/0/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "Grey RAL 9006",
+     "Layer": "<No level>",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "282751",
+     "Workset": "UNIT-H GF",
+     "Comments": "POLYSCREEN 403",
+     "Mark": "28002"
+    },
+    "bbox_min": [
+     42.22891571344576,
+     -10.956721966867022,
+     2.8179507940054047
+    ],
+    "bbox_max": [
+     42.29321571533524,
+     -8.601721963433794,
+     2.8995625003814802
+    ]
+   }
+  },
+  {
+   "guid": "2094e68d-e1bb-407f-840a-7f14ed23132f",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash61",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015450192543317661,
+   "point": [
+    38.38366430905029,
+    0.47332837232081,
+    2.890604302418092
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/0/175/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/0/175",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586571",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     38.22622252807617,
+     0.387728804397583,
+     0
+    ],
+    "bbox_max": [
+     38.477669970703126,
+     0.6391759563446046,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/101/0/0/0/1/1/0/0/0",
+    "display_name": "Grey RAL 9006",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/101/0/0/0/1/1/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "Grey RAL 9006",
+     "Layer": "<No level>",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "282752",
+     "Workset": "UNIT-H GF",
+     "Comments": "POLYSCREEN 403",
+     "Mark": "28002"
+    },
+    "bbox_min": [
+     38.32727240576592,
+     -1.2264501312494844,
+     2.817950794005659
+    ],
+    "bbox_max": [
+     40.037975845254266,
+     0.48425330823882895,
+     2.8995625003817347
+    ]
+   }
+  },
+  {
+   "guid": "0f43669e-5b72-496c-8ac3-13e214076f7a",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash62",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.015450138660649013,
+   "point": [
+    42.81036465820549,
+    -4.044305911567066,
+    2.8995625003814802
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/0/188/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/0/188",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586588",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     42.770231213378906,
+     -4.156280898284912,
+     0
+    ],
+    "bbox_max": [
+     43.021680981445314,
+     -3.904833746337891,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/102/0/0/0/1/1/0/0/0",
+    "display_name": "Grey RAL 9006",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/102/0/0/0/1/1/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_BLACKOUT",
+    "props": {
+     "Type": "Solid",
+     "Material": "Grey RAL 9006",
+     "Layer": "<No level>",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "282752",
+     "Workset": "UNIT-H GF",
+     "Comments": "POLYSCREEN 403",
+     "Mark": "28002"
+    },
+    "bbox_min": [
+     41.156053083901035,
+     -4.055230809384573,
+     2.8179507940054047
+    ],
+    "bbox_max": [
+     42.86675652338935,
+     -2.344527369896237,
+     2.8995625003814802
+    ]
+   }
+  },
+  {
+   "guid": "e9f860ca-db9a-485c-9873-7892119854b0",
+   "test": "STR-WAL VS ARCH-WINDOR",
+   "name": "Clash63",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.013561448481075239,
+   "point": [
+    22.258336724853518,
+    0.5274499982963793,
+    12.503274201027017
+   ],
+   "level": "",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/5/5/0/1/266/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/5/5/0/1/266",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "4th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "1461189",
+     "Mark": "WALL 4\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     22.258336724853518,
+     0.4746624878883362,
+     9.702800193786622
+    ],
+    "bbox_max": [
+     22.3599375,
+     0.6270625242233276,
+     12.547600387573242
+    ]
+   },
+   "b": {
+    "path_id": "0/36/0/0/0/0/0/0/0/0",
+    "display_name": "Grey RAL 9006",
+    "category": "Generic Models",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/36/0/0/0/0/0/0/0",
+    "parent_name": "WIN_BLIND_7'8\"_SCREEN",
+    "props": {
+     "Type": "Solid",
+     "Material": "Grey RAL 9006",
+     "Layer": "<No level>",
+     "Family": "WIN_BLIND_7-8_BLACKOUT",
+     "Category": "Generic Models",
+     "Id": "268648",
+     "Workset": "UNITS_FAMILIES",
+     "Comments": "POLYSCREEN 403",
+     "Mark": "28002"
+    },
+    "bbox_min": [
+     19.916898169901366,
+     0.527449998296371,
+     12.431508877008365
+    ],
+    "bbox_max": [
+     22.27189817333459,
+     0.5917500001858466,
+     12.513120583384442
+    ]
+   }
+  },
+  {
+   "guid": "c3fa7dc0-8435-435e-a6b9-2dd214f5b1b3",
+   "test": "STR-WALL VS FRSP",
+   "name": "Clash1",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06508788757324219,
+   "point": [
+    15.85361794299261,
+    -10.0917375,
+    6.4376950657179846
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/1/67/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/1/67",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "478069",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     14.333537887573243,
+     -10.0917375,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     15.984504556274414,
+     -9.964737112426759,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/109/1/3/0/0/84/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/109/1/3/0/0/84",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "2th FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "917566",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "2\"ø",
+     "System Classification": "Fire Protection Wet",
+     "System Name": "Fire Protection Wet 3",
+     "System Type": "PipingSystemType \"Fire Protection Wet\", #607137",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     15.822190045165934,
+     -12.989968734741314,
+     6.4373123062133795
+    ],
+    "bbox_max": [
+     15.876165820312435,
+     -9.981277963256938,
+     6.4912875
+    ]
+   }
+  },
+  {
+   "guid": "961ff86d-51bd-499d-a736-678df14dc10c",
+   "test": "STR-WALL VS FRSP",
+   "name": "Clash2",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06508759689331055,
+   "point": [
+    32.14424492797852,
+    -49.20693377549272,
+    3.287994206107048
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/1/8/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/1/8",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586488",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     31.941045703125003,
+     -50.88356389160157,
+     0
+    ],
+    "bbox_max": [
+     32.14424492797852,
+     -47.88636544189453,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/113/1/3/0/0/161/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/113/1/3/0/0/161",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "978394",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Fire Protection Wet",
+     "System Name": "Fire Protection Wet 4",
+     "System Type": "PipingSystemType \"Fire Protection Wet\", #607137",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     31.92235149536133,
+     -49.236794641113285,
+     3.2877124031066898
+    ],
+    "bbox_max": [
+     32.57325130004883,
+     -49.182821191406255,
+     3.3416875968933106
+    ]
+   }
+  },
+  {
+   "guid": "6168bf4c-e3c7-4325-9135-9cbcc165386b",
+   "test": "STR-WALL VS FRSP",
+   "name": "Clash3",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06372401733398438,
+   "point": [
+    20.277171606445314,
+    -13.057955264505411,
+    3.290723698591215
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/2/17/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/2/17",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "592171",
+     "Mark": "WALL 5\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     20.150170056152344,
+     -16.934112872314454,
+     0
+    ],
+    "bbox_max": [
+     20.277171606445314,
+     -10.0917375,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/113/1/3/0/0/157/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/113/1/3/0/0/157",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "978371",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Fire Protection Wet",
+     "System Name": "Fire Protection Wet 4",
+     "System Type": "PipingSystemType \"Fire Protection Wet\", #607137",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     18.851100512695314,
+     -13.072767169189454,
+     3.2877124031066898
+    ],
+    "bbox_max": [
+     20.983563372802735,
+     -13.018792556762696,
+     3.3416875968933106
+    ]
+   }
+  },
+  {
+   "guid": "5ad3bdd5-0657-40fc-bad7-6fc90d387cae",
+   "test": "STR-WALL VS FRSP",
+   "name": "Clash4",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06100210112110432,
+   "point": [
+    17.20377083129883,
+    -13.062402883205397,
+    3.2935017839946403
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/1/4/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/1/4",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586483",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     17.20377083129883,
+     -18.473737500000002,
+     0
+    ],
+    "bbox_max": [
+     17.406970056152346,
+     -12.580937887573242,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/113/1/3/0/0/155/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/113/1/3/0/0/155",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "978364",
+     "Diameter": "DoubleLength:0,166666666666667",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "2\"ø",
+     "System Classification": "Fire Protection Wet",
+     "System Name": "Fire Protection Wet 4",
+     "System Type": "PipingSystemType \"Fire Protection Wet\", #607137",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     16.513300186157228,
+     -13.072767169189454,
+     3.2877124031066898
+    ],
+    "bbox_max": [
+     18.72310018615723,
+     -13.018792556762696,
+     3.3416875968933106
+    ]
+   }
+  },
+  {
+   "guid": "e3e6db50-d4ad-4d50-9c78-97f53b6b8092",
+   "test": "STR-WALL VS FRSP",
+   "name": "Clash5",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.06020446472167969,
+   "point": [
+    29.959813146972657,
+    -8.24694196472168,
+    2.8066999031066895
+   ],
+   "level": "Level \"GROUND FLOOR\", #30",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/2/7/0/1/3/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/2/7/0/1/3",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "GROUND FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "586453",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     23.2743375,
+     -8.38993730621338,
+     0
+    ],
+    "bbox_max": [
+     29.959813146972657,
+     -8.1867375,
+     3.3528000000000002
+    ]
+   },
+   "b": {
+    "path_id": "0/113/1/3/0/0/283/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/113/1/3/0/0/283",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "GROUND FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "985019",
+     "Diameter": "DoubleLength:0,0833333333333333",
+     "Reference Level": "Level \"GROUND FLOOR\", #30",
+     "Size": "1\"ø",
+     "System Classification": "Fire Protection Wet",
+     "System Name": "Fire Protection Wet 3",
+     "System Type": "PipingSystemType \"Fire Protection Wet\", #607137",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     28.969694512939455,
+     -8.24694196472168,
+     2.7924124031066895
+    ],
+    "bbox_max": [
+     30.608796789550784,
+     -8.21836696472168,
+     2.8209874031066895
+    ]
+   }
+  },
+  {
+   "guid": "7823d1a5-c7a7-4405-9745-aaf5f75786ee",
+   "test": "STR-WALL VS FRSP",
+   "name": "Clash6",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.058737693786621095,
+   "point": [
+    23.462842043285736,
+    -6.421135386657715,
+    6.443905581909698
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/5/15/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/5/15",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "628264",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     23.02034602661133,
+     -6.421135386657715,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     24.8999475769043,
+     -6.268735386657715,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/109/1/3/0/1/95/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/109/1/3/0/1/95",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "2th FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "965994",
+     "Diameter": "DoubleLength:0,125",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "1 1/2\"ø",
+     "System Classification": "Fire Protection Wet",
+     "System Name": "Fire Protection Wet 14",
+     "System Type": "PipingSystemType \"Fire Protection Wet\", #607137",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     23.43969019775386,
+     -7.024837490844878,
+     6.4436625
+    ],
+    "bbox_max": [
+     23.480966748046836,
+     -6.1857561492921445,
+     6.4849373062133795
+    ]
+   }
+  },
+  {
+   "guid": "c6e8468f-670b-4a21-8868-5cd24ef2e32d",
+   "test": "STR-WALL VS FRSP",
+   "name": "Clash7",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.058737693786621095,
+   "point": [
+    15.792042394563282,
+    -6.421135386657715,
+    6.443905581909698
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/5/11/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/5/11",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "628127",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     15.349320071411134,
+     -6.421135386657715,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     17.228920458984376,
+     -6.268735386657715,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/109/1/3/0/1/73/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/109/1/3/0/1/73",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "2th FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "965682",
+     "Diameter": "DoubleLength:0,125",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "1 1/2\"ø",
+     "System Classification": "Fire Protection Wet",
+     "System Name": "Fire Protection Wet 11",
+     "System Type": "PipingSystemType \"Fire Protection Wet\", #607137",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     15.768890972900346,
+     -7.024837490844829,
+     6.4436625
+    ],
+    "bbox_max": [
+     15.810166360473593,
+     -6.185756149292095,
+     6.4849373062133795
+    ]
+   }
+  },
+  {
+   "guid": "56e22d32-61e1-4749-8b87-b0ce540a6c31",
+   "test": "STR-WALL VS FRSP",
+   "name": "Clash8",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.058737693786621095,
+   "point": [
+    35.96136774902344,
+    -18.924688374474712,
+    6.443905580345175
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/5/4/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/5/4",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "627314",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     35.96136774902344,
+     -19.362092578125,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     36.11376774902344,
+     -17.48249219055176,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/109/1/3/0/1/29/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/109/1/3/0/1/29",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "2th FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "964809",
+     "Diameter": "DoubleLength:0,125",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "1 1/2\"ø",
+     "System Classification": "Fire Protection Wet",
+     "System Name": "Fire Protection Wet 12",
+     "System Type": "PipingSystemType \"Fire Protection Wet\", #607137",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     35.357665063476446,
+     -18.942812356567618,
+     6.4436625
+    ],
+    "bbox_max": [
+     36.19674640502918,
+     -18.90153696899437,
+     6.4849373062133795
+    ]
+   }
+  },
+  {
+   "guid": "8bb58e00-951a-4c6a-b1bb-8692c7330507",
+   "test": "STR-WALL VS FRSP",
+   "name": "Clash9",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.058737693786621095,
+   "point": [
+    35.96136774902344,
+    -34.26628872574751,
+    6.443905580345175
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/5/0/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/5/0",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "626761",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     35.96136774902344,
+     -34.704846771240234,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     36.11376774902344,
+     -32.82524522094727,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/109/1/3/0/1/51/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/109/1/3/0/1/51",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "2th FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "965147",
+     "Diameter": "DoubleLength:0,125",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "1 1/2\"ø",
+     "System Classification": "Fire Protection Wet",
+     "System Name": "Fire Protection Wet 13",
+     "System Type": "PipingSystemType \"Fire Protection Wet\", #607137",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     35.35766506347635,
+     -34.28441196899438,
+     6.4436625
+    ],
+    "bbox_max": [
+     36.196746405029074,
+     -34.24313774414085,
+     6.4849373062133795
+    ]
+   }
+  },
+  {
+   "guid": "b29d3d11-237b-4fb1-94b8-d0d841c2dbed",
+   "test": "STR-WALL VS FRSP",
+   "name": "Clash10",
+   "status": "New",
+   "test_type": "Hard",
+   "distance_m": -0.058737693786621095,
+   "point": [
+    35.96136774902344,
+    -26.59548802320192,
+    6.443905580345175
+   ],
+   "level": "Level \"2th FLOOR\", #9946",
+   "grid": "",
+   "a": {
+    "path_id": "0/105/3/6/0/5/2/0",
+    "display_name": "Concrete, Cast-in-Place gray",
+    "category": "Walls",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/105/3/6/0/5/2",
+    "parent_name": "Basic Wall",
+    "props": {
+     "Type": "Solid",
+     "Material": "Concrete, Cast-in-Place gray",
+     "Layer": "2th FLOOR",
+     "Family": "Basic Wall",
+     "Category": "Walls",
+     "Id": "627302",
+     "Mark": "WALL 6\"",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     35.96136774902344,
+     -27.032966217041018,
+     3.6576000000000004
+    ],
+    "bbox_max": [
+     36.11376774902344,
+     -25.153364666748047,
+     6.502400193786621
+    ]
+   },
+   "b": {
+    "path_id": "0/109/1/3/0/1/7/1",
+    "display_name": "Copper",
+    "category": "Pipes",
+    "model_index": 0,
+    "source_file": "TORRE-DEMO.rvt",
+    "parent_path_id": "0/109/1/3/0/1/7",
+    "parent_name": "Pipe Types",
+    "props": {
+     "Type": "Solid",
+     "Material": "Copper",
+     "Layer": "2th FLOOR",
+     "Family": "Pipe Types",
+     "Category": "Pipes",
+     "Id": "960234",
+     "Diameter": "DoubleLength:0,125",
+     "Reference Level": "Level \"2th FLOOR\", #9946",
+     "Size": "1 1/2\"ø",
+     "System Classification": "Fire Protection Wet",
+     "System Name": "Fire Protection Wet 8",
+     "System Type": "PipingSystemType \"Fire Protection Wet\", #607137",
+     "Workset": "Workset1"
+    },
+    "bbox_min": [
+     35.35766506347639,
+     -26.61361274414086,
+     6.4436625
+    ],
+    "bbox_max": [
+     36.196746405029124,
+     -26.57233619384788,
+     6.4849373062133795
+    ]
+   }
+  }
+ ],
+ "truncated": false
+}

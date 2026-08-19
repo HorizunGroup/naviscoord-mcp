@@ -341,33 +341,89 @@ class RootCauseDetector:
             level = cluster.dominant("level") or f"z={centroid[2]:.1f}"
             levels[key].add(level)
 
+        # How many families the clashes actually involve.
+        #
+        # This is a guard, not a repair: the grouping above is positional —
+        # discipline pair plus a half-metre cell in plan — and says nothing
+        # about what collided, while the sentence it publishes, "it is a type
+        # detail", is a claim about the elements. Nothing enforced the link.
+        #
+        # Checked against a real model, every one of the twenty-eight groups
+        # came back with one to three families, so the detector was right and
+        # the guard never fires there. It stays because the claim should be
+        # checkable rather than trusted, and `distinct_families` now travels
+        # in the evidence so a reader can argue with it. A clean repeat runs
+        # two, one per side.
+        max_families = int(
+            self.profile.root_cause_param("repeated_typology", "max_families", 4)
+        )
+
         causes: list[RootCause] = []
         for key, indices in buckets.items():
             distinct_levels = levels[key]
             if len(distinct_levels) < min_levels:
                 continue
             clash_total = sum(len(clusters[i].clashes) for i in indices)
+
+            families: set[str] = set()
+            for i in indices:
+                for clash in clusters[i].clashes:
+                    for side in (clash.a, clash.b):
+                        name = (
+                            side.prop("Family", "Familia")
+                            or side.parent_name
+                            or side.category
+                        )
+                        if name:
+                            families.add(name.strip().lower())
+
+            one_detail = len(families) <= max_families
+            where = ", ".join(sorted(distinct_levels)[:6])
+            if one_detail:
+                title = f"Cruce repetido en {len(distinct_levels)} niveles"
+                detail = (
+                    f"El mismo cruce {self.profile.label(key[0])} × {self.profile.label(key[1])} "
+                    f"aparece en la misma posición en planta en {len(distinct_levels)} niveles "
+                    f"({where}), y siempre entre los mismos {len(families)} tipos de elemento. "
+                    f"Es un detalle tipo, no {len(indices)} problemas distintos."
+                )
+                action = (
+                    "Resolver el detalle una vez y propagarlo a todos los niveles; "
+                    "verificar si el error viene del tipo o del grupo repetido."
+                )
+                confidence = min(0.5 + 0.1 * len(distinct_levels), 0.95)
+            else:
+                title = f"Zona conflictiva repetida en {len(distinct_levels)} niveles"
+                detail = (
+                    f"En la misma posición en planta hay cruces "
+                    f"{self.profile.label(key[0])} × {self.profile.label(key[1])} en "
+                    f"{len(distinct_levels)} niveles ({where}), pero entre {len(families)} tipos "
+                    "de elemento distintos: no es un detalle tipo repetido, es una franja "
+                    "vertical donde se acumulan problemas diferentes — un pase, un ducto "
+                    "técnico o un eje que nadie respetó."
+                )
+                action = (
+                    "Revisar la franja completa de una vez, en sección: se cierra con varias "
+                    "decisiones, no con una, pero mirarlas juntas evita repetir el análisis "
+                    "en cada planta."
+                )
+                confidence = 0.6
+
             causes.append(
                 RootCause(
-                    kind="repeated_typology",
-                    title=f"Cruce repetido en {len(distinct_levels)} niveles",
-                    detail=(
-                        f"El mismo cruce {self.profile.label(key[0])} × {self.profile.label(key[1])} "
-                        f"aparece en la misma posición en planta en {len(distinct_levels)} niveles "
-                        f"({', '.join(sorted(distinct_levels)[:6])}). Es un detalle tipo, no "
-                        f"{len(indices)} problemas distintos."
-                    ),
-                    confidence=min(0.5 + 0.1 * len(distinct_levels), 0.95),
+                    kind="repeated_typology" if one_detail else "repeated_zone",
+                    title=title,
+                    detail=detail,
+                    confidence=confidence,
                     affected_clusters=sorted(indices),
                     clash_count=clash_total,
                     evidence={
                         "levels": sorted(distinct_levels),
                         "plan_position": [round(key[2] * tolerance, 1), round(key[3] * tolerance, 1)],
+                        "distinct_families": len(families),
+                        "families": sorted(families)[:8],
                     },
-                    suggested_action=(
-                        "Resolver el detalle una vez y propagarlo a todos los niveles; "
-                        "verificar si el error viene del tipo o del grupo repetido."
-                    ),
+                    suggested_action=action,
                 )
             )
         return causes

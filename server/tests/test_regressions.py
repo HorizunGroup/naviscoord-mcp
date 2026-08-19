@@ -548,6 +548,48 @@ class TestUnnameableElementsAreDeclared:
         assert any("categoría genérica" in w for w in result.warnings)
 
 
+class TestDepthAloneCanRaiseAnIssue:
+    """A lone deep interference sank to the bottom band.
+
+    Two of the six severity components reward repetition and company, so a
+    crossing that happens once has to win on the rest — and it cannot.
+    Measured on a real model: twenty-six issues in the lowest band with more
+    than 150 mm of penetration into structure, one at 194 mm. Those are the
+    same crossings that had to be rescued from the noise filter earlier the
+    same day; rescuing them only for the scoring to bury them is no rescue.
+
+    Against something reroutable, depth is a nuisance. Into structure, it is
+    a decision that has to be taken before the pour.
+    """
+
+    def _lone(self, depth: float) -> Any:
+        beam = element("est/1", "", category="Structural Framing", name="Viga",
+                       at=(0.0, 0.0, 3.0), size=(6.0, 0.4, 0.6))
+        wall = element("arq/1", "", category="Walls", name="Tabique",
+                       at=(2.0, 0.0, 3.0), size=(0.15, 4.0, 2.6))
+        item = clash("g1", beam, wall, depth=depth, point=(2.0, 0.0, 3.2))
+        item.test = "STR-STF VS ARCH-GB-WALL"
+        export = ClashExport(
+            clashes=[item],
+            tests=[{"name": "STR-STF VS ARCH-GB-WALL", "status": "Old", "exported": 1}],
+        )
+        result = analyze(export, Profile.load())
+        return result.issues[0] if result.issues else None
+
+    def test_a_lone_deep_hit_does_not_land_in_the_bottom_band(self) -> None:
+        issue = self._lone(0.194)
+        assert issue is not None
+        assert issue.priority in ("critical", "high", "medium"), issue.priority
+        assert issue.priority != "low"
+        assert any("no se mueve" in reason for reason in issue.why), issue.why
+
+    def test_a_shallow_lone_hit_is_still_minor(self) -> None:
+        """The floor must not promote everything that happens once."""
+        issue = self._lone(0.030)
+        assert issue is not None
+        assert issue.priority == "low", issue.priority
+
+
 class TestInferredLevelsSaySo:
     """A level map built by guessing must not read like a level map.
 
