@@ -225,12 +225,17 @@ namespace NavisCoord
             // depends on the tree. First-wins stays: the nearest node is the
             // most specific. Only the ceiling moves.
             //
-            // What this does NOT fix, despite being the reason it was looked
-            // at: a document whose tree carries no `Layer` node at all. The
-            // storey lives there, and on a copy saved out of Navisworks it
-            // had gone from every element — not buried deeper, absent. Eight
-            // hops find nothing that is not there, and the honest place for
-            // that failure is the loud warning the level map now prints.
+            // The storey was the reason this was looked at, and the effect
+            // there is larger than the property counts suggest. On a document
+            // whose `Layer` had gone missing entirely, the share of crossings
+            // that had to be placed by guessing their height fell from 57% to
+            // 8% — not because `Layer` came back, it is still absent, but
+            // because `Level` and `Reference Level` live on ancestors that
+            // four hops never reached either.
+            //
+            // What it cannot do is invent what the tree does not hold. When a
+            // document really has no storey anywhere, the honest place for
+            // that is the warning the level map prints, not a deeper walk.
             var current = item;
             var depth = 0;
             while (current != null && depth < 8)
