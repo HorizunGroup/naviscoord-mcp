@@ -186,9 +186,11 @@ function Invoke-RestoreBackup([string]$Root) {
 if ($SelfTest) {
     $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('naviscoord-swap-selftest-' + [guid]::NewGuid().ToString('N'))
     $oldAppData = $env:APPDATA
+    $oldTemp = $env:TEMP
     $checks = 0
     try {
         $env:APPDATA = Join-Path $testRoot 'appdata'
+        $env:TEMP = [IO.Path]::GetTempPath()
         $backup = Join-Path $testRoot 'backup'
         $versionBackup = Join-Path $backup '2026'
         New-Item -ItemType Directory -Path $versionBackup -Force | Out-Null
@@ -233,6 +235,7 @@ if ($SelfTest) {
         exit 0
     } finally {
         $env:APPDATA = $oldAppData
+        $env:TEMP = $oldTemp
         $full = [IO.Path]::GetFullPath($testRoot)
         $temp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
         if (($full + [IO.Path]::DirectorySeparatorChar).StartsWith($temp, [StringComparison]::OrdinalIgnoreCase) -and

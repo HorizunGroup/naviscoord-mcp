@@ -46,7 +46,7 @@ dependencies = [
     # 2.0 proved a major can remove the entry point outright — an unbounded
     # requirement is how a fresh install silently breaks.
     "mcp>=1.9,<3",
-    "reportlab>=4.0,<6",
+    "reportlab>=4.0.4,<6",
     "pillow>=10.0,<13",
 ]
 

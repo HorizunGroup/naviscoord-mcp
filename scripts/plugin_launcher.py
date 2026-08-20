@@ -40,14 +40,14 @@ RUNTIME_LOCK = ROOT / "scripts" / "runtime-requirements.lock"
 # Kept in step with server/pyproject.toml. Both mcp majors are supported;
 # the <3 bound stands because 2.0 showed a major can remove the entry point
 # this server imports.
-REQUIREMENTS = ["mcp>=1.9,<3", "reportlab>=4.0,<6", "pillow>=10.0,<13"]
+REQUIREMENTS = ["mcp>=1.9,<3", "reportlab>=4.0.4,<6", "pillow>=10.0,<13"]
 
 # Import name -> (distribution, inclusive minimum, exclusive maximum).  Kept
 # as data rather than relying on `packaging`, which is not part of Python's
 # stdlib and therefore cannot be assumed in the interpreter being inspected.
 RUNTIME_SPECS = {
     "mcp": ("mcp", (1, 9), (3, 0)),
-    "reportlab": ("reportlab", (4, 0), (6, 0)),
+    "reportlab": ("reportlab", (4, 0, 4), (6, 0)),
     "PIL": ("pillow", (10, 0), (13, 0)),
 }
 
@@ -155,19 +155,22 @@ def runtime_problems(interpreter: Path | None = None) -> list[str]:
         from importlib import metadata
 
         for module, (distribution, minimum, maximum) in RUNTIME_SPECS.items():
-            try:
-                __import__(module)
-            except ImportError:
-                problems.append(f"{distribution}: ausente")
-                continue
+            # Check the distribution before importing its module. This gives
+            # the useful "out of range" diagnosis even in a packaging-only
+            # environment where the optional runtime modules are absent.
             try:
                 version = metadata.version(distribution)
             except metadata.PackageNotFoundError:
-                problems.append(f"{distribution}: sin metadatos de versión")
+                problems.append(f"{distribution}: ausente")
                 continue
             parsed = _version_tuple(version)
             if not parsed or parsed < minimum or parsed >= maximum:
                 problems.append(f"{distribution}: versión {version} fuera del rango")
+                continue
+            try:
+                __import__(module)
+            except ImportError:
+                problems.append(f"{distribution}: instalado pero no importable")
         return problems
 
     probe = (
