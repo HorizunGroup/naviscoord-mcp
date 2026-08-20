@@ -40,13 +40,13 @@ RUNTIME_LOCK = ROOT / "scripts" / "runtime-requirements.lock"
 # Kept in step with server/pyproject.toml. Both mcp majors are supported;
 # the <3 bound stands because 2.0 showed a major can remove the entry point
 # this server imports.
-REQUIREMENTS = ["mcp>=1.9,<3", "reportlab>=4.0.4,<6", "pillow>=10.0,<13"]
+REQUIREMENTS = ["mcp>=1.14,<3", "reportlab>=4.0.4,<6", "pillow>=10.0,<13"]
 
 # Import name -> (distribution, inclusive minimum, exclusive maximum).  Kept
 # as data rather than relying on `packaging`, which is not part of Python's
 # stdlib and therefore cannot be assumed in the interpreter being inspected.
 RUNTIME_SPECS = {
-    "mcp": ("mcp", (1, 9), (3, 0)),
+    "mcp": ("mcp", (1, 14), (3, 0)),
     "reportlab": ("reportlab", (4, 0, 4), (6, 0)),
     "PIL": ("pillow", (10, 0), (13, 0)),
 }

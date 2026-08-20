@@ -45,7 +45,7 @@ dependencies = [
     # code imports whichever is present. The upper bound stops at <3 because
     # 2.0 proved a major can remove the entry point outright — an unbounded
     # requirement is how a fresh install silently breaks.
-    "mcp>=1.9,<3",
+    "mcp>=1.14,<3",
     "reportlab>=4.0.4,<6",
     "pillow>=10.0,<13",
 ]

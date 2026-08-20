@@ -123,7 +123,9 @@ function Read-Manifest([string]$Root) {
         if ($row.Existed -notin @('True','False')) { throw "estado Existed invalido para $($row.Relative)" }
         if ($row.Existed -eq 'False') {
             $managedRelative = Join-Path $managed[0].Folder $managed[0].File
-            if ($row.Relative -ne $managedRelative) {
+            $declared = $row.Relative -replace '[\\/]+', '/'
+            $expected = $managedRelative -replace '[\\/]+', '/'
+            if ($declared -ne $expected) {
                 throw "solo se permite declarar ausencia del archivo administrado; no '$($row.Relative)'"
             }
         }

@@ -106,7 +106,7 @@ jobs:
       - name: Instalar exactamente los mínimos soportados
         run: |
           pip install -e server --no-deps
-          pip install pytest==9.0.2 "mcp==1.9.0" "reportlab==4.0.4" "pillow==10.0.0"
+          pip install pytest==9.0.2 "mcp==1.14.0" "reportlab==4.0.4" "pillow==10.0.0"
       - name: Pruebas
         run: cd server && python -m pytest tests -q
 
