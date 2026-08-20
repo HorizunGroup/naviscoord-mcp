@@ -1,0 +1,48 @@
+# NavisCoord
+
+> Open-source coordination intelligence for Autodesk Navisworks Manage over
+> MCP. It converts raw clash detection into explainable issues, root causes,
+> work packages, reports and verified model workflows.
+
+Canonical repository: https://github.com/HorizunGroup/naviscoord-mcp
+Latest release: https://github.com/HorizunGroup/naviscoord-mcp/releases/latest
+License: MIT
+Platforms: Windows; Autodesk Navisworks Manage 2024, 2025, 2026
+MCP server name: horizun-navis-mcp
+
+## Start here
+
+- Beginner quick start: https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/QUICKSTART.md
+- Full installation: https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/INSTALL.md
+- Architecture: https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/ARCHITECTURE.md
+- Security model: https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/SECURITY-MODEL.md
+- Testing evidence: https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/TESTING.md
+- Product benchmark: https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/BENCHMARK.md
+
+## Product boundary
+
+NavisCoord is not a general remote control and is not affiliated with Autodesk.
+It focuses on BIM/VDC coordination: model discovery, search sets, clash tests,
+clash compression, deterministic severity, root-cause analysis, coordination
+plans, reports, handoff data and guarded Navisworks mutations.
+
+Model data stays local. The Python MCP server talks to an in-process C# add-in
+over a loopback-only, per-session authenticated bridge. Every mutation requires
+explicit targeting and is verified by re-reading whenever the API supports it.
+
+## Recommended first prompt
+
+Verify NavisCoord without modifying the model. Then discover and analyze the
+open Navisworks document, identify root causes, and produce a coordination work
+plan in read-only mode.
+
+## Development
+
+- Python server: server/naviscoord/
+- Navisworks add-in: addin/NavisCoord.Addin/
+- Public profile example: profiles/example-profile.json
+- Python tests: python -m pytest -q
+- Add-in logic tests: dotnet run --project addin/NavisCoord.Tests -c Release
+- Security reports: https://github.com/HorizunGroup/naviscoord-mcp/security/advisories/new
+
+<!-- mcp-name: io.github.HorizunGroup/naviscoord-mcp -->

@@ -185,8 +185,13 @@ class SessionState:
                 hint="Comprueba navis_health: puede que Navisworks aún esté cargando el federado.",
             )
 
-        expected = (expected_fingerprint or self.document_fingerprint or "").strip()
-        if expected and expected != live:
+        expected = (expected_fingerprint or "").strip()
+        if not expected:
+            raise StateError(
+                "Falta expected_document_fingerprint; no voy a mutar usando una huella cacheada.",
+                hint="Lee la huella vigente con navis_health y repite la operación explícitamente.",
+            )
+        if expected != live:
             raise StateError(
                 f"El documento activo («{title or live}») no es el que esperabas ({expected}). "
                 "No se tocó nada.",
@@ -201,7 +206,7 @@ class SessionState:
         return live
 
     def issue(self, issue_id: str) -> Issue:
-        result = self.require_result()
+        result = self.require_fresh_result()
         for issue in result.issues:
             if issue.issue_id.lower() == issue_id.lower():
                 return issue

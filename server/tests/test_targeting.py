@@ -29,6 +29,7 @@ def write_session(
     title: str = "Torre A",
     fingerprint: str = "fp-a",
     started: str = "2026-08-14T10:00:00Z",
+    process_started: str = "",
 ) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     record: dict[str, Any] = {
@@ -42,11 +43,22 @@ def write_session(
         "addin_version": "0.1.2",
         "document": {"open": True, "title": title, "fingerprint": fingerprint},
         "started": started,
+        "process_started": process_started,
         "heartbeat": started,
     }
     path = directory / f"{record['pid']}-{session_id}.json"
     path.write_text(json.dumps(record), encoding="utf-8")
     return path
+
+
+@pytest.mark.parametrize("port", ["not-a-number", -1, 0, 65536, None])
+def test_corrupt_but_valid_session_json_is_ignored(registry: Path, port: Any) -> None:
+    registry.mkdir(parents=True, exist_ok=True)
+    (registry / "bad.json").write_text(
+        json.dumps({"session_id": "bad", "port": port, "pid": 1}),
+        encoding="utf-8",
+    )
+    assert sessions.discover(include_dead=True) == []
 
 
 @pytest.fixture
@@ -146,6 +158,22 @@ class TestDiscovery:
         path = write_session(tmp_path / "o", "x")
         monkeypatch.setenv(SESSION_ENV, str(path))
         assert sessions.summary()["override_active"] is True
+
+    def test_access_denied_does_not_discard_an_elevated_session(self, monkeypatch) -> None:
+        info = sessions.SessionInfo(session_id="elevada", port=8781, pid=123)
+        monkeypatch.setattr(sessions, "_windows_process_info", lambda _: (None, ""))
+        assert sessions._windows_session_alive(info) is True
+
+    def test_reused_pid_is_not_treated_as_the_old_session(self, monkeypatch) -> None:
+        info = sessions.SessionInfo(
+            session_id="vieja", port=8781, pid=123,
+            process_started="2026-08-14T10:00:00Z",
+        )
+        monkeypatch.setattr(
+            sessions, "_windows_process_info",
+            lambda _: (True, "2026-08-14T12:00:00+00:00"),
+        )
+        assert sessions._windows_session_alive(info) is False
 
 
 class TestTargetSelection:
@@ -318,6 +346,29 @@ class TestDocumentScopedState:
         assert "Torre B" in str(caught.value)
         assert state.result is None, "el análisis obsoleto debe descartarse, no conservarse"
 
+    def test_issue_lookup_cannot_return_an_issue_from_the_previous_document(
+        self, registry: Path
+    ) -> None:
+        from naviscoord.analysis.pipeline import AnalysisResult
+        from naviscoord.model import Issue
+
+        state = self.stub_state(registry, "fp-a", "Torre A")
+        state.result = AnalysisResult(issues=[Issue(
+            issue_id="ISS-0001",
+            kind="pair",
+            discipline_pair=("EST", "HID"),
+            clash_ids=["g1"],
+            centroid=(0.0, 0.0, 0.0),
+            bbox_min=(0.0, 0.0, 0.0),
+            bbox_max=(1.0, 1.0, 1.0),
+        )])
+        for entry in registry.glob("*.json"):
+            entry.unlink()
+        write_session(registry, "bbb", fingerprint="fp-b", title="Torre B")
+
+        with pytest.raises(StateError, match="otro documento"):
+            state.issue("ISS-0001")
+
     def test_binding_a_different_document_clears_derived_state(self, registry: Path) -> None:
         state = self.stub_state(registry, "fp-a", "Torre A")
         changed = state.bind("fp-b", "Torre B")
@@ -342,6 +393,11 @@ class TestDocumentScopedState:
     def test_a_mutation_against_the_right_fingerprint_proceeds(self, registry: Path) -> None:
         state = self.stub_state(registry, "fp-a", "Torre A")
         assert state.require_mutable("fp-a") == "fp-a"
+
+    def test_a_mutation_never_falls_back_to_a_cached_fingerprint(self, registry: Path) -> None:
+        state = self.stub_state(registry, "fp-a", "Torre A")
+        with pytest.raises(StateError, match="Falta expected_document_fingerprint"):
+            state.require_mutable()
 
     def test_a_mutation_with_two_instances_and_no_target_is_refused(self, registry: Path) -> None:
         write_session(registry, "torre-a", fingerprint="fp-a", title="Torre A")
@@ -436,7 +492,9 @@ class TestMutationsRefuseAnAmbiguousTarget:
     ) -> None:
         """The guard refuses ambiguity, not writing."""
         mcp_server.STATE.bridge.pin("torre-a")
-        result = mcp_server.navis_run_tests()
+        result = mcp_server.navis_run_tests(
+            dry_run=False, expected_document_fingerprint="fp-a"
+        )
         assert two_instances.routes == ["clash/run"]
         assert result["document_fingerprint_before"] == "fp-a"
 

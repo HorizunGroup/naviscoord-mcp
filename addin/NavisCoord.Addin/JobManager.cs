@@ -72,6 +72,8 @@ namespace NavisCoord
             /// refusal protects.
             /// </remarks>
             public string ProfileChecksum = string.Empty;
+            /// <summary>The immutable profile content captured at admission.</summary>
+            public ProfileStore.ActiveProfile ProfileSnapshot;
             public int UnitsDone;
             public int UnitsTotal;          // 0 = indeterminate, by design
             public int Requested;
@@ -196,9 +198,94 @@ namespace NavisCoord
             string idempotencyKey = "",
             bool exclusive = true,
             string profileChecksum = "",
-            bool cancellable = false)
+            bool cancellable = false,
+            ProfileStore.ActiveProfile profileSnapshot = null)
         {
-            var job = new Job
+            var job = CreateJob(operation, work, targetId, sessionId, fingerprint,
+                idempotencyKey, exclusive, profileChecksum, cancellable, profileSnapshot);
+
+            lock (Gate)
+            {
+                EnqueueLocked(job);
+            }
+            return job;
+        }
+
+        internal sealed class Admission
+        {
+            public Job Job;
+            public bool Accepted;
+            public bool IdempotentReplay;
+            public string Error = string.Empty;
+        }
+
+        /// <summary>
+        /// Atomically reserves idempotency, document exclusivity and a queue
+        /// position.  This is the only submit primitive the HTTP bridge uses.
+        /// </summary>
+        public static Admission TrySubmit(
+            string operation,
+            Func<Job, Dictionary<string, object>> work,
+            string targetId = "",
+            string sessionId = "",
+            string fingerprint = "",
+            string idempotencyKey = "",
+            bool exclusive = true,
+            string profileChecksum = "",
+            bool cancellable = false,
+            ProfileStore.ActiveProfile profileSnapshot = null)
+        {
+            lock (Gate)
+            {
+                if (!string.IsNullOrWhiteSpace(idempotencyKey))
+                {
+                    // Include terminal jobs.  This closes the narrow race in
+                    // which the handler finished after the transport checked
+                    // the ledger but before it attempted admission.
+                    var prior = Jobs.Values
+                        .Where(j => string.Equals(j.IdempotencyKey, idempotencyKey,
+                            StringComparison.Ordinal))
+                        .OrderByDescending(j => j.QueuedUtc)
+                        .FirstOrDefault();
+                    if (prior != null)
+                    {
+                        return new Admission
+                        {
+                            Job = prior,
+                            Accepted = true,
+                            IdempotentReplay = true
+                        };
+                    }
+                }
+
+                if (exclusive)
+                {
+                    var busy = FindCollisionLocked(fingerprint);
+                    if (busy != null)
+                    {
+                        return new Admission
+                        {
+                            Accepted = false,
+                            Error = CollisionDetail(busy)
+                        };
+                    }
+                }
+
+                var job = CreateJob(operation, work, targetId, sessionId, fingerprint,
+                    idempotencyKey, exclusive, profileChecksum, cancellable, profileSnapshot);
+                EnqueueLocked(job);
+                return new Admission { Job = job, Accepted = true };
+            }
+        }
+
+        private static Job CreateJob(
+            string operation, Func<Job, Dictionary<string, object>> work,
+            string targetId, string sessionId, string fingerprint,
+            string idempotencyKey, bool exclusive, string profileChecksum,
+            bool cancellable, ProfileStore.ActiveProfile profileSnapshot)
+        {
+            if (work == null) throw new ArgumentNullException(nameof(work));
+            return new Job
             {
                 Operation = operation ?? string.Empty,
                 Work = work,
@@ -208,18 +295,18 @@ namespace NavisCoord
                 IdempotencyKey = idempotencyKey ?? string.Empty,
                 Exclusive = exclusive,
                 ProfileChecksum = profileChecksum ?? string.Empty,
-                Cancellable = cancellable
+                Cancellable = cancellable,
+                ProfileSnapshot = profileSnapshot
             };
+        }
 
-            lock (Gate)
-            {
-                Jobs[job.Id] = job;
-                History.Enqueue(job.Id);
-                Pending.Enqueue(job);
-                TrimHistoryLocked();
-                EnsureWorkerLocked();
-            }
-            return job;
+        private static void EnqueueLocked(Job job)
+        {
+            Jobs[job.Id] = job;
+            History.Enqueue(job.Id);
+            Pending.Enqueue(job);
+            TrimHistoryLocked();
+            EnsureWorkerLocked();
         }
 
         public static Job Get(string jobId)
@@ -482,7 +569,10 @@ namespace NavisCoord
                     state = Failed;
                     break;
                 default:
-                    state = result.ContainsKey("error") ? Failed : Completed;
+                    // Absence of an error is not evidence of a verified
+                    // mutation. Every job handler must return an explicit
+                    // status/envelope; legacy raw dictionaries fail closed.
+                    state = Failed;
                     break;
             }
 
@@ -553,24 +643,38 @@ namespace NavisCoord
         {
             lock (Gate)
             {
-                var busy = _running;
-                if (busy == null || !busy.Exclusive)
+                var busy = FindCollisionLocked(fingerprint);
+                if (busy == null)
                 {
                     detail = null;
                     return false;
                 }
-                if (!string.IsNullOrEmpty(fingerprint) &&
-                    !string.IsNullOrEmpty(busy.DocumentFingerprint) &&
-                    !string.Equals(busy.DocumentFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase))
-                {
-                    detail = null;
-                    return false;
-                }
-                detail = "Ya hay una mutación en curso sobre este documento (" +
-                         busy.Operation + ", trabajo " + busy.Id + "). " +
-                         "Consulta job/status y reintenta cuando termine.";
+                detail = CollisionDetail(busy);
                 return true;
             }
         }
+
+        public static Job BlockingMutation()
+        {
+            lock (Gate) { return FindCollisionLocked(null); }
+        }
+
+        private static Job FindCollisionLocked(string fingerprint)
+        {
+            return Jobs.Values
+                .Where(j => j.Exclusive &&
+                            (j.State == Queued || j.State == Running || j.State == Verifying))
+                .Where(j => string.IsNullOrEmpty(fingerprint) ||
+                            string.IsNullOrEmpty(j.DocumentFingerprint) ||
+                            string.Equals(j.DocumentFingerprint, fingerprint,
+                                StringComparison.OrdinalIgnoreCase))
+                .OrderBy(j => j.QueuedUtc)
+                .FirstOrDefault();
+        }
+
+        private static string CollisionDetail(Job busy)
+            => "Ya hay una mutación reservada o en curso sobre este documento (" +
+               busy.Operation + ", trabajo " + busy.Id + "). Consulta job/status y " +
+               "reintenta cuando termine.";
     }
 }

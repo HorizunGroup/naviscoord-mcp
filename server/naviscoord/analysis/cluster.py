@@ -165,14 +165,38 @@ def _collapse_by_pair(clashes: list[Clash]) -> list[list[Clash]]:
 
 
 def _split_oversized(cluster: ClashCluster, max_span: float) -> list[ClashCluster]:
-    """Re-cluster a sprawling group with a tighter radius until it fits."""
+    """Re-cluster a sprawling group and guarantee the configured maximum.
+
+    A DBSCAN chain may remain connected however small the radius is.  The old
+    early return for a single part therefore returned the very oversized
+    cluster this function was called to split.  After bounded re-clustering,
+    a deterministic longest-axis partition provides the hard guarantee.
+    """
     eps = max_span / 3.0
-    for _ in range(4):
+    for _ in range(8):
         parts = _dbscan(cluster.clashes, eps, 1)
-        if all(ClashCluster(clashes=p).span <= max_span for p in parts) or len(parts) == 1:
+        if len(parts) > 1 and all(ClashCluster(clashes=p).span <= max_span for p in parts):
             return [ClashCluster(clashes=p, kind="cluster" if len(p) > 1 else "pair") for p in parts]
         eps /= 2.0
-    return [ClashCluster(clashes=[c], kind="pair") for c in cluster.clashes]
+
+    remaining = sorted(cluster.clashes, key=lambda clash: (clash.point, clash.guid))
+    result: list[ClashCluster] = []
+    while remaining:
+        seed = remaining.pop(0)
+        part = [seed]
+        index = 0
+        while index < len(remaining):
+            candidate = remaining[index]
+            proposed = ClashCluster(clashes=part + [candidate])
+            if proposed.span <= max_span:
+                part.append(candidate)
+                remaining.pop(index)
+            else:
+                index += 1
+        result.append(ClashCluster(clashes=part, kind="cluster" if len(part) > 1 else "pair"))
+
+    assert all(part.span <= max_span for part in result)
+    return result
 
 
 # --------------------------------------------------------------- DBSCAN

@@ -22,30 +22,41 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
+import platform
+import shutil
 import stat
 import subprocess
 import sys
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "server"
+RUNTIME_LOCK = ROOT / "scripts" / "runtime-requirements.lock"
 
 # Kept in step with server/pyproject.toml. Both mcp majors are supported;
 # the <3 bound stands because 2.0 showed a major can remove the entry point
 # this server imports.
-REQUIREMENTS = ["mcp>=1.9,<3", "reportlab>=4.0,<6", "pillow>=10.0"]
+REQUIREMENTS = ["mcp>=1.14,<3", "reportlab>=4.0.4,<6", "pillow>=10.0,<13"]
+
+# Import name -> (distribution, inclusive minimum, exclusive maximum).  Kept
+# as data rather than relying on `packaging`, which is not part of Python's
+# stdlib and therefore cannot be assumed in the interpreter being inspected.
+RUNTIME_SPECS = {
+    "mcp": ("mcp", (1, 14), (3, 0)),
+    "reportlab": ("reportlab", (4, 0, 4), (6, 0)),
+    "PIL": ("pillow", (10, 0), (13, 0)),
+}
 
 # Every module that must import for the server to actually work, mapped to
 # the distribution that provides it. Checking only `mcp` was the bug: an
 # interpreter with mcp but no reportlab passed the check, started the real
 # server, and failed on the first navis_pdf_report with a bare ImportError —
 # after the user had already run a twenty-minute analysis.
-RUNTIME_MODULES = {
-    "mcp": "mcp",
-    "reportlab": "reportlab",
-    "PIL": "pillow",
-}
+RUNTIME_MODULES = {module: spec[0] for module, spec in RUNTIME_SPECS.items()}
 
 # Matches requires-python in server/pyproject.toml. 3.10 is the floor because
 # the codebase uses PEP 604 unions (`X | None`) at runtime in dataclass
@@ -61,7 +72,20 @@ def runtime_dir() -> Path:
     Wheels built for 3.12 are not importable from 3.13, and a plugin shared
     between two Python installs would otherwise poison itself.
     """
-    tag = f"py{sys.version_info.major}{sys.version_info.minor}"
+    try:
+        lock_identity = hashlib.sha256(RUNTIME_LOCK.read_bytes()).hexdigest()
+    except OSError:
+        lock_identity = "missing-lock"
+    identity = "|".join((
+        str(Path(sys.executable).resolve()).lower(),
+        getattr(sys.implementation, "cache_tag", ""),
+        platform.machine().lower(),
+        _server_version(),
+        lock_identity,
+        *REQUIREMENTS,
+    ))
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
+    tag = f"py{sys.version_info.major}{sys.version_info.minor}-{digest}"
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.local/share")
     return Path(base) / "NavisCoord" / "runtime" / tag
 
@@ -110,30 +134,70 @@ def python_is_supported(version: tuple[int, ...] | None = None) -> tuple[bool, s
     )
 
 
-def missing_modules(interpreter: Path | None = None) -> list[str]:
+def _version_tuple(value: str) -> tuple[int, ...]:
+    parts: list[int] = []
+    for token in value.split("."):
+        digits = "".join(ch for ch in token if ch.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts)
+
+
+def runtime_problems(interpreter: Path | None = None) -> list[str]:
     """Which required distributions are absent from an interpreter.
 
     Probed by importing in a subprocess when the interpreter is not this one,
     because a venv's packages are not on this process's sys.path.
     """
     if interpreter is None or Path(interpreter).resolve() == Path(sys.executable).resolve():
-        missing = []
-        for module, distribution in RUNTIME_MODULES.items():
+        problems = []
+        from importlib import metadata
+
+        for module, (distribution, minimum, maximum) in RUNTIME_SPECS.items():
+            # Check the distribution before importing its module. This gives
+            # the useful "out of range" diagnosis even in a packaging-only
+            # environment where the optional runtime modules are absent.
+            try:
+                version = metadata.version(distribution)
+            except metadata.PackageNotFoundError:
+                problems.append(f"{distribution}: ausente")
+                continue
+            parsed = _version_tuple(version)
+            if not parsed or parsed < minimum or parsed >= maximum:
+                problems.append(f"{distribution}: versión {version} fuera del rango")
+                continue
             try:
                 __import__(module)
             except ImportError:
-                missing.append(distribution)
-        return missing
+                problems.append(f"{distribution}: instalado pero no importable")
+        return problems
 
     probe = (
-        "import json,sys\n"
-        "missing=[]\n"
-        f"for module, dist in {RUNTIME_MODULES!r}.items():\n"
+        "import json,sys,importlib.metadata as md\n"
+        "problems=[]\n"
+        "def vt(v):\n"
+        " p=[]\n"
+        " for token in v.split('.'):\n"
+        "  d=''.join(c for c in token if c.isdigit())\n"
+        "  if not d: break\n"
+        "  p.append(int(d))\n"
+        " return tuple(p)\n"
+        f"for module, spec in {RUNTIME_SPECS!r}.items():\n"
+        "    dist, minimum, maximum = spec\n"
         "    try:\n"
         "        __import__(module)\n"
         "    except ImportError:\n"
-        "        missing.append(dist)\n"
-        "sys.stdout.write(json.dumps(missing))\n"
+        "        problems.append(f'{dist}: ausente')\n"
+        "        continue\n"
+        "    try: version=md.version(dist)\n"
+        "    except md.PackageNotFoundError:\n"
+        "        problems.append(f'{dist}: sin metadatos de versión')\n"
+        "        continue\n"
+        "    parsed=vt(version)\n"
+        "    if not parsed or parsed < tuple(minimum) or parsed >= tuple(maximum):\n"
+        "        problems.append(f'{dist}: versión {version} fuera del rango')\n"
+        "sys.stdout.write(json.dumps(problems))\n"
     )
     try:
         done = subprocess.run(
@@ -141,10 +205,15 @@ def missing_modules(interpreter: Path | None = None) -> list[str]:
             capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL,
         )
         if done.returncode != 0:
-            return sorted(RUNTIME_MODULES.values())
+            return ["no se pudo inspeccionar el runtime"]
         return list(json.loads(done.stdout or "[]"))
     except Exception:  # noqa: BLE001
-        return sorted(RUNTIME_MODULES.values())
+        return ["no se pudo inspeccionar el runtime"]
+
+
+def missing_modules(interpreter: Path | None = None) -> list[str]:
+    """Compatibility view containing distribution names for absent modules."""
+    return [problem.split(":", 1)[0] for problem in runtime_problems(interpreter)]
 
 
 def runtime_is_private(path: Path) -> tuple[bool, str]:
@@ -198,6 +267,40 @@ def _harden(path: Path) -> None:
         pass
 
 
+@contextmanager
+def _provision_lock(base: Path) -> Iterator[None]:
+    """Exclusive OS lock; released by the kernel even after process death."""
+    base.mkdir(parents=True, exist_ok=True)
+    handle = (base / ".provision.lock").open("a+b")
+    try:
+        if handle.seek(0, os.SEEK_END) == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            else:  # pragma: no cover - Linux CI
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:  # pragma: no cover - Linux CI
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
 # ------------------------------------------------------------ provisioning
 
 
@@ -215,11 +318,17 @@ def ensure_runtime() -> tuple[Path | None, str]:
     if not supported:
         return None, why
 
+    if not RUNTIME_LOCK.is_file():
+        return None, (
+            f"Falta el lock verificable del runtime: {RUNTIME_LOCK}. "
+            "Reinstala el plugin; no se instalarán dependencias flotantes."
+        )
+
     if str(SERVER) not in sys.path:
         sys.path.insert(0, str(SERVER))
 
     # Already viable in-process: every required module imports, not just mcp.
-    if not missing_modules():
+    if not runtime_problems():
         return Path(sys.executable), ""
 
     base = runtime_dir()
@@ -227,39 +336,58 @@ def ensure_runtime() -> tuple[Path | None, str]:
     if not private:
         return None, problem
 
-    venv = venv_dir()
-    python = venv_python(venv)
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return None, f"No se pudo crear «{base}»: {exc}"
+    _harden(base)
 
-    if not python.exists():
+    with _provision_lock(base):
+        venv = venv_dir()
+        python = venv_python(venv)
+        if python.exists() and not runtime_problems(python):
+            return python, ""
+
+        # Never let two hosts pip-install into the same live environment.
+        # Build a complete sibling and publish it by rename only after the
+        # imports and versions have been verified.
+        stage = base / f"venv-stage-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        backup = base / f"venv-backup-{os.getpid()}-{uuid.uuid4().hex[:8]}"
         try:
-            base.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            return None, f"No se pudo crear «{base}»: {exc}"
-        _harden(base)
-        code, detail = _run([sys.executable, "-m", "venv", str(venv)], timeout=300)
-        if code != 0:
-            return None, f"No se pudo crear el entorno virtual en «{venv}»:\n{detail}"
-        _harden(venv)
+            code, detail = _run([sys.executable, "-m", "venv", str(stage)], timeout=300)
+            if code != 0:
+                return None, f"No se pudo crear el entorno virtual en «{stage}»:\n{detail}"
+            _harden(stage)
+            stage_python = venv_python(stage)
+            code, detail = _run(
+                [str(stage_python), "-m", "pip", "install", "--disable-pip-version-check",
+                 "--no-input", "--require-hashes", "-r", str(RUNTIME_LOCK)]
+            )
+            if code != 0:
+                return None, f"pip falló al instalar el runtime en «{stage}»:\n{detail}"
 
-    absent = missing_modules(python)
-    if absent:
-        code, detail = _run(
-            [str(python), "-m", "pip", "install", "--disable-pip-version-check",
-             "--no-input", *REQUIREMENTS]
-        )
-        if code != 0:
-            return None, f"pip falló al instalar el runtime en «{venv}»:\n{detail}"
+            problems = runtime_problems(stage_python)
+            if problems:
+                return None, (
+                    "El runtime se instaló pero no cumple el contrato: "
+                    + ", ".join(problems) + f".\nIntérprete: {stage_python}"
+                )
 
-    # Verified by importing, not by trusting pip's exit code.
-    still_absent = missing_modules(python)
-    if still_absent:
-        return None, (
-            "El runtime se instaló pero estos módulos siguen sin importar: "
-            + ", ".join(still_absent)
-            + f".\nIntérprete: {python}"
-        )
-
-    return python, ""
+            if venv.exists():
+                os.replace(venv, backup)
+            try:
+                os.replace(stage, venv)
+            except BaseException:
+                if backup.exists():
+                    os.replace(backup, venv)
+                raise
+            shutil.rmtree(backup, ignore_errors=True)
+            return venv_python(venv), ""
+        finally:
+            shutil.rmtree(stage, ignore_errors=True)
+            # A backup only survives if publication failed before rollback.
+            if backup.exists() and not venv.exists():
+                os.replace(backup, venv)
 
 
 # ------------------------------------------------------- degraded fallback
@@ -290,7 +418,7 @@ def failure_report(reason: str) -> dict[str, Any]:
         "arreglo": (
             "Crea el entorno a mano:\n"
             f'  "{sys.executable}" -m venv "{venv_dir()}"\n'
-            f'  "{venv_python()}" -m pip install ' + " ".join(f'"{r}"' for r in REQUIREMENTS)
+            f'  "{venv_python()}" -m pip install --require-hashes -r "{RUNTIME_LOCK}"'
         ),
         "nota": (
             "NavisCoord no instala un Python propio: crea un entorno virtual a partir del "

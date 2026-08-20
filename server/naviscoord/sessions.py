@@ -19,6 +19,7 @@ import json
 import os
 from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,7 @@ class SessionInfo:
     document_fingerprint: str = ""
     document_open: bool = False
     started: str = ""
+    process_started: str = ""
     heartbeat: str = ""
     process_started: str = ""
     source_file: str = ""
@@ -95,8 +97,8 @@ class SessionInfo:
             "document_title": self.document_title,
             "document_fingerprint": self.document_fingerprint,
             "started": self.started,
-            "heartbeat": self.heartbeat,
             "process_started": self.process_started,
+            "heartbeat": self.heartbeat,
             "session_file": self.source_file,
         }
         if include_token:
@@ -119,8 +121,8 @@ class SessionInfo:
             document_fingerprint=str(document.get("fingerprint", "")),
             document_open=bool(document.get("open", False)),
             started=str(raw.get("started", "")),
-            heartbeat=str(raw.get("heartbeat", raw.get("started", ""))),
             process_started=str(raw.get("process_started", "")),
+            heartbeat=str(raw.get("heartbeat", raw.get("started", ""))),
             source_file=source,
             raw=raw,
         )
@@ -200,11 +202,16 @@ def _read_dir(directory: Path, include_dead: bool) -> list[SessionInfo]:
 def _read_file(path: Path) -> SessionInfo | None:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        if not isinstance(raw, dict) or not raw.get("port"):
+            return None
+        session = SessionInfo.from_json(raw, source=str(path))
+        if not 1 <= session.port <= 65535:
+            return None
+        if session.pid < 0:
+            return None
+        return session
+    except (OSError, ValueError, TypeError, OverflowError):
         return None
-    if not isinstance(raw, dict) or not raw.get("port"):
-        return None
-    return SessionInfo.from_json(raw, source=str(path))
 
 
 def is_alive(session: SessionInfo) -> bool:
@@ -230,88 +237,84 @@ def is_alive(session: SessionInfo) -> bool:
         except OSError:
             return True
 
-    # Windows: no os.kill(0). OpenProcess via ctypes is the cheap check that
-    # does not need psutil.
-    try:
-        import ctypes
+    return _windows_session_alive(session)
 
-        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        STILL_ACTIVE = 259
-        kernel32 = ctypes.windll.kernel32
-        kernel32.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
-        kernel32.OpenProcess.restype = ctypes.c_void_p
-        kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
-        kernel32.GetExitCodeProcess.restype = ctypes.c_int
-        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-        kernel32.CloseHandle.restype = ctypes.c_int
-        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, session.pid)
-        if not handle:
-            return False
-        try:
-            if session.process_started and not _same_windows_process(
-                kernel32, handle, session.process_started
-            ):
-                return False
-            code = ctypes.c_ulong()
-            if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)) == 0:
-                return True
-            return code.value == STILL_ACTIVE
-        finally:
-            kernel32.CloseHandle(handle)
-    except (OSError, AttributeError, ValueError):
-        # Unable to check is not evidence of death: a session whose liveness
-        # cannot be established is reported as alive, so a transient ctypes
-        # or permission failure never silently deletes a running instance
-        # from the registry. Narrow rather than bare, so a genuine bug in
-        # this function still surfaces instead of being read as "alive".
+
+def _windows_session_alive(session: SessionInfo) -> bool:
+    live, actual_started = _windows_process_info(session.pid)
+    if live is False:
+        return False
+    if live is None:
+        # Access denied means the process may be elevated; it is not evidence
+        # that the session is dead and must not silently remove the target.
         return True
+    if session.process_started and actual_started:
+        recorded = _parse_utc(session.process_started)
+        actual = _parse_utc(actual_started)
+        if recorded is not None and actual is not None:
+            # Windows reuses PIDs. A different creation time means this is a
+            # different process wearing the old session's numeric id.
+            if abs((recorded - actual).total_seconds()) > 5:
+                return False
+    return True
 
 
-def _same_windows_process(kernel32: Any, handle: Any, recorded: str) -> bool:
-    """Reject a recycled PID by comparing its creation timestamp.
+def _parse_utc(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError, AttributeError):
+        return None
 
-    Session records created before the field existed remain compatible.  If
-    Windows refuses the timestamp query, liveness still falls back to the PID
-    check: inability to prove a mismatch is not evidence that a live bridge
-    died.
-    """
+
+def _windows_process_info(pid: int) -> tuple[bool | None, str]:
+    """Return liveness and creation time; ``None`` means access/OS unknown."""
     try:
         import ctypes
+        from ctypes import wintypes
 
         class FILETIME(ctypes.Structure):
-            _fields_ = [("low", ctypes.c_uint32), ("high", ctypes.c_uint32)]
+            _fields_ = [("low", wintypes.DWORD), ("high", wintypes.DWORD)]
 
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel32.GetExitCodeProcess.restype = wintypes.BOOL
         kernel32.GetProcessTimes.argtypes = [
-            ctypes.c_void_p,
-            ctypes.POINTER(FILETIME),
-            ctypes.POINTER(FILETIME),
-            ctypes.POINTER(FILETIME),
-            ctypes.POINTER(FILETIME),
+            wintypes.HANDLE,
+            ctypes.POINTER(FILETIME), ctypes.POINTER(FILETIME),
+            ctypes.POINTER(FILETIME), ctypes.POINTER(FILETIME),
         ]
-        kernel32.GetProcessTimes.restype = ctypes.c_int
+        kernel32.GetProcessTimes.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 
-        created = FILETIME()
-        exited = FILETIME()
-        kernel = FILETIME()
-        user = FILETIME()
-        if kernel32.GetProcessTimes(
-            handle,
-            ctypes.byref(created),
-            ctypes.byref(exited),
-            ctypes.byref(kernel),
-            ctypes.byref(user),
-        ) == 0:
-            return True
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return (None, "") if ctypes.get_last_error() == 5 else (False, "")
+        try:
+            code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return None, ""
+            if code.value != 259:
+                return False, ""
 
-        expected = datetime.fromisoformat(recorded.replace("Z", "+00:00")).timestamp()
-        ticks = (created.high << 32) | created.low
-        actual = (ticks - 116_444_736_000_000_000) / 10_000_000
-        # Filesystem/JSON formatting and Win32 use different precision.  A
-        # two-second window distinguishes process generations without
-        # rejecting a timestamp rounded by an older add-in.
-        return abs(actual - expected) <= 2.0
-    except (OSError, TypeError, ValueError, OverflowError, AttributeError):
-        return True
+            created, exited, kernel, user = FILETIME(), FILETIME(), FILETIME(), FILETIME()
+            if not kernel32.GetProcessTimes(
+                handle, ctypes.byref(created), ctypes.byref(exited),
+                ctypes.byref(kernel), ctypes.byref(user)
+            ):
+                return True, ""
+            ticks = (created.high << 32) | created.low
+            unix_seconds = (ticks - 116_444_736_000_000_000) / 10_000_000
+            started = datetime.fromtimestamp(unix_seconds, timezone.utc).isoformat()
+            return True, started
+        finally:
+            kernel32.CloseHandle(handle)
+    except (OSError, AttributeError, ValueError, OverflowError):
+        return None, ""
 
 
 def select(target_id: str = "", *, for_mutation: bool = False) -> SessionInfo:

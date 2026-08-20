@@ -32,6 +32,9 @@ on:
   # fact.
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   engine:
     name: motor (py${{ matrix.python }}, mcp${{ matrix.mcp }})
@@ -39,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.11", "3.12", "3.13"]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         # Both mcp majors are supported and both must stay supported. Testing
         # only what a developer happens to have pinned is how mcp 2.0 shipped
         # a broken fresh install: the code was fine on every machine that
@@ -92,6 +95,21 @@ jobs:
       - name: Pruebas
         run: cd server; python -m pytest tests -q
 
+  minimum-dependencies:
+    name: mínimos declarados (Python 3.10)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.10"
+      - name: Instalar exactamente los mínimos soportados
+        run: |
+          pip install -e server --no-deps
+          pip install pytest==9.0.2 "mcp==1.14.0" "reportlab==4.0.4" "pillow==10.0.0"
+      - name: Pruebas
+        run: cd server && python -m pytest tests -q
+
   addin-logic:
     name: lógica del add-in (sin licencia)
     runs-on: windows-latest
@@ -119,13 +137,20 @@ jobs:
         with:
           python-version: "3.12"
       - name: Herramienta de build
-        run: pip install build
+        run: pip install build==1.5.0
 
       - name: Construir y verificar artefactos
         # Reads both archives back and asserts LICENSE, NOTICE, the default
         # profile and the MCP server are inside. A build step that copies
         # files and trusts the result is how the problem returns.
         run: python scripts/build_artifacts.py
+
+      - name: El sdist reconstruye el wheel sin el repositorio
+        run: |
+          mkdir /tmp/from-sdist
+          tar -xzf server/dist/naviscoord-*.tar.gz -C /tmp/from-sdist
+          python -m pip wheel --no-deps --wheel-dir /tmp/rebuilt /tmp/from-sdist/naviscoord-*
+          test -n "$(find /tmp/rebuilt -name 'naviscoord-*.whl' -print -quit)"
 
       - name: Instalar DESDE EL WHEEL, no editable
         # An editable install hides every packaging defect: the profile used
@@ -239,7 +264,7 @@ jobs:
 
       - name: Validador real de plugins
         run: |
-          npm install -g @anthropic-ai/claude-code
+          npm install -g @anthropic-ai/claude-code@2.1.237
           claude plugin validate . --strict
 
       - name: Validar la política del marketplace de Codex
@@ -369,6 +394,17 @@ jobs:
           }
           exit $bad
 
+      - name: Actions fijadas por SHA y sin estado efímero versionado
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE 'uses: [^#[:space:]]+@v[0-9]+' .github/workflows; then
+            echo "::error::una action sigue fijada solo por major tag"; exit 1
+          fi
+          if git ls-files --error-unmatch .claude/scheduled_tasks.lock >/dev/null 2>&1; then
+            echo "::error::scheduled_tasks.lock es estado local y no debe versionarse"; exit 1
+          fi
+
       - name: El guard de artefactos detecta lo que dice detectar
         # The add-in is built outside CI, against a licensed Autodesk API, so
         # the guard that keeps the builder's filesystem out of the published
@@ -378,6 +414,10 @@ jobs:
         # catches survived three releases.
         shell: pwsh
         run: ./scripts/Assert-PublicArtifacts.ps1 -SelfTest
+
+      - name: Restauración del smoke en sandbox
+        shell: pwsh
+        run: ./scripts/Smoke-AddinSwap.ps1 -SelfTest
 
   launcher:
     name: launcher en modo degradado
@@ -462,6 +502,7 @@ jobs:
     needs:
       - engine
       - windows-engine
+      - minimum-dependencies
       - addin-logic
       - packaging
       - manifests

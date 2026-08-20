@@ -41,6 +41,8 @@
     <Compile Include="..\NavisCoord.Addin\RulePrecedence.cs" Link="RulePrecedence.cs" />
     <Compile Include="..\NavisCoord.Addin\ClashFraming.cs" Link="ClashFraming.cs" />
     <Compile Include="..\NavisCoord.Addin\CoordinationLogic.cs" Link="CoordinationLogic.cs" />
+    <Compile Include="..\NavisCoord.Addin\ClashPlanning.cs" Link="ClashPlanning.cs" />
+    <Compile Include="..\NavisCoord.Addin\SelectionSetPlanning.cs" Link="SelectionSetPlanning.cs" />
     <Compile Include="..\NavisCoord.Addin\MutationContract.cs" Link="MutationContract.cs" />
     <Compile Include="..\NavisCoord.Addin\JobManager.cs" Link="JobManager.cs" />
     <Compile Include="..\NavisCoord.Addin\PathPolicy.cs" Link="PathPolicy.cs" />
@@ -67,6 +69,11 @@
     <Compile Include="FramingTests.cs" />
     <Compile Include="VocabularyTests.cs" />
     <Compile Include="WorkflowTextTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies"
+                      Version="1.0.3" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>

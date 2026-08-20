@@ -126,13 +126,15 @@ class TestRouteMapping:
         assert bridge.routes_seen == ["sets/list"]
 
         bridge.calls.clear()
-        M.navis_build_search_sets(folders=[{"folder": "MEP", "sets": [{"name": "Tubo"}]}])
+        M.navis_build_search_sets(folders=[{"folder": "MEP", "sets": [{"name": "Tubo"}]}],
+                                  expected_document_fingerprint="fp-live")
         assert bridge.routes_seen == ["sets/build_search"]
 
         bridge.calls.clear()
         M.navis_apply_clash_rules(
             pairs=[{"test": "T", "a": "A", "b": "B"}],
             sets_index={"A": {}, "B": {}},
+            expected_document_fingerprint="fp-live",
         )
         assert bridge.routes_seen == ["clash/apply_rules"]
 
@@ -140,6 +142,7 @@ class TestRouteMapping:
         out = M.navis_build_search_sets(
             folders=[{"folder": "MEP", "sets": [{"name": "Tubo"}]}],
             dry_run=False, run_async=True, idempotency_key="k-1",
+            expected_document_fingerprint="fp-live",
         )
         assert out["job_id"] == "job-abc"
         assert "job/submit" in bridge.routes_seen
@@ -270,7 +273,7 @@ class TestEnvelope:
         out = M.navis_build_search_sets(
             folders=[{"folder": "MEP", "sets": [{"name": "Tubo"}, {"name": "Ducto"}]},
                      {"folder": "SIN", "scope_model_contains": "-NADA-", "sets": []}],
-            dry_run=False,
+            dry_run=False, expected_document_fingerprint="fp-live",
         )
 
         assert out["requested"] == 2
@@ -292,7 +295,7 @@ class TestEnvelope:
 
         out = M.navis_build_search_sets(
             folders=[{"folder": "MEP", "sets": [{"name": "Tubo"}, {"name": "Ducto"}]}],
-            dry_run=False, replace_existing=True,
+            dry_run=False, replace_existing=True, expected_document_fingerprint="fp-live",
         )
         assert out["created"] == []
         assert out["updated"] == ["MEP"]
@@ -305,6 +308,7 @@ class TestEnvelope:
 
         out = M.navis_build_search_sets(
             folders=[{"folder": "MEP", "sets": [{"name": "Tubo"}]}], dry_run=True,
+            expected_document_fingerprint="fp-live",
         )
         assert out["status"] == "planned"
         assert out["verification_source"] == "not_applicable"
@@ -318,6 +322,7 @@ class TestEnvelope:
         out = M.navis_apply_clash_rules(
             pairs=[{"test": "EST vs HID", "a": "A", "b": "B"}],
             sets_index={"A": {}, "B": {}}, dry_run=False, only_new=True,
+            expected_document_fingerprint="fp-live",
         )
         assert out["evaluated"] == 5
         assert out["matched"] == 5
@@ -341,7 +346,7 @@ class TestEnvelope:
 
         out = M.navis_apply_clash_rules(
             pairs=[{"test": "T", "a": "A", "b": "B"}], sets_index={"A": {}, "B": {}},
-            dry_run=False,
+            dry_run=False, expected_document_fingerprint="fp-live",
         )
         assert out["status"] == "partial"
         assert out["mismatch"] == 1
@@ -358,7 +363,7 @@ class TestEnvelope:
 
         out = M.navis_apply_clash_rules(
             pairs=[{"test": "T", "a": "A", "b": "B"}], sets_index={"A": {}, "B": {}},
-            dry_run=False,
+            dry_run=False, expected_document_fingerprint="fp-live",
         )
         # `partial`, not `failed`: the addin's own table reserves `failed` for
         # work that was attempted and did not land, and nothing was attempted
@@ -396,8 +401,8 @@ class TestListIsReadOnly:
     def test_it_only_reads(self, bridge: BridgeDouble) -> None:
         bridge.answers["sets/list"] = {"sets": [
             {"name": "MEP", "guid": "g1", "is_group": True, "item_count": 0},
-            {"name": "Tubo", "guid": "g2", "is_group": False, "item_count": 12},
-            {"name": "Regla", "guid": "g3", "is_group": False, "item_count": 0},
+            {"name": "Tubo", "guid": "g2", "is_group": False, "kind": "explicit", "item_count": 12},
+            {"name": "Regla", "guid": "g3", "is_group": False, "kind": "search", "item_count": 0},
         ]}
         out = M.navis_list_search_sets()
 
@@ -409,7 +414,7 @@ class TestListIsReadOnly:
     def test_a_search_set_reports_no_size_instead_of_zero(self, bridge: BridgeDouble) -> None:
         """Zero would read as «empty»; the truth is «not evaluated»."""
         bridge.answers["sets/list"] = {"sets": [
-            {"name": "Regla", "guid": "g3", "is_group": False, "item_count": 0},
+            {"name": "Regla", "guid": "g3", "is_group": False, "kind": "search", "item_count": 0},
         ]}
         out = M.navis_list_search_sets()
 

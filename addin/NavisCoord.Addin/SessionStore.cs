@@ -359,13 +359,16 @@ namespace NavisCoord
                     }
                 }
                 info.SetAccessControl(security);
+                RequireSecure(path);
             }
             catch (Exception ex)
             {
-                // A filesystem that cannot express a DACL (a network home
-                // directory, a container mount) is reported, not fatal: the
-                // audit below still tells the truth about what is protected.
-                BridgeHost.Log("No se pudo endurecer los permisos de " + path + ": " + ex.Message);
+                // The directory will contain a bearer token that can drive a
+                // live model. Publishing it on a filesystem whose DACL could
+                // not be set or verified is never an acceptable fallback.
+                throw new UnauthorizedAccessException(
+                    "No se pudo asegurar el directorio de sesiones '" + path +
+                    "'. El puente no publicará ningún token: " + ex.Message, ex);
             }
         }
 
@@ -381,11 +384,24 @@ namespace NavisCoord
                     security.AddAccessRule(rule);
                 }
                 info.SetAccessControl(security);
+                RequireSecure(path);
             }
             catch (Exception ex)
             {
-                BridgeHost.Log("No se pudo endurecer los permisos de " + path + ": " + ex.Message);
+                throw new UnauthorizedAccessException(
+                    "No se pudo asegurar el archivo que contendría el token '" + path +
+                    "'. Se abortó su publicación: " + ex.Message, ex);
             }
+        }
+
+        private static void RequireSecure(string path)
+        {
+            var audit = Audit(path);
+            if (audit.TryGetValue("secure", out var raw) && raw is bool secure && secure) return;
+            var findings = audit.TryGetValue("findings", out var found) && found is List<object> list
+                ? string.Join("; ", list.Select(Convert.ToString))
+                : "no se pudo verificar la DACL";
+            throw new UnauthorizedAccessException(findings);
         }
 
         private static IEnumerable<FileSystemAccessRule> TrustedRules(bool inheritable)

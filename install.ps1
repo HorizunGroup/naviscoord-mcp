@@ -33,20 +33,74 @@ $ErrorActionPreference = "Stop"
 $supported = if ($Version -eq 'all') { @('2024','2025','2026') } else { @($Version) }
 $projectDir = Join-Path $PSScriptRoot "addin\NavisCoord.Addin"
 
+function Get-PluginDir([string]$v) {
+    Join-Path $env:APPDATA "Autodesk\Navisworks Manage $v\Plugins\NavisCoord"
+}
+
+function Get-NavisworksProductDir([string]$v) {
+    $candidates = @()
+    foreach ($base in @($env:ProgramW6432, $env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if ($base) { $candidates += Join-Path $base "Autodesk\Navisworks Manage $v" }
+    }
+    foreach ($hive in @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )) {
+        Get-ItemProperty $hive -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like "Autodesk Navisworks Manage $v*" } |
+            ForEach-Object { if ($_.InstallLocation) { $candidates += $_.InstallLocation } }
+    }
+    foreach ($candidate in $candidates | Select-Object -Unique) {
+        if (Test-Path (Join-Path $candidate 'Autodesk.Navisworks.Api.dll')) {
+            return (Resolve-Path $candidate).Path
+        }
+    }
+    return $null
+}
+
+function Install-FileAtomic([string]$Source, [string]$Destination) {
+    $parent = Split-Path $Destination -Parent
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    $temp = Join-Path $parent ('.' + [IO.Path]::GetFileName($Destination) + '.' + [guid]::NewGuid().ToString('N') + '.tmp')
+    $backup = Join-Path $parent ('.' + [IO.Path]::GetFileName($Destination) + '.' + [guid]::NewGuid().ToString('N') + '.bak')
+    try {
+        Copy-Item -LiteralPath $Source -Destination $temp
+        $expected = (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash
+        $staged = (Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash
+        if ($expected -ne $staged) { throw "el archivo temporal no coincide con el origen" }
+
+        if (Test-Path -LiteralPath $Destination) {
+            [IO.File]::Replace($temp, $Destination, $backup, $true)
+        } else {
+            [IO.File]::Move($temp, $Destination)
+        }
+        $installed = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
+        if ($installed -ne $expected) { throw "el archivo publicado no coincide con el origen" }
+        if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }
+    } catch {
+        if (Test-Path -LiteralPath $backup) {
+            if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force }
+            [IO.File]::Move($backup, $Destination)
+        }
+        throw
+    } finally {
+        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
+        if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }
+    }
+}
+
 if (Get-Process -Name "Roamer" -ErrorAction SilentlyContinue) {
     throw "Navisworks está abierto. Ciérralo antes de instalar: el DLL queda bloqueado y la copia fallaría a medias."
 }
 
-# Desinstalar va ANTES de buscar Navisworks, y recorre las versiones pedidas
-# en vez de las encontradas: el complemento vive en %APPDATA%, no dentro del
-# producto, así que sigue ahí cuando alguien ya desinstaló Navisworks — y ese
-# es precisamente el momento en que querría limpiarlo. Exigir una instalación
-# para poder borrar dejaba la carpeta huérfana sin forma de quitarla.
+# Desinstalar depende de dónde vive el plugin, no de que el producto siga en
+# C:\Program Files. Esto también limpia instalaciones huérfanas después de
+# mover o desinstalar Navisworks.
 if ($Uninstall) {
     foreach ($v in $supported) {
-        $pluginDir = Join-Path $env:APPDATA "Autodesk\Navisworks Manage $v\Plugins\NavisCoord"
-        if (Test-Path $pluginDir) {
-            Remove-Item $pluginDir -Recurse -Force
+        $pluginDir = Get-PluginDir $v
+        if (Test-Path -LiteralPath $pluginDir) {
+            Remove-Item -LiteralPath $pluginDir -Recurse -Force
             Write-Host "[$v] complemento eliminado"
         } else {
             Write-Host "[$v] no había nada instalado"
@@ -71,15 +125,15 @@ if ($Uninstall) {
 
 $found = @()
 foreach ($v in $supported) {
-    $productDir = "C:\Program Files\Autodesk\Navisworks Manage $v"
-    if (Test-Path (Join-Path $productDir 'Autodesk.Navisworks.Api.dll')) {
+    $productDir = Get-NavisworksProductDir $v
+    if ($productDir) {
         $found += [pscustomobject]@{ Version = $v; ProductDir = $productDir }
     } elseif ($Version -ne 'all') {
-        throw "No encuentro Navisworks Manage $v en $productDir."
+        throw "No encuentro Navisworks Manage $v ni por registro ni bajo Program Files."
     }
 }
 if (-not $found) {
-    throw "No encuentro ninguna instalación de Navisworks Manage 2024-2026 en C:\Program Files\Autodesk."
+    throw "No encuentro ninguna instalación de Navisworks Manage 2024-2026."
 }
 
 foreach ($f in $found) {
@@ -124,11 +178,9 @@ foreach ($f in $found) {
     $icons = Get-ChildItem $outDir -Filter "nc*.png" -File
     if (-not $icons) { throw "[$v] el build no dejó los iconos (nc*.png) en $outDir" }
 
-    $pluginDir = Join-Path $env:APPDATA "Autodesk\Navisworks Manage $v\Plugins\NavisCoord"
-    New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
-    Copy-Item $built -Destination $pluginDir -Force
-    $pdb = [IO.Path]::ChangeExtension($built, ".pdb")
-    if (Test-Path $pdb) { Copy-Item $pdb -Destination $pluginDir -Force }
+    $pluginDir = Get-PluginDir $v
+    $installed = Join-Path $pluginDir "NavisCoord.dll"
+    Install-FileAtomic $built $installed
 
     # El layout de la cinta, a la raíz y a la carpeta del idioma: el cargador
     # busca primero en la subcarpeta del idioma.
@@ -146,10 +198,9 @@ foreach ($f in $found) {
 
     # Verificación: comprobar lo copiado en disco, no asumir que Copy-Item
     # funcionó.
-    $installed = Join-Path $pluginDir "NavisCoord.dll"
     if (-not (Test-Path $installed)) { throw "[$v] la copia no dejó el DLL en $installed" }
-    if ((Get-Item $built).Length -ne (Get-Item $installed).Length) {
-        throw "[$v] el DLL instalado no coincide en tamaño con el compilado; la copia quedó incompleta."
+    if ((Get-FileHash $built -Algorithm SHA256).Hash -ne (Get-FileHash $installed -Algorithm SHA256).Hash) {
+        throw "[$v] el DLL instalado no coincide en SHA-256 con el compilado."
     }
     foreach ($x in @((Join-Path $pluginDir "NavisCoordRibbon.xaml"),
                      (Join-Path $pluginDir "en-US\NavisCoordRibbon.xaml"))) {

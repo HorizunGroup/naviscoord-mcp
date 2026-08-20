@@ -46,7 +46,7 @@ class SeverityScorer:
     def __init__(self, profile: Profile) -> None:
         self.profile = profile
         self._cluster_saturation = max(
-            1.0, profile.severity_param("cluster_size_saturation", 25.0)
+            1.000001, profile.severity_param("cluster_size_saturation", 25.0)
         )
         self._congestion_saturation = max(
             1.0, profile.severity_param("congestion_saturation", 4.0)

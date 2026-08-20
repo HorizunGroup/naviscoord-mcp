@@ -23,12 +23,14 @@ namespace NavisCoord
             Dictionary<string, object> payload, JobManager.Job job)
         {
             var doc = Router.RequireDocument();
-            if (!TryProfile(out var profile, out var problem)) return problem;
+            var profile = job?.ProfileSnapshot;
+            if (profile == null && !TryProfile(out profile, out var problem)) return problem;
 
             var result = CoordinationWorkflow.AuditModels(doc, profile, job);
             Attribute(result, profile);
             result["document_fingerprint"] = DocumentContext.Fingerprint(doc);
             result["text"] = WorkflowText.AuditModels(result);
+            result["status"] = "completed";
             return result;
         }
 
@@ -85,13 +87,16 @@ namespace NavisCoord
             var fingerprint = DocumentContext.Fingerprint(doc);
 
             var expected = Json.Str(payload, "expected_document_fingerprint");
-            if (!DocumentFingerprint.Matches(expected, fingerprint))
+            if (string.IsNullOrWhiteSpace(expected) ||
+                !DocumentFingerprint.Matches(expected, fingerprint))
             {
                 return new Dictionary<string, object>
                 {
                     ["operation"] = operation,
                     ["status"] = "failed",
-                    ["error"] = "document_changed",
+                    ["error"] = string.IsNullOrWhiteSpace(expected)
+                        ? "mutation_target_required"
+                        : "document_changed",
                     ["document_fingerprint_before"] = fingerprint,
                     ["detail"] = "El documento activo no es el que esperabas (esperado " + expected +
                                  ", activo " + fingerprint + "). No se tocó nada.",
@@ -103,7 +108,11 @@ namespace NavisCoord
             if (IdempotencyLedger.TryGet(key, operation, fingerprint, out var cached)) return cached;
 
             ProfileStore.ActiveProfile profile = null;
-            if (needsProfile && !TryProfile(out profile, out var problem)) return problem;
+            if (needsProfile)
+            {
+                profile = job?.ProfileSnapshot;
+                if (profile == null && !TryProfile(out profile, out var problem)) return problem;
+            }
 
             var result = work(doc, profile, job);
             result["job_id"] = job?.Id ?? string.Empty;

@@ -629,8 +629,12 @@ def navis_list_search_sets() -> dict[str, Any]:
     sets: list[dict[str, Any]] = []
     for entry in raw.get("sets") or []:
         is_group = bool(entry.get("is_group"))
+        declared_kind = str(entry.get("kind") or "")
         count = entry.get("item_count")
-        explicit = not is_group and isinstance(count, (int, float)) and count > 0
+        explicit = declared_kind == "explicit" or (
+            not declared_kind and not is_group and isinstance(count, (int, float))
+            and not isinstance(count, bool) and int(count) > 0
+        )
         sets.append(
             {
                 "name": entry.get("name") or "",
@@ -692,6 +696,7 @@ def navis_build_search_sets(
             "detail": "Se requiere 'folders' con al menos una carpeta de disciplina.",
         }
 
+    STATE.bridge.require("sets/build_search")
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
     payload = {
         "folders": folders,
@@ -723,12 +728,32 @@ def navis_build_search_sets(
     ]
 
     verified_rows = raw.get("verified_in_document") or []
+    expected_by_folder = {
+        str(row.get("folder") or ""): {
+            str(item.get("name") or "")
+            for item in (row.get("sets") or [])
+            if isinstance(item, dict) and item.get("name")
+        }
+        for row in planned if isinstance(row, dict)
+    }
+    actual_by_folder = {
+        str(row.get("folder") or ""): {
+            str(name) for name in (row.get("children") or []) if name
+        }
+        for row in verified_rows if isinstance(row, dict) and row.get("exists")
+    }
     verified = sum(
-        len(row.get("children") or []) for row in verified_rows if row.get("exists")
+        len(expected & actual_by_folder.get(folder, set()))
+        for folder, expected in expected_by_folder.items()
     )
     present = {row.get("folder") for row in verified_rows if row.get("exists")}
     missing = [
         row.get("folder") for row in verified_rows if not row.get("exists")
+    ]
+    missing_sets = [
+        f"{folder}/{name}"
+        for folder, expected in expected_by_folder.items()
+        for name in sorted(expected - actual_by_folder.get(folder, set()))
     ]
 
     created = sorted(present - before)
@@ -738,12 +763,13 @@ def navis_build_search_sets(
         raw,
         dry_run=dry_run,
         requested=requested,
-        applied=0 if dry_run else requested,
+        applied=0 if dry_run else int(raw.get("applied", verified)),
         verified=verified,
-        failed=len(errors) + len(missing),
+        failed=len(errors) + len(missing) + len(missing_sets),
         fingerprint=fingerprint,
         idempotency_key=idempotency_key,
-        errors=errors + [f"{f}: no quedó en el documento" for f in missing],
+        errors=(errors + [f"{f}: no quedó en el documento" for f in missing]
+                + [f"{name}: el set solicitado no quedó en el documento" for name in missing_sets]),
         created=created if not dry_run else [],
         updated=touched if (not dry_run and replace_existing) else [],
         unchanged=touched if (not dry_run and not replace_existing) else [],
@@ -795,6 +821,7 @@ def navis_apply_clash_rules(
             "detail": f"Los pares nombran conjuntos ausentes de sets_index: {', '.join(unknown)}.",
         }
 
+    STATE.bridge.require("clash/apply_rules")
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
     payload = {
         "pairs": pairs,
@@ -902,7 +929,10 @@ def navis_run_rules_workflow(
 @mcp.tool()
 @_guard
 def navis_build_sets(
-    dry_run: bool = True, prefix: str = "NC", expected_document_fingerprint: str = ""
+    dry_run: bool = True,
+    prefix: str = "NC",
+    expected_document_fingerprint: str = "",
+    idempotency_key: str = "",
 ) -> dict[str, Any]:
     """Crea un conjunto de selección explícito por disciplina.
 
@@ -927,7 +957,10 @@ def navis_build_sets(
                 "source_files": sources,
             }
         )
-    payload = STATE.bridge.build_sets(disciplines, prefix, dry_run)
+    payload = STATE.bridge.build_sets(
+        disciplines, prefix, dry_run, fingerprint=fingerprint,
+        idempotency_key=idempotency_key,
+    )
     payload.setdefault("document_fingerprint_before", fingerprint)
     return payload
 
@@ -935,10 +968,8 @@ def navis_build_sets(
 @mcp.tool()
 @_guard
 def navis_build_clash_matrix(
-    dry_run: bool = True,
-    prefix: str = "NC",
-    replace_existing: bool = False,
-    expected_document_fingerprint: str = "",
+    dry_run: bool = True, prefix: str = "NC", replace_existing: bool = False,
+    expected_document_fingerprint: str = "", idempotency_key: str = "",
 ) -> dict[str, Any]:
     """Genera la suite completa de tests disciplina contra disciplina.
 
@@ -950,7 +981,10 @@ def navis_build_clash_matrix(
     if not pairs:
         return {"error": "El perfil no define clash_matrix.pairs."}
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
-    payload = STATE.bridge.build_matrix(pairs, prefix, dry_run, replace_existing)
+    payload = STATE.bridge.build_matrix(
+        pairs, prefix, dry_run, replace_existing,
+        fingerprint=fingerprint, idempotency_key=idempotency_key,
+    )
     payload.setdefault("document_fingerprint_before", fingerprint)
     return payload
 
@@ -965,7 +999,10 @@ def navis_list_tests() -> dict[str, Any]:
 @mcp.tool()
 @_guard
 def navis_run_tests(
-    tests: list[str] | None = None, expected_document_fingerprint: str = ""
+    tests: list[str] | None = None,
+    dry_run: bool = True,
+    expected_document_fingerprint: str = "",
+    idempotency_key: str = "",
 ) -> dict[str, Any]:
     """Corre los tests indicados, o todos si no se especifica ninguno.
 
@@ -977,7 +1014,22 @@ def navis_run_tests(
     dry_run: no hay ensayo posible de una corrida de clash.
     """
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
-    payload = STATE.bridge.run_tests(tests)
+    if dry_run:
+        available = STATE.bridge.list_tests().get("tests") or []
+        wanted = {name.lower() for name in (tests or [])}
+        selected = [
+            row.get("name") for row in available
+            if not wanted or str(row.get("name") or "").lower() in wanted
+        ]
+        return {
+            "operation": "clash/run", "status": "planned", "dry_run": True,
+            "document_fingerprint_before": fingerprint,
+            "requested": len(selected), "applied": 0, "verified": 0,
+            "tests": selected,
+        }
+    payload = STATE.bridge.run_tests(
+        tests, fingerprint=fingerprint, idempotency_key=idempotency_key,
+    )
     payload.setdefault("document_fingerprint_before", fingerprint)
     return payload
 
@@ -1628,7 +1680,12 @@ def navis_save_viewpoints(
 
 @mcp.tool()
 @_guard
-def navis_color_by_priority(limit: int = 50, expected_document_fingerprint: str = "") -> dict[str, Any]:
+def navis_color_by_priority(
+    limit: int = 50,
+    dry_run: bool = True,
+    expected_document_fingerprint: str = "",
+    idempotency_key: str = "",
+) -> dict[str, Any]:
     """Colorea en el modelo los elementos de los problemas más graves.
 
     Rojo crítico, naranja alto, amarillo medio. Colorea el lado que DEBE
@@ -1659,12 +1716,29 @@ def navis_color_by_priority(limit: int = 50, expected_document_fingerprint: str 
             unresolved.append(issue.issue_id)
         buckets.setdefault(issue.priority, []).extend(movable)
 
-    applied = []
+    planned = []
     for priority, paths in buckets.items():
         unique = sorted(set(paths))
         if not unique:
             continue
-        applied.append({priority: STATE.bridge.color(unique, palette[priority])})
+        planned.append((priority, unique))
+
+    if dry_run:
+        return {
+            "operation": "appearance/color", "status": "planned", "dry_run": True,
+            "document_fingerprint_before": fingerprint,
+            "requested": sum(len(paths) for _, paths in planned),
+            "applied": 0, "verified": 0,
+            "by_priority": {priority: len(paths) for priority, paths in planned},
+        }
+
+    applied = [
+        {priority: STATE.bridge.color(
+            paths, palette[priority], fingerprint=fingerprint,
+            idempotency_key=f"{idempotency_key}:{priority}" if idempotency_key else "",
+        )}
+        for priority, paths in planned
+    ]
 
     payload: dict[str, Any] = {
         "applied": applied,
@@ -1700,17 +1774,24 @@ def navis_color_by_priority(limit: int = 50, expected_document_fingerprint: str 
 
 @mcp.tool()
 @_guard
-def navis_reset_appearance(expected_document_fingerprint: str = "") -> dict[str, Any]:
-    """Quita todos los colores aplicados sobre el modelo.
-
-    Sin argumentos borra TODO override de apariencia del documento, incluidos
-    los que puso una persona a mano. Es la mutación más fácil de disparar por
-    error y la única sin dry_run, así que la huella se comprueba igual.
-    """
+def navis_reset_appearance(
+    path_ids: list[str] | None = None,
+    dry_run: bool = True,
+    expected_document_fingerprint: str = "",
+    idempotency_key: str = "",
+) -> dict[str, Any]:
+    """Quita todos los colores aplicados sobre el modelo."""
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
-    payload = STATE.bridge.reset_appearance()
-    payload.setdefault("document_fingerprint_before", fingerprint)
-    return payload
+    if dry_run:
+        return {
+            "operation": "appearance/reset", "status": "planned", "dry_run": True,
+            "document_fingerprint_before": fingerprint,
+            "scope": "selección" if path_ids else "todo el modelo",
+            "requested": len(set(path_ids or [])), "applied": 0, "verified": 0,
+        }
+    return STATE.bridge.reset_appearance(
+        path_ids, fingerprint=fingerprint, idempotency_key=idempotency_key,
+    )
 
 
 # --------------------------------------------------------- flujo operativo
@@ -1898,7 +1979,7 @@ def navis_cancel_job(job_id: str) -> dict[str, Any]:
 def navis_save(
     expected_document_fingerprint: str = "",
     run_async: bool = False,
-    dry_run: bool = False,
+    dry_run: bool = True,
 ) -> dict[str, Any]:
     """Guarda el documento abierto en su propia ruta.
 
@@ -1926,7 +2007,7 @@ def navis_save_as(
     expected_document_fingerprint: str = "",
     overwrite: bool = False,
     run_async: bool = False,
-    dry_run: bool = False,
+    dry_run: bool = True,
 ) -> dict[str, Any]:
     """Guarda una copia del documento en otra ruta (.nwf o .nwd).
 
@@ -2016,10 +2097,23 @@ def navis_exit(
 
 @mcp.tool()
 @_guard
-def navis_select_issue(issue_id: str) -> dict[str, Any]:
+def navis_select_issue(
+    issue_id: str,
+    dry_run: bool = True,
+    expected_document_fingerprint: str = "",
+) -> dict[str, Any]:
     """Selecciona en Navisworks los elementos de un problema."""
+    fingerprint = STATE.require_mutable(expected_document_fingerprint)
     issue = STATE.issue(issue_id)
-    return STATE.bridge.select(issue.elements_a + issue.elements_b)
+    path_ids = issue.elements_a + issue.elements_b
+    if dry_run:
+        return {
+            "operation": "selection/set", "status": "planned", "dry_run": True,
+            "document_fingerprint_before": fingerprint,
+            "requested": len(set(path_ids)), "applied": 0, "verified": 0,
+            "issue_id": issue.issue_id,
+        }
+    return STATE.bridge.select(path_ids, fingerprint=fingerprint)
 
 
 # ------------------------------------------------------------- ecosystem

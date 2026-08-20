@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import marketplace_pin as pin
 import plugin_launcher as launcher
+import build_artifacts
 
 
 def read_json(path: Path) -> dict:
@@ -435,8 +436,8 @@ class TestDegradedLauncher:
         report = launcher.failure_report("x")
         assert "venv" in report["arreglo"]
         assert "pip install" in report["arreglo"]
-        for requirement in launcher.REQUIREMENTS:
-            assert requirement in report["arreglo"]
+        assert "--require-hashes" in report["arreglo"]
+        assert str(launcher.RUNTIME_LOCK) in report["arreglo"]
 
     def test_failure_report_does_not_claim_to_ship_a_python(self) -> None:
         """The docs used to promise an included runtime. It creates a venv."""
@@ -500,6 +501,16 @@ class TestRuntimeDetection:
         pyproject = (ROOT / "server" / "pyproject.toml").read_text(encoding="utf-8")
         for requirement in launcher.REQUIREMENTS:
             assert f'"{requirement}"' in pyproject, requirement
+
+    def test_runtime_install_is_hash_locked(self) -> None:
+        lock = launcher.RUNTIME_LOCK.read_text(encoding="utf-8")
+        assert "--hash=sha256:" in lock
+        assert "mcp==" in lock and "reportlab==" in lock and "pillow==" in lock
+
+    def test_manual_repair_uses_the_same_hash_lock(self) -> None:
+        repair = launcher.failure_report("simulado")["arreglo"]
+        assert "--require-hashes" in repair
+        assert str(launcher.RUNTIME_LOCK) in repair
 
     def test_old_python_is_refused_with_an_explanation(self) -> None:
         ok, why = launcher.python_is_supported((3, 9))
@@ -575,7 +586,80 @@ class TestRuntimeDetection:
     def test_runtime_dir_is_keyed_by_interpreter_version(self, monkeypatch, tmp_path: Path) -> None:
         monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         tag = f"py{sys.version_info.major}{sys.version_info.minor}"
-        assert launcher.runtime_dir().name == tag
+        assert launcher.runtime_dir().name.startswith(tag + "-")
+
+    def test_runtime_cache_identity_includes_executable_and_contract(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        first = launcher.runtime_dir()
+        monkeypatch.setattr(launcher.sys, "executable", str(tmp_path / "other-python"))
+        second = launcher.runtime_dir()
+        assert first != second
+
+    def test_an_importable_but_out_of_range_distribution_is_rejected(self, monkeypatch) -> None:
+        import importlib.metadata
+
+        real_version = importlib.metadata.version
+
+        def version(name):
+            return "3.0.0" if name == "mcp" else real_version(name)
+
+        monkeypatch.setattr(importlib.metadata, "version", version)
+        assert any("mcp" in problem and "fuera del rango" in problem
+                   for problem in launcher.runtime_problems())
 
     def test_a_missing_runtime_dir_counts_as_private(self, tmp_path: Path) -> None:
         assert launcher.runtime_is_private(tmp_path / "todavia-no")[0]
+
+
+def test_packaging_stage_refuses_to_overwrite_local_server_metadata(
+    tmp_path: Path, monkeypatch
+) -> None:
+    server = tmp_path / "server"
+    server.mkdir()
+    root = tmp_path
+    for name in build_artifacts.STAGED:
+        (root / name).write_text(f"raíz {name}", encoding="utf-8")
+    local = server / "README.md"
+    local.write_text("trabajo local", encoding="utf-8")
+    monkeypatch.setattr(build_artifacts, "ROOT", root)
+    monkeypatch.setattr(build_artifacts, "SERVER", server)
+
+    with pytest.raises(SystemExit, match="sobrescritos"):
+        build_artifacts.stage_legal()
+    assert local.read_text(encoding="utf-8") == "trabajo local"
+
+
+def test_legacy_navisworks_publications_have_no_remove_add_window() -> None:
+    """The two legacy builders must publish replacements atomically.
+
+    This is intentionally structural: the dangerous state is the interval
+    between two API calls. A mock that merely checks the final tree cannot
+    observe a process failure after Remove and before AddCopy.
+    """
+    source = (ROOT / "addin" / "NavisCoord.Addin" / "WriteHandlers.cs").read_text(
+        encoding="utf-8"
+    )
+
+    def body(start: str, end: str) -> str:
+        assert start in source and end in source
+        return source.split(start, 1)[1].split(end, 1)[0]
+
+    sets = body("BuildSearchSets(Dictionary", "BuildCriteriaSets(Dictionary")
+    matrix = body("BuildClashMatrix(Dictionary", "Runs clash tests")
+    assert "SelectionSets.Remove" not in sets
+    assert "SelectionSets.ReplaceWithCopy" in sets
+    assert "TestsRemove" not in matrix
+    assert "TestsReplaceWithCopy" in matrix
+
+
+def test_workflow_matrix_publication_has_no_remove_add_window() -> None:
+    source = (ROOT / "addin" / "NavisCoord.Addin" / "CoordinationWorkflow.cs").read_text(
+        encoding="utf-8"
+    )
+    matrix = source.split("internal static Dictionary<string, object> BuildFolderMatrix(", 1)[1].split(
+        "private static bool TestDefinitionMatches", 1
+    )[0]
+    assert "TestsRemove" not in matrix
+    assert "TestsReplaceWithCopy" in matrix

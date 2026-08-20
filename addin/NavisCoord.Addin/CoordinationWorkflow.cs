@@ -322,12 +322,20 @@ namespace NavisCoord
             if (profile.TryGetValue("sets", out var setsRaw) &&
                 setsRaw is Dictionary<string, object> setsPayload)
             {
-                setsPayload["dry_run"] = false;
-                if (!setsPayload.ContainsKey("replace_existing")) setsPayload["replace_existing"] = true;
-                setsPayload["observe_categories"] = false;
-                setsSummary = SummariseSets(WriteHandlers.BuildCriteriaSets(setsPayload));
+                // ActiveProfile is an immutable identity snapshot: its
+                // checksum must continue to describe the content jobs use.
+                // Derived execution flags therefore go into a deep copy.
+                var executionPayload = Json.ParseObject(Json.Write(setsPayload));
+                executionPayload["dry_run"] = false;
+                if (!executionPayload.ContainsKey("replace_existing")) executionPayload["replace_existing"] = true;
+                executionPayload["observe_categories"] = false;
+                setsSummary = SummariseSets(WriteHandlers.BuildCriteriaSets(executionPayload));
             }
             result.Detail["sets"] = setsSummary;
+            if (setsSummary.TryGetValue("ok", out var setsOk) && setsOk is bool ok && !ok)
+            {
+                result.Fail("La publicación de Selection Sets no superó la verificación exacta.");
+            }
 
             job?.Phasing("creando la matriz de clash");
             var clashSummary = new Dictionary<string, object> { ["present"] = false };
@@ -371,7 +379,8 @@ namespace NavisCoord
                 ["matches"] = 0.0,
                 ["empty_sets"] = new List<object>(),
                 ["skipped_folders"] = new List<object>(),
-                ["verified_folders"] = 0.0
+                ["verified_folders"] = 0.0,
+                ["ok"] = raw.TryGetValue("ok", out var rawOk) && rawOk is bool b && b
             };
 
             if (raw.TryGetValue("planned", out var rawPlanned) && rawPlanned is List<object> planned)
@@ -412,9 +421,11 @@ namespace NavisCoord
             {
                 summary["verified_folders"] = (double)verified
                     .OfType<Dictionary<string, object>>()
-                    .Count(v => v.TryGetValue("exists", out var e) && e is bool b && b);
+                    .Count(v => v.TryGetValue("verified", out var e) && e is bool b && b);
                 summary["verified_in_document"] = verified;
             }
+            if (raw.TryGetValue("publications", out var publications)) summary["publications"] = publications;
+            if (raw.TryGetValue("error", out var error)) summary["error"] = error;
             return summary;
         }
 
@@ -428,8 +439,6 @@ namespace NavisCoord
             var replace = Json.Bool(payload, "replace_existing", true);
             var nameFormat = Json.Str(payload, "name_format", "{0} VS {1}");
             var scale = NavisContext.MetreScale(doc);
-            var clash = doc.GetClash();
-
             var created = 0;
             var kept = 0;
             var skipped = new List<object>();
@@ -450,10 +459,21 @@ namespace NavisCoord
                 if (string.IsNullOrWhiteSpace(name)) name = string.Format(nameFormat, a, b);
                 wanted.Add(name);
 
-                Enum.TryParse<ClashTestType>(typeName, true, out var expectedType);
+                if (!Enum.TryParse<ClashTestType>(typeName, true, out var expectedType))
+                {
+                    skipped.Add(name + " (tipo '" + typeName + "')");
+                    continue;
+                }
                 var expectedTolerance = toleranceM / (scale == 0 ? 1 : scale);
+                var sourcesA = BuildSideSources(doc, a, Json.StrArr(spec, "a_sets"));
+                var sourcesB = BuildSideSources(doc, b, Json.StrArr(spec, "b_sets"));
+                if (sourcesA == null || sourcesB == null)
+                {
+                    skipped.Add(name);
+                    continue;
+                }
 
-                var duplicate = clash.TestsData.Tests
+                var duplicate = doc.GetClash().TestsData.Tests
                     .OfType<ClashTest>()
                     .FirstOrDefault(t => string.Equals(t.DisplayName, name, StringComparison.OrdinalIgnoreCase));
                 if (duplicate != null)
@@ -463,8 +483,8 @@ namespace NavisCoord
                     // and report it as stale, because throwing away a finished
                     // run is a human decision. Changed and empty: refresh, it
                     // costs nothing.
-                    var sameDefinition = duplicate.TestType == expectedType &&
-                                         Math.Abs(duplicate.Tolerance - expectedTolerance) < 0.0001;
+                    var sameDefinition = TestDefinitionMatches(
+                        duplicate, expectedType, expectedTolerance, sourcesA, sourcesB);
                     var hasResults = duplicate.Children.Count > 0;
                     if (sameDefinition || hasResults || !replace)
                     {
@@ -472,26 +492,12 @@ namespace NavisCoord
                         if (!sameDefinition && hasResults) outdated.Add(name);
                         continue;
                     }
-                    clash.TestsData.TestsRemove(duplicate);
-                }
-
-                var sourcesA = BuildSideSources(doc, a, Json.StrArr(spec, "a_sets"));
-                var sourcesB = BuildSideSources(doc, b, Json.StrArr(spec, "b_sets"));
-                if (sourcesA == null || sourcesB == null)
-                {
-                    skipped.Add(name);
-                    continue;
-                }
-                if (!Enum.TryParse<ClashTestType>(typeName, true, out var testType))
-                {
-                    skipped.Add(name + " (tipo '" + typeName + "')");
-                    continue;
                 }
 
                 var test = new ClashTest
                 {
                     DisplayName = name,
-                    TestType = testType,
+                    TestType = expectedType,
                     // The profile states tolerances in metres; Navisworks
                     // wants document units, so a millimetre on a job authored
                     // in feet stays a millimetre.
@@ -499,15 +505,58 @@ namespace NavisCoord
                 };
                 test.SelectionA.Selection.CopyFrom(sourcesA);
                 test.SelectionB.Selection.CopyFrom(sourcesB);
-                clash.TestsData.TestsAddCopy(test);
+                // A changed empty test can be replaced without losing run
+                // history, but the publication itself must still be atomic.
+                // Re-resolve the collection in this iteration because every
+                // Clash mutation may rebuild its native wrappers.
+                var freshTestsData = doc.GetClash().TestsData;
+                var replaceTarget = freshTestsData.Tests.OfType<ClashTest>()
+                    .FirstOrDefault(t => string.Equals(t.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+                if (replaceTarget != null)
+                {
+                    var index = freshTestsData.Tests.IndexOfGuid(replaceTarget.Guid);
+                    if (index < 0) throw new InvalidOperationException($"No se pudo re-resolver el test '{name}'.");
+                    freshTestsData.TestsReplaceWithCopy(index, test);
+                }
+                else
+                {
+                    freshTestsData.TestsAddCopy(test);
+                }
                 created++;
             }
 
-            // Verification: count what the document reports, not what we sent.
-            var present = clash.TestsData.Tests
-                .Select(t => t.DisplayName ?? string.Empty)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var verified = wanted.Count(n => present.Contains(n));
+            // Verification re-builds the expected sources from the live set
+            // tree. A matching name alone is not evidence: an old test may
+            // still point at a deleted/replaced Selection Set.
+            var verified = 0;
+            var verificationFailures = new List<object>();
+            foreach (var raw in Json.Arr(payload, "pairs"))
+            {
+                if (!(raw is Dictionary<string, object> spec)) continue;
+                var a = Json.Str(spec, "a");
+                var b = Json.Str(spec, "b");
+                var typeName = Json.Str(spec, "type", "Hard");
+                var toleranceM = Json.Num(spec, "tolerance_m", 0.01);
+                var name = Json.Str(spec, "name");
+                if (string.IsNullOrWhiteSpace(name)) name = string.Format(nameFormat, a, b);
+
+                var matches = doc.GetClash().TestsData.Tests.OfType<ClashTest>()
+                    .Where(t => string.Equals(t.DisplayName, name, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                var freshA = BuildSideSources(doc, a, Json.StrArr(spec, "a_sets"));
+                var freshB = BuildSideSources(doc, b, Json.StrArr(spec, "b_sets"));
+                if (matches.Count == 1 && freshA != null && freshB != null &&
+                    Enum.TryParse<ClashTestType>(typeName, true, out var expectedType) &&
+                    TestDefinitionMatches(matches[0], expectedType,
+                        toleranceM / (scale == 0 ? 1 : scale), freshA, freshB))
+                {
+                    verified++;
+                }
+                else
+                {
+                    verificationFailures.Add(name);
+                }
+            }
 
             return new Dictionary<string, object>
             {
@@ -517,9 +566,26 @@ namespace NavisCoord
                 ["kept"] = (double)kept,
                 ["skipped"] = skipped,
                 ["outdated"] = outdated,
-                ["tests_in_document"] = (double)clash.TestsData.Tests.Count,
+                ["verification_failures"] = verificationFailures,
+                ["tests_in_document"] = (double)doc.GetClash().TestsData.Tests.Count,
                 ["verified_tests"] = (double)verified
             };
+        }
+
+        private static bool TestDefinitionMatches(
+            ClashTest test,
+            ClashTestType expectedType,
+            double expectedTolerance,
+            SelectionSourceCollection sourcesA,
+            SelectionSourceCollection sourcesB)
+        {
+            if (test == null || sourcesA == null || sourcesB == null) return false;
+            return test.TestType == expectedType &&
+                   Math.Abs(test.Tolerance - expectedTolerance) < 0.0001 &&
+                   test.SelectionA.Selection.HasSelectionSources &&
+                   test.SelectionB.Selection.HasSelectionSources &&
+                   test.SelectionA.Selection.SelectionSources.ValueEquals(sourcesA) &&
+                   test.SelectionB.Selection.SelectionSources.ValueEquals(sourcesB);
         }
 
         private static SelectionSourceCollection BuildSideSources(
@@ -585,10 +651,10 @@ namespace NavisCoord
                 totalAfter += after;
                 before.TryGetValue(name, out var wasCount);
                 var status = test.Status.ToString();
-                // "Ran" is the only status that proves the test executed;
-                // counting a test that stayed New as run is exactly the false
-                // green this step exists to avoid.
-                if (!string.Equals(status, "New", StringComparison.OrdinalIgnoreCase)) ranOk++;
+                // Only Complete proves a finished run. Old means its inputs
+                // changed since the last run and Partial means the operation
+                // did not finish; both used to be counted as a false green.
+                if (test.Status == ClashTestStatus.Complete) ranOk++;
 
                 perTest.Add(new Dictionary<string, object>
                 {
@@ -606,8 +672,8 @@ namespace NavisCoord
             result.FingerprintAfter = DocumentContext.Fingerprint(doc);
             if (result.Failed > 0)
             {
-                result.Warn(result.Failed + " test(s) siguen en estado New tras la corrida: " +
-                            "revisa que sus selecciones no estén vacías.");
+                result.Warn(result.Failed + " test(s) no quedaron en estado Complete tras la corrida " +
+                            "(New, Old o Partial no cuentan como ejecución verificada).");
             }
             return result.ToJson();
         }
@@ -930,15 +996,15 @@ namespace NavisCoord
                 FingerprintBefore = DocumentContext.Fingerprint(doc)
             };
 
-            var rulesPayload = ExtractRules(profile);
-            if (rulesPayload == null)
+            var rulesDefinition = ExtractRules(profile);
+            if (rulesDefinition == null)
             {
                 result.Detail["note"] = "El perfil no define reglas residuales.";
                 result.FingerprintAfter = result.FingerprintBefore;
                 return result.ToJson();
             }
 
-            if (Json.Arr(rulesPayload, "pairs").Count == 0)
+            if (Json.Arr(rulesDefinition, "pairs").Count == 0)
             {
                 // With the current standard the exclusions live in the tests'
                 // own selections, so an empty 'pairs' is the NORMAL state, not
@@ -950,13 +1016,16 @@ namespace NavisCoord
                 return result.ToJson();
             }
 
-            if (Json.Bool(rulesPayload, "run_tests", false))
+            if (Json.Bool(rulesDefinition, "run_tests", false))
             {
                 job?.Phasing("corriendo tests antes del triaje");
                 doc.GetClash().TestsData.TestsRunAllTests();
             }
 
             job?.Phasing("aplicando reglas");
+            // Never mutate ActiveProfile.Content: the checksum attached to a
+            // job must continue to identify the exact bytes it executes.
+            var rulesPayload = Json.ParseObject(Json.Write(rulesDefinition));
             rulesPayload["dry_run"] = false;
             rulesPayload["sets_index"] = BuildSetsIndex(profile);
             var applied = WriteHandlers.ApplyIgnoreRules(rulesPayload);
