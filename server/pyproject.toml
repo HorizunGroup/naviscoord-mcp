@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "naviscoord"
-version = "0.3.1"
+version = "0.4.0"
 description = "Coordination intelligence for Autodesk Navisworks, exposed over MCP"
 # README, LICENSE and NOTICE all live one level up, at the repository root,
 # and setuptools will not reach outside the project directory for them.
@@ -26,7 +26,6 @@ classifiers = [
     "Environment :: Win32 (MS Windows)",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -36,14 +35,6 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
 ]
-
-[project.urls]
-Homepage = "https://github.com/HorizunGroup/naviscoord-mcp"
-Documentation = "https://github.com/HorizunGroup/naviscoord-mcp#readme"
-Issues = "https://github.com/HorizunGroup/naviscoord-mcp/issues"
-Discussions = "https://github.com/HorizunGroup/naviscoord-mcp/discussions"
-Changelog = "https://github.com/HorizunGroup/naviscoord-mcp/blob/main/CHANGELOG.md"
-Source = "https://github.com/HorizunGroup/naviscoord-mcp"
 
 # The analysis engine deliberately has NO dependencies: it is pure Python, so
 # it runs anywhere and cannot be broken by a wheel that lags a new release.
@@ -65,6 +56,14 @@ dev = ["pytest>=7.0"]
 [project.scripts]
 naviscoord = "naviscoord.__main__:main"
 naviscoord-mcp = "naviscoord.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/HorizunGroup/naviscoord-mcp"
+Documentation = "https://github.com/HorizunGroup/naviscoord-mcp#readme"
+Issues = "https://github.com/HorizunGroup/naviscoord-mcp/issues"
+Discussions = "https://github.com/HorizunGroup/naviscoord-mcp/discussions"
+Changelog = "https://github.com/HorizunGroup/naviscoord-mcp/blob/main/CHANGELOG.md"
+Source = "https://github.com/HorizunGroup/naviscoord-mcp"
 
 [tool.setuptools]
 # Every package listed by name. `naviscoord.profiles` carries no code — it is

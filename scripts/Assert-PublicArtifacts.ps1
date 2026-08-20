@@ -21,7 +21,8 @@
     to a naive text search.
 
 .PARAMETER Path
-    Files to inspect. Directories are searched for *.dll and *.pdb.
+    Files to inspect. Directories are scanned recursively in their entirety;
+    a release guard must cover layouts, profiles and images as well as DLLs.
 
 .PARAMETER SelfTest
     Builds synthetic files with and without each forbidden shape and asserts
@@ -161,12 +162,12 @@ $files = @()
 foreach ($p in $Path) {
     if (-not (Test-Path $p)) { throw "No existe: $p" }
     if ((Get-Item $p).PSIsContainer) {
-        $files += Get-ChildItem -Path $p -Recurse -File -Include *.dll, *.pdb
+        $files += Get-ChildItem -Path $p -Recurse -File
     }
     else { $files += Get-Item $p }
 }
 
-if (-not $files) { throw "No se encontro ningun .dll ni .pdb bajo: $($Path -join ', ')" }
+if (-not $files) { throw "No se encontro ningun archivo bajo: $($Path -join ', ')" }
 
 $all = @()
 foreach ($f in $files) {
@@ -179,7 +180,16 @@ foreach ($f in $files) {
         }
         continue
     }
-    $all += Test-ArtifactBytes -Bytes ([System.IO.File]::ReadAllBytes($f.FullName)) -Name $f.Name
+    $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+    if ($f.Extension -eq '.json') {
+        # JSON escapes every backslash. Scanning the encoded spelling turns a
+        # harmless `%LOCALAPPDATA%\\NavisCoord` into something that resembles
+        # a UNC path. Decode the escaping first; a real JSON UNC
+        # (`\\\\server\\share`) still becomes `\\server\share` and is caught.
+        $text = [System.Text.Encoding]::UTF8.GetString($bytes).Replace('\\', '\')
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+    }
+    $all += Test-ArtifactBytes -Bytes $bytes -Name $f.Name
 }
 
 if ($all) {

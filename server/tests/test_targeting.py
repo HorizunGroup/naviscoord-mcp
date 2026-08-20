@@ -492,7 +492,9 @@ class TestMutationsRefuseAnAmbiguousTarget:
     ) -> None:
         """The guard refuses ambiguity, not writing."""
         mcp_server.STATE.bridge.pin("torre-a")
-        result = mcp_server.navis_run_tests(dry_run=False)
+        result = mcp_server.navis_run_tests(
+            dry_run=False, expected_document_fingerprint="fp-a"
+        )
         assert two_instances.routes == ["clash/run"]
         assert result["document_fingerprint_before"] == "fp-a"
 

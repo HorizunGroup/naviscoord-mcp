@@ -37,7 +37,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $Repository = 'HorizunGroup/naviscoord-mcp'
-$ManagedFiles = @('NavisCoord.dll', 'LICENSE', 'NOTICE', 'example-profile.json')
+$ManagedFiles = @(
+    'NavisCoord.dll',
+    'NavisCoordRibbon.xaml',
+    'en-US/NavisCoordRibbon.xaml',
+    'nc_16.png',
+    'nc_32.png',
+    'LICENSE',
+    'NOTICE',
+    'example-profile.json'
+)
 
 function Assert-Windows {
     if ($env:OS -ne 'Windows_NT') {
@@ -155,6 +164,7 @@ function Expand-ManagedArchive {
                 $entry = $zip.GetEntry($name)
                 if ($null -eq $entry) { throw "Falta '$name' después de validar el ZIP." }
                 $destination = Join-Path $Stage $name
+                [IO.Directory]::CreateDirectory((Split-Path $destination -Parent)) | Out-Null
                 $source = $entry.Open()
                 $target = [IO.File]::Open($destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
                 try { $source.CopyTo($target) }
@@ -174,6 +184,7 @@ function Publish-ManagedFiles {
             $target = Join-Path $Destination $name
             if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Falta el archivo preparado '$name'." }
 
+            [IO.Directory]::CreateDirectory((Split-Path $target -Parent)) | Out-Null
             $incoming = "$target.new-$([guid]::NewGuid().ToString('N'))"
             [IO.File]::Copy($source, $incoming, $false)
             $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
@@ -182,7 +193,10 @@ function Publish-ManagedFiles {
 
             $existed = Test-Path -LiteralPath $target -PathType Leaf
             $backup = if ($existed) { "$target.bak-$([guid]::NewGuid().ToString('N'))" } else { $null }
-            $journal += [pscustomobject]@{ Name = $name; Target = $target; Existed = $existed; Backup = $backup }
+            $journal += [pscustomobject]@{
+                Name = $name; Target = $target; Incoming = $incoming
+                Existed = $existed; Backup = $backup
+            }
             if ($existed) {
                 [IO.File]::Replace($incoming, $target, $backup, $true)
             } else {
@@ -207,8 +221,9 @@ function Publish-ManagedFiles {
     } finally {
         foreach ($row in $journal) {
             if ($row.Backup -and (Test-Path -LiteralPath $row.Backup)) { [IO.File]::Delete($row.Backup) }
-            Get-ChildItem -LiteralPath $Destination -Filter "$($row.Name).new-*" -File -ErrorAction SilentlyContinue |
-                ForEach-Object { [IO.File]::Delete($_.FullName) }
+            if ($row.Incoming -and (Test-Path -LiteralPath $row.Incoming)) {
+                [IO.File]::Delete($row.Incoming)
+            }
         }
     }
 }
@@ -257,7 +272,7 @@ function Invoke-SelfTest {
         $good = Join-Path $root 'good.zip'
         New-TestZip $good
         Assert-ArchiveShape $good
-        Check $true 'acepta el ZIP con exactamente cuatro archivos permitidos'
+        Check $true "acepta el ZIP con exactamente $($ManagedFiles.Count) archivos permitidos"
 
         $bad = Join-Path $root 'bad.zip'
         New-TestZip $bad -Unsafe
@@ -267,14 +282,14 @@ function Invoke-SelfTest {
 
         $stage = Join-Path $root 'stage'
         Expand-ManagedArchive $good $stage
-        Check (@(Get-ChildItem -LiteralPath $stage -File).Count -eq 4) 'extrae solo los archivos administrados'
+        Check (@(Get-ChildItem -LiteralPath $stage -Recurse -File).Count -eq $ManagedFiles.Count) 'extrae solo los archivos administrados'
 
         $destination = Join-Path $root 'plugin'
         [IO.Directory]::CreateDirectory($destination) | Out-Null
         [IO.File]::WriteAllText((Join-Path $destination 'perfil-del-usuario.json'), 'no tocar')
         Publish-ManagedFiles $stage $destination
         Check ((Get-Content -LiteralPath (Join-Path $destination 'perfil-del-usuario.json') -Raw) -eq 'no tocar') 'conserva archivos ajenos y perfiles del usuario'
-        Check (@($ManagedFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $destination $_)) }).Count -eq 0) 'publica los cuatro archivos del release'
+        Check (@($ManagedFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $destination $_)) }).Count -eq 0) 'publica el DLL, la cinta, los iconos y los metadatos del release'
 
         [IO.File]::WriteAllText((Join-Path $destination 'NavisCoord.dll'), 'viejo')
         Publish-ManagedFiles $stage $destination

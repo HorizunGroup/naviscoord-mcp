@@ -957,10 +957,12 @@ def navis_build_sets(
                 "source_files": sources,
             }
         )
-    return STATE.bridge.build_sets(
+    payload = STATE.bridge.build_sets(
         disciplines, prefix, dry_run, fingerprint=fingerprint,
         idempotency_key=idempotency_key,
     )
+    payload.setdefault("document_fingerprint_before", fingerprint)
+    return payload
 
 
 @mcp.tool()
@@ -979,10 +981,12 @@ def navis_build_clash_matrix(
     if not pairs:
         return {"error": "El perfil no define clash_matrix.pairs."}
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
-    return STATE.bridge.build_matrix(
+    payload = STATE.bridge.build_matrix(
         pairs, prefix, dry_run, replace_existing,
         fingerprint=fingerprint, idempotency_key=idempotency_key,
     )
+    payload.setdefault("document_fingerprint_before", fingerprint)
+    return payload
 
 
 @mcp.tool()
@@ -1023,9 +1027,11 @@ def navis_run_tests(
             "requested": len(selected), "applied": 0, "verified": 0,
             "tests": selected,
         }
-    return STATE.bridge.run_tests(
+    payload = STATE.bridge.run_tests(
         tests, fingerprint=fingerprint, idempotency_key=idempotency_key,
     )
+    payload.setdefault("document_fingerprint_before", fingerprint)
+    return payload
 
 
 # ------------------------------------------------------------- analysis

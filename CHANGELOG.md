@@ -5,6 +5,53 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-20
+
+Esta versión combina la superficie visual y operativa de 0.3.1 con una
+revisión profunda de seguridad, consistencia del análisis, instalación y
+presentación pública. Cambian varias firmas mutantes al añadir `dry_run`,
+fingerprint e idempotencia; por eso es una versión menor y no un parche.
+
+### Added
+
+- Instalador de releases para principiantes con detección de Navisworks
+  2024–2026, verificación de `SHA256SUMS.txt`, validación estricta del ZIP,
+  publicación atómica y rollback.
+- README bilingüe, quick starts, benchmark público, plan de lanzamiento,
+  `llms.txt`, imagen social y metadatos de distribución.
+- Bundles de handoff publicados bajo lock, manifest de ejecución, staging y
+  rollback del conjunto completo.
+- Pruebas estructurales para handles de Clash frescos y publicación semántica
+  de Selection Sets sin ventana `Remove` + `AddCopy`.
+
+### Fixed
+
+- Las causas raíz y los paquetes usan identidades estables después de ordenar
+  las incidencias; una causa ya no recibe decisiones de otro cluster.
+- Los paquetes pueden solaparse como contexto, pero cada decisión tiene un
+  único dueño determinista y no se cuenta dos veces.
+- El límite espacial de clustering se cumple incluso cuando DBSCAN devuelve
+  una sola partición sobredimensionada.
+- Perfiles con `NaN`, infinitos, tipos incompatibles o parámetros que provocan
+  divisiones por cero se rechazan antes del motor.
+- Las mutaciones heredadas, selección, apariencia y guardado exigen identidad
+  explícita, empiezan en `dry_run` y retornan el envelope común.
+- La admisión de trabajos reserva documento e idempotencia atómicamente y
+  congela payload y perfil antes de entrar en cola.
+- El parser HTTP aplica JSON estricto y profundidad acotada; errores de dominio
+  reciben códigos HTTP coherentes.
+- Los wrappers de `ClashResult` y `ClashTest` nunca sobreviven a una mutación
+  del árbol; cada edición re-resuelve el GUID en la generación vigente.
+- Instalación, release, checks de artefactos y launcher endurecidos contra
+  copias parciales, runtimes incompatibles, carreras y rutas no autorizadas.
+
+### Changed
+
+- El posicionamiento público pasa de “control MCP” a inteligencia de
+  coordinación: clashes → incidencias → causas raíz → paquetes verificables.
+- CI cubre Python 3.10–3.14, mínimos declarados, tags de release, dependencias
+  hash-locked y validaciones de packaging en Windows y Linux.
+
 ## [0.3.1] — 2026-08-16
 
 Parche: ninguna herramienta ni ruta cambió de forma, y los argumentos que se
@@ -356,7 +403,8 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
-[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.4.0
 [0.3.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.1
 [0.3.0]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.0
 [0.2.3]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.3

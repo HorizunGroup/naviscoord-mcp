@@ -68,6 +68,12 @@ $project   = @{
 $legal        = @('LICENSE', 'NOTICE')
 $profileSrc   = Join-Path $repoRoot 'profiles\example-profile.json'
 $profileName  = 'example-profile.json'
+$ribbonFiles  = @(
+    'NavisCoordRibbon.xaml',
+    'en-US/NavisCoordRibbon.xaml',
+    'nc_16.png',
+    'nc_32.png'
+)
 $guard        = Join-Path $PSScriptRoot 'Assert-PublicArtifacts.ps1'
 
 # ------------------------------------------------------- fecha reproducible
@@ -304,17 +310,28 @@ foreach ($f in $found) {
     # haya dejado aqui: un perfil afinado es trabajo de un coordinador y este
     # script no sabe reconstruirlo.
     New-Item -ItemType Directory -Force -Path $packDir | Out-Null
-    $owned = @($project.Dll, '*.pdb', $profileName) + $legal
+    $owned = @($project.Dll, '*.pdb', $profileName, 'NavisCoordRibbon.xaml', 'nc_16.png', 'nc_32.png') + $legal
     foreach ($pattern in $owned) {
         Get-ChildItem -Path $packDir -Filter $pattern -File -ErrorAction SilentlyContinue |
             ForEach-Object { [System.IO.File]::Delete($_.FullName) }
     }
+    $localisedLayout = Join-Path $packDir 'en-US\NavisCoordRibbon.xaml'
+    if (Test-Path -LiteralPath $localisedLayout) { [System.IO.File]::Delete($localisedLayout) }
 
     Copy-Item $builtDll -Destination $packDir -Force
     foreach ($name in $legal) {
         Copy-Item (Join-Path $repoRoot $name) -Destination $packDir -Force
     }
     Copy-Item $profileSrc -Destination $packDir -Force
+    foreach ($relative in $ribbonFiles) {
+        $source = Join-Path $outDir $relative
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "[$v] el build no dejó el recurso de cinta $relative en $outDir"
+        }
+        $destination = Join-Path $packDir $relative
+        New-Item -ItemType Directory -Force -Path (Split-Path $destination -Parent) | Out-Null
+        Copy-Item -LiteralPath $source -Destination $destination -Force
+    }
 
     # Verificacion: comprobar lo que quedo en disco, no asumir que las copias
     # funcionaron.
@@ -323,18 +340,19 @@ foreach ($f in $found) {
     if ((Get-FileHash $builtDll -Algorithm SHA256).Hash -ne (Get-FileHash $packedDll -Algorithm SHA256).Hash) {
         throw "[$v] el DLL empaquetado no coincide en SHA-256 con el compilado."
     }
-    foreach ($name in ($legal + $profileName)) {
+    foreach ($name in ($legal + $profileName + $ribbonFiles)) {
         if (-not (Test-Path (Join-Path $packDir $name))) { throw "[$v] falta $name en $packDir" }
     }
 
     # Nada privado puede viajar en el paquete. Un .pdb ya NO es tolerado: el
     # build de Release no emite simbolos, asi que uno aqui solo puede venir de
     # una copia manual o de un build de Debug mal dirigido.
-    $allowed = @($project.Dll, $profileName) + $legal
+    $allowed = @($project.Dll, $profileName) + $legal + $ribbonFiles
+    $allowedDirectories = @('en-US')
     $stray = Get-ChildItem $packDir -Recurse -Force | Where-Object {
-        if ($_.PSIsContainer) { return $true }
-        $relative = $_.FullName.Substring($packDir.Length).TrimStart('\','/')
-        return $relative.Contains('\') -or $relative.Contains('/') -or $relative -notin $allowed
+        $relative = $_.FullName.Substring($packDir.Length).TrimStart('\','/').Replace('\', '/')
+        if ($_.PSIsContainer) { return $relative -notin $allowedDirectories }
+        return $relative -notin $allowed
     }
     if ($stray) {
         throw "[$v] el paquete lleva rutas inesperadas: $(($stray | ForEach-Object { $_.FullName.Substring($packDir.Length).TrimStart('\','/') }) -join ', ')"
