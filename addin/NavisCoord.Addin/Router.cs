@@ -28,6 +28,16 @@ namespace NavisCoord
         /// </remarks>
         private readonly Dictionary<string, Func<Dictionary<string, object>, JobManager.Job, Dictionary<string, object>>> _jobRoutes;
 
+        private static readonly HashSet<string> MutationRoutes = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            "sets/build", "sets/build_search", "clash/matrix", "clash/run",
+            "clash/group", "clash/status", "clash/apply_rules",
+            "viewpoints/save", "appearance/color", "appearance/reset", "selection/set",
+            "workflow/configure", "workflow/run", "workflow/group_levels", "workflow/rules",
+            "document/save", "document/save_as"
+        };
+
         public Router()
         {
             _routes = new Dictionary<string, Func<Dictionary<string, object>, Dictionary<string, object>>>(
@@ -76,12 +86,7 @@ namespace NavisCoord
                 ["workflow/rules"] = WorkflowHandlers.Rules,
                 ["document/save"] = SaveHandlers.Save,
                 ["document/save_as"] = SaveHandlers.SaveAs,
-                ["clash/run"] = (p, _) => WriteHandlers.RunTests(p),
-                ["clash/group"] = (p, _) => WriteHandlers.ApplyGroups(p),
-                ["clash/apply_rules"] = (p, _) => WriteHandlers.ApplyIgnoreRules(p),
-                ["sets/build"] = (p, _) => WriteHandlers.BuildSearchSets(p),
-                ["sets/build_search"] = (p, _) => WriteHandlers.BuildCriteriaSets(p),
-                ["clash/matrix"] = (p, _) => WriteHandlers.BuildClashMatrix(p)
+                ["clash/run"] = (p, _) => WriteHandlers.RunTests(p)
             };
         }
 
@@ -108,6 +113,9 @@ namespace NavisCoord
         public IEnumerable<string> Routes => _routes.Keys;
 
         public bool CanRunAsJob(string route) => _jobRoutes.ContainsKey(route ?? string.Empty);
+
+        public static bool IsMutation(string route)
+            => MutationRoutes.Contains(route ?? string.Empty);
 
         /// <summary>Whether a started job on this route can still be stopped.</summary>
         public static bool IsCancellable(string route)
@@ -136,7 +144,13 @@ namespace NavisCoord
                     ["available"] = _routes.Keys.OrderBy(k => k).ToList()
                 };
             }
-            return handler(payload ?? new Dictionary<string, object>());
+            payload = payload ?? new Dictionary<string, object>();
+            if (!IsMutation(route)) return handler(payload);
+
+            var before = DocumentContext.Fingerprint(Application.ActiveDocument);
+            var raw = handler(payload);
+            var after = DocumentContext.Fingerprint(Application.ActiveDocument);
+            return LegacyMutationEnvelope.Wrap(route, payload, raw, before, after);
         }
 
         /// <summary>Everything the caller needs to negotiate before calling.</summary>
@@ -289,11 +303,13 @@ namespace NavisCoord
                 catch (Exception ex)
                 {
                     categories["(lectura interrumpida)"] = 0;
-                    models.Add(new Dictionary<string, object> { ["read_error"] = ex.Message });
+                    // Keep one row per model. A separate error row broke the
+                    // cardinality and shifted every later model index.
+                    categories["(error: " + ex.GetType().Name + ")"] = 0;
                 }
 
                 var box = NavisContext.SafeBoundingBox(model.RootItem);
-                models.Add(new Dictionary<string, object>
+                var row = new Dictionary<string, object>
                 {
                     ["index"] = (double)i,
                     ["source_file"] = System.IO.Path.GetFileName(
@@ -308,7 +324,12 @@ namespace NavisCoord
                         .OrderByDescending(kv => kv.Value)
                         .Take(25)
                         .ToDictionary(kv => kv.Key, kv => (object)(double)kv.Value)
-                });
+                };
+                if (categories.Keys.Any(k => k.StartsWith("(error: ", StringComparison.Ordinal)))
+                {
+                    row["read_error"] = "La lectura del árbol se interrumpió; consulta top_categories para el tipo.";
+                }
+                models.Add(row);
             }
 
             return new Dictionary<string, object>
@@ -369,7 +390,8 @@ namespace NavisCoord
             var doc = RequireDocument();
             var scale = NavisContext.MetreScale(doc);
             NavisContext.ResetCaches();
-
+            try
+            {
             var wanted = new List<string>(NavisContext.BaseProperties);
             wanted.AddRange(Json.StrArr(payload, "properties"));
 
@@ -427,6 +449,14 @@ namespace NavisCoord
                 ["clashes"] = clashes,
                 ["truncated"] = truncated
             };
+            }
+            finally
+            {
+                // ModelItem wrappers hold native tree handles. Keeping them
+                // after an export retains the whole model graph and risks
+                // stale wrappers after the next document change.
+                NavisContext.ResetCaches();
+            }
         }
 
         private static List<object> DescribeModels(Document doc)

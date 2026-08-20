@@ -109,7 +109,7 @@ namespace NavisCoord
 
             var capability = DocumentContext.SaveCapability(doc);
             var overwrite = Json.Bool(payload, "overwrite", false);
-            var dryRun = Json.Bool(payload, "dry_run", false);
+            var dryRun = Json.Bool(payload, "dry_run", true);
             result.DryRun = dryRun;
 
             string destination;
@@ -160,7 +160,8 @@ namespace NavisCoord
 
             result.Detail["path"] = destination;
             result.Detail["capability"] = capability;
-            result.Detail["was_modified"] = DocumentContext.SafeIsModified(doc);
+            var wasModified = DocumentContext.SafeIsModified(doc);
+            result.Detail["was_modified"] = wasModified;
 
             if (dryRun)
             {
@@ -218,7 +219,7 @@ namespace NavisCoord
             }
 
             job?.Phasing("verificando", "Releyendo el archivo escrito");
-            var verification = Verify(doc, destination, beforeStamp);
+            var verification = Verify(doc, destination, beforeStamp, wasModified, saveAs, written);
             result.Detail["verification"] = verification;
             result.FingerprintAfter = DocumentContext.Fingerprint(doc);
 
@@ -277,7 +278,8 @@ namespace NavisCoord
         /// Proof that a file was written, gathered from disk and the document.
         /// </summary>
         private static Dictionary<string, object> Verify(
-            Document doc, string destination, FileSnapshot before)
+            Document doc, string destination, FileSnapshot before,
+            bool wasModifiedBefore, bool saveAs, bool written)
         {
             var problems = new List<object>();
             var payload = new Dictionary<string, object>
@@ -305,22 +307,36 @@ namespace NavisCoord
                 {
                     problems.Add("El archivo quedó vacío (0 bytes).");
                 }
-                if (before.Existed && info.LastWriteTimeUtc <= before.LastWriteUtc && info.Length == before.Length)
+                var changed = !before.Existed || info.LastWriteTimeUtc > before.LastWriteUtc ||
+                              info.Length != before.Length;
+                payload["filesystem_changed"] = changed;
+                payload["was_modified_before"] = wasModifiedBefore;
+                // Same timestamp and size is not a failure by itself: a save
+                // of an already-clean document is a legitimate no-op, and
+                // filesystems can have coarse timestamps. The authoritative
+                // evidence is TrySaveFile + a valid file + the document's
+                // post-save state. Keep the ambiguity visible for diagnosis.
+                if (!changed && wasModifiedBefore)
                 {
-                    // A save that changed nothing on disk is the signature of
-                    // a silent no-op, and it is exactly what "it said it
-                    // worked" used to hide.
-                    problems.Add(
-                        "El archivo no cambió: misma marca de tiempo y mismo tamaño que antes de guardar.");
+                    payload["filesystem_change_indeterminate"] = true;
                 }
             }
 
             string current = string.Empty;
             try { current = doc.FileName ?? string.Empty; } catch { /* reported below */ }
             payload["document_path_after"] = current;
-            payload["document_points_at_destination"] =
-                string.Equals(Path.GetFullPath(current.Length == 0 ? "." : current),
-                    Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase);
+            var pointsAtDestination = string.Equals(
+                Path.GetFullPath(current.Length == 0 ? "." : current),
+                Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase);
+            payload["document_points_at_destination"] = pointsAtDestination;
+            if (!pointsAtDestination)
+            {
+                problems.Add((saveAs ? "Save As" : "Save") +
+                    " devolvió, pero el documento activo no apunta a la ruta verificada.");
+            }
+
+            payload["navisworks_reported_written"] = written;
+            if (!written) problems.Add("Navisworks no confirmó la escritura.");
 
             var modified = DocumentContext.SafeIsModified(doc);
             payload["modified_after"] = modified;

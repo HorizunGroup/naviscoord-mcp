@@ -222,7 +222,13 @@ class Bridge:
         refreshed = False
         while True:
             session = self.session
-            body = json.dumps(payload or {}).encode("utf-8")
+            outbound = dict(payload or {})
+            # The token authenticates the caller; these fields bind the
+            # request to the exact registry entry it selected.  The add-in
+            # rejects mutations if either identity changed before execution.
+            outbound.setdefault("session_id", session.session_id)
+            outbound.setdefault("target_id", session.target_id)
+            body = json.dumps(outbound).encode("utf-8")
             request = urllib.request.Request(
                 f"{session.base_url}/{route.lstrip('/')}",
                 data=body,
@@ -235,7 +241,17 @@ class Bridge:
 
             try:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    return json.loads(response.read().decode("utf-8"))
+                    result = json.loads(response.read().decode("utf-8"))
+                    if isinstance(result, dict):
+                        answered_by = str(result.get("session_id") or "")
+                        if answered_by and answered_by != session.session_id:
+                            self.invalidate()
+                            raise BridgeError(
+                                "El puerto respondió desde otra sesión de Navisworks.",
+                                hint="El PID o el puerto se reutilizó; vuelve a seleccionar el target.",
+                                detail={"expected": session.session_id, "actual": answered_by},
+                            )
+                    return result
             except urllib.error.HTTPError as exc:
                 detail = _safe_json(exc)
                 if exc.code == 401:
@@ -475,23 +491,30 @@ class Bridge:
         payload.update(options or {})
         return self.call("clash/image", payload)
 
-    def build_sets(self, disciplines: list[dict[str, Any]], prefix: str, dry_run: bool) -> dict[str, Any]:
+    def build_sets(
+        self, disciplines: list[dict[str, Any]], prefix: str, dry_run: bool,
+        fingerprint: str = "", idempotency_key: str = "",
+    ) -> dict[str, Any]:
         return self.call(
             "sets/build",
-            {"disciplines": disciplines, "prefix": prefix, "dry_run": dry_run},
+            _guarded(
+                {"disciplines": disciplines, "prefix": prefix, "dry_run": dry_run},
+                fingerprint, idempotency_key,
+            ),
         )
 
     def build_matrix(
-        self, pairs: list[dict[str, Any]], prefix: str, dry_run: bool, replace_existing: bool = False
+        self, pairs: list[dict[str, Any]], prefix: str, dry_run: bool,
+        replace_existing: bool = False, fingerprint: str = "", idempotency_key: str = "",
     ) -> dict[str, Any]:
         return self.call(
             "clash/matrix",
-            {
+            _guarded({
                 "pairs": pairs,
                 "prefix": prefix,
                 "dry_run": dry_run,
                 "replace_existing": replace_existing,
-            },
+            }, fingerprint, idempotency_key),
         )
 
     def list_sets(self) -> dict[str, Any]:
@@ -516,8 +539,14 @@ class Bridge:
             return self.submit_job(route, payload)
         return self.call(route, payload)
 
-    def run_tests(self, tests: list[str] | None = None) -> dict[str, Any]:
-        return self.call("clash/run", {"tests": tests or []})
+    def run_tests(
+        self, tests: list[str] | None = None, *, fingerprint: str = "",
+        idempotency_key: str = "",
+    ) -> dict[str, Any]:
+        return self.call(
+            "clash/run",
+            _guarded({"tests": tests or [], "dry_run": False}, fingerprint, idempotency_key),
+        )
 
     def apply_groups(
         self,
@@ -560,18 +589,35 @@ class Bridge:
             _guarded({"viewpoints": viewpoints, "dry_run": dry_run}, fingerprint, idempotency_key),
         )
 
-    def color(self, path_ids: list[str], rgb: tuple[int, int, int], transparency: float = -1.0) -> dict[str, Any]:
+    def color(
+        self, path_ids: list[str], rgb: tuple[int, int, int],
+        transparency: float = -1.0, *, fingerprint: str = "",
+        idempotency_key: str = "",
+    ) -> dict[str, Any]:
         r, g, b = rgb
         return self.call(
             "appearance/color",
-            {"path_ids": path_ids, "r": r, "g": g, "b": b, "transparency": transparency},
+            _guarded(
+                {"path_ids": path_ids, "r": r, "g": g, "b": b,
+                 "transparency": transparency, "dry_run": False},
+                fingerprint, idempotency_key,
+            ),
         )
 
-    def reset_appearance(self, path_ids: list[str] | None = None) -> dict[str, Any]:
-        return self.call("appearance/reset", {"path_ids": path_ids or []})
+    def reset_appearance(
+        self, path_ids: list[str] | None = None, *, fingerprint: str = "",
+        idempotency_key: str = "",
+    ) -> dict[str, Any]:
+        return self.call(
+            "appearance/reset",
+            _guarded({"path_ids": path_ids or [], "dry_run": False}, fingerprint, idempotency_key),
+        )
 
-    def select(self, path_ids: list[str]) -> dict[str, Any]:
-        return self.call("selection/set", {"path_ids": path_ids})
+    def select(self, path_ids: list[str], *, fingerprint: str = "") -> dict[str, Any]:
+        return self.call(
+            "selection/set",
+            _guarded({"path_ids": path_ids, "dry_run": False}, fingerprint, ""),
+        )
 
 
 def _guarded(payload: dict[str, Any], fingerprint: str, idempotency_key: str) -> dict[str, Any]:

@@ -71,6 +71,74 @@ namespace NavisCoord
                string.Equals(expected.Trim(), actual, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Fail-closed identity guard shared by every HTTP mutation.</summary>
+    internal static class MutationTargeting
+    {
+        public static Dictionary<string, object> Validate(
+            IDictionary<string, object> payload,
+            string actualFingerprint,
+            string actualSessionId,
+            string operation)
+        {
+            var expectedFingerprint = Json.Str(payload, "expected_document_fingerprint");
+            var expectedSession = Json.Str(payload, "session_id");
+            var expectedTarget = Json.Str(payload, "target_id");
+
+            if (string.IsNullOrWhiteSpace(expectedFingerprint) ||
+                string.IsNullOrWhiteSpace(expectedSession) ||
+                string.IsNullOrWhiteSpace(expectedTarget))
+            {
+                return Failure(operation, "mutation_target_required",
+                    "Toda mutación debe declarar expected_document_fingerprint, session_id y target_id.",
+                    actualFingerprint);
+            }
+            if (!string.Equals(expectedSession, actualSessionId, StringComparison.Ordinal) ||
+                !string.Equals(expectedTarget, actualSessionId, StringComparison.Ordinal))
+            {
+                return Failure(operation, "session_changed",
+                    "La mutación fue dirigida a otra instancia de Navisworks. No se tocó el documento.",
+                    actualFingerprint);
+            }
+            if (!DocumentFingerprint.Matches(expectedFingerprint, actualFingerprint))
+            {
+                return Failure(operation, "document_changed",
+                    "El documento activo ya no coincide con la huella esperada. No se tocó nada.",
+                    actualFingerprint);
+            }
+            return null;
+        }
+
+        public static Dictionary<string, object> ValidateSession(
+            IDictionary<string, object> payload, string actualSessionId, string operation)
+        {
+            var expectedSession = Json.Str(payload, "session_id");
+            var expectedTarget = Json.Str(payload, "target_id");
+            if (!string.Equals(expectedSession, actualSessionId, StringComparison.Ordinal) ||
+                !string.Equals(expectedTarget, actualSessionId, StringComparison.Ordinal))
+            {
+                return Failure(operation, "session_changed",
+                    "La petición no está dirigida a esta instancia de Navisworks.", string.Empty);
+            }
+            return null;
+        }
+
+        private static Dictionary<string, object> Failure(
+            string operation, string code, string detail, string actualFingerprint)
+            => new Dictionary<string, object>
+            {
+                ["operation"] = operation ?? string.Empty,
+                ["status"] = "failed",
+                ["error"] = code,
+                ["detail"] = detail,
+                ["document_fingerprint_before"] = actualFingerprint ?? string.Empty,
+                ["document_fingerprint_after"] = actualFingerprint ?? string.Empty,
+                ["requested"] = 0.0,
+                ["applied"] = 0.0,
+                ["verified"] = 0.0,
+                ["failed"] = 0.0
+            };
+    }
+
     /// <summary>
     /// The one response shape every mutation returns.
     /// </summary>
@@ -96,7 +164,7 @@ namespace NavisCoord
         public int Requested;
         public int Applied;
         public int Verified;
-        public int Failed;
+        public int Failed = 0;
         public bool DryRun;
         public string VerificationSource = "document_reread";
         public readonly List<object> Warnings = new List<object>();
@@ -271,6 +339,126 @@ namespace NavisCoord
             // key contains the separator itself.
             return raw.Length + ":" + raw + "|" + op.Length + ":" + op +
                    "|" + fp.Length + ":" + fp;
+        }
+    }
+
+    /// <summary>
+    /// Converts the remaining legacy write-handler counters into the one
+    /// public mutation envelope. It never invents verification: operations
+    /// that cannot re-read their effect stay failed/partial instead of being
+    /// called completed merely because the API call returned.
+    /// </summary>
+    internal static class LegacyMutationEnvelope
+    {
+        public static Dictionary<string, object> Wrap(
+            string route,
+            IDictionary<string, object> request,
+            Dictionary<string, object> raw,
+            string fingerprintBefore,
+            string fingerprintAfter)
+        {
+            if (raw != null && raw.ContainsKey("status")) return raw;
+            raw = raw ?? new Dictionary<string, object>();
+            var result = new MutationResult(route)
+            {
+                DryRun = Json.Bool(raw, "dry_run", Json.Bool(request, "dry_run", false)),
+                FingerprintBefore = fingerprintBefore ?? string.Empty,
+                FingerprintAfter = fingerprintAfter ?? fingerprintBefore ?? string.Empty
+            };
+            foreach (var pair in raw) result.Detail[pair.Key] = pair.Value;
+            if (raw.ContainsKey("error") ||
+                (raw.TryGetValue("ok", out var ok) && ok is bool accepted && !accepted))
+            {
+                result.Fail(Json.Str(raw, "message", Json.Str(raw, "error", "La operación fue rechazada.")));
+            }
+
+            switch ((route ?? string.Empty).ToLowerInvariant())
+            {
+                case "sets/build":
+                    result.Requested = Count(raw, result.DryRun ? "would_create" : "planned");
+                    result.Applied = Count(raw, "verified_in_document");
+                    result.Verified = result.Applied;
+                    break;
+                case "sets/build_search":
+                    result.Requested = Count(request, "folders");
+                    result.Applied = CountAccepted(raw, "publications");
+                    result.Verified = CountVerified(raw, "verified_in_document");
+                    break;
+                case "clash/matrix":
+                    result.Requested = Count(raw, result.DryRun ? "would_create" : "planned");
+                    result.Applied = (int)Json.Num(raw, "created", 0);
+                    result.Verified = Count(raw, "verified_in_document");
+                    break;
+                case "clash/group":
+                    result.Requested = Sum(raw, result.DryRun ? "would_create" : "groups", "requested");
+                    result.Applied = Sum(raw, "groups", "moved");
+                    result.Verified = Math.Min(result.Applied, Sum(raw, "groups", "verified_children"));
+                    break;
+                case "clash/status":
+                    result.Requested = Count(request, "clash_guids");
+                    result.Applied = (int)Json.Num(raw, "attempted", 0);
+                    result.Verified = (int)Json.Num(raw, "verified_in_document", 0);
+                    result.Failed = (int)Json.Num(raw, "mismatch", 0);
+                    break;
+                case "clash/apply_rules":
+                    result.Requested = (int)Json.Num(raw, "matched", 0);
+                    result.Applied = (int)Json.Num(raw, "edited", 0);
+                    result.Verified = (int)Json.Num(raw, "verified_edited", 0);
+                    break;
+                case "viewpoints/save":
+                    result.Requested = Count(request, "viewpoints");
+                    result.Applied = (int)Json.Num(raw, "attempted", 0);
+                    result.Verified = (int)Json.Num(raw, "verified_added", 0);
+                    break;
+                case "appearance/color":
+                    result.Requested = (int)Json.Num(raw, "unique_requested", Count(request, "path_ids"));
+                    result.Applied = (int)Json.Num(raw, "resolved", 0);
+                    // Navisworks exposes no reliable read-back for permanent
+                    // override colour here. Do not call an unverified call complete.
+                    result.Verified = 0;
+                    break;
+                case "appearance/reset":
+                    result.Requested = Math.Max(1, Count(request, "path_ids"));
+                    result.Applied = result.DryRun ? 0 : result.Requested;
+                    result.Verified = 0;
+                    break;
+                case "selection/set":
+                    result.Requested = (int)Json.Num(raw, "unique_requested", Count(request, "path_ids"));
+                    result.Applied = (int)Json.Num(raw, "selected", 0);
+                    result.Verified = result.Applied;
+                    break;
+                default:
+                    result.Requested = 1;
+                    result.Applied = result.DryRun ? 0 : 1;
+                    result.Verified = 0;
+                    break;
+            }
+            return result.ToJson();
+        }
+
+        private static int Count(IDictionary<string, object> source, string key)
+        {
+            if (source == null || !source.TryGetValue(key, out var value) || value == null) return 0;
+            if (value is List<object> list) return list.Count;
+            if (value is Dictionary<string, object> dictionary) return dictionary.Count;
+            return 0;
+        }
+
+        private static int CountAccepted(IDictionary<string, object> source, string key)
+            => Items(source, key).Count(row => Json.Bool(row, "accepted", false));
+
+        private static int CountVerified(IDictionary<string, object> source, string key)
+            => Items(source, key).Count(row => Json.Bool(row, "verified", false));
+
+        private static int Sum(IDictionary<string, object> source, string key, string field)
+            => Items(source, key).Sum(row => (int)Json.Num(row, field, 0));
+
+        private static IEnumerable<Dictionary<string, object>> Items(
+            IDictionary<string, object> source, string key)
+        {
+            if (source != null && source.TryGetValue(key, out var value) && value is List<object> list)
+                return list.OfType<Dictionary<string, object>>();
+            return Enumerable.Empty<Dictionary<string, object>>();
         }
     }
 }

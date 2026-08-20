@@ -26,11 +26,13 @@
     .\Smoke-AddinSwap.ps1 -Mode Install -Versions 2026
     .\Smoke-AddinSwap.ps1 -Mode Restore -BackupRoot <ruta>
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(ParameterSetName = 'Run', Mandatory = $true)]
     [ValidateSet('Backup', 'Verify', 'Install', 'Restore')]
     [string]$Mode,
+    [Parameter(ParameterSetName = 'SelfTest', Mandatory = $true)]
+    [switch]$SelfTest,
     [string[]]$Versions = @('2026'),
     [string]$BackupRoot
 )
@@ -54,14 +56,202 @@ function Assert-NoNavisworks {
     }
 }
 
+function Resolve-ContainedPath([string]$Root, [string]$Relative) {
+    if ([string]::IsNullOrWhiteSpace($Relative) -or [IO.Path]::IsPathRooted($Relative) -or $Relative.Contains(':')) {
+        throw "ruta relativa hostil en manifiesto: '$Relative'"
+    }
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+    $full = [IO.Path]::GetFullPath((Join-Path $rootFull $Relative))
+    if (-not $full.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "la ruta '$Relative' intenta salir de '$Root'"
+    }
+    return $full
+}
+
+function Resolve-OwnedBackup([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'falta -BackupRoot' }
+    $full = [IO.Path]::GetFullPath($Path)
+    $temp = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+    if (-not ($full + [IO.Path]::DirectorySeparatorChar).StartsWith($temp, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "BackupRoot debe estar dentro de TEMP; se rechazo '$full'"
+    }
+    $marker = Join-Path $full '.naviscoord-smoke-backup.json'
+    if (-not (Test-Path -LiteralPath $marker)) {
+        throw "'$full' no lleva el marcador de un backup NavisCoord"
+    }
+    return $full
+}
+
+function Publish-FileAtomic([string]$Source, [string]$Target) {
+    $parent = Split-Path $Target -Parent
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    $temp = Join-Path $parent ('.' + [IO.Path]::GetFileName($Target) + '.' + [guid]::NewGuid().ToString('N') + '.tmp')
+    $backup = Join-Path $parent ('.' + [IO.Path]::GetFileName($Target) + '.' + [guid]::NewGuid().ToString('N') + '.bak')
+    try {
+        Copy-Item -LiteralPath $Source -Destination $temp
+        $expected = (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash
+        if ((Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash -ne $expected) {
+            throw 'hash distinto durante staging'
+        }
+        if (Test-Path -LiteralPath $Target) { [IO.File]::Replace($temp, $Target, $backup, $true) }
+        else { [IO.File]::Move($temp, $Target) }
+        if ((Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash -ne $expected) {
+            throw 'hash distinto tras publicar'
+        }
+        if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }
+    } catch {
+        if (Test-Path -LiteralPath $backup) {
+            if (Test-Path -LiteralPath $Target) { Remove-Item -LiteralPath $Target -Force }
+            [IO.File]::Move($backup, $Target)
+        }
+        throw
+    } finally {
+        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
+        if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }
+    }
+}
+
+function Read-Manifest([string]$Root) {
+    $path = Join-Path $Root 'manifest.csv'
+    if (-not (Test-Path -LiteralPath $path)) { throw "falta $path" }
+    $rows = @(Import-Csv -LiteralPath $path)
+    if ($rows.Count -eq 0) { throw "el backup en $Root esta VACIO" }
+    foreach ($row in $rows) {
+        if ($row.Version -notin @('2024','2025','2026')) { throw "version hostil '$($row.Version)'" }
+        [void](Resolve-ContainedPath (Join-Path $Root $row.Version) $row.Relative)
+        [void](Resolve-ContainedPath (Get-PluginsDir $row.Version) $row.Relative)
+        if ($row.Existed -notin @('True','False')) { throw "estado Existed invalido para $($row.Relative)" }
+        if ($row.Existed -eq 'False') {
+            $managedRelative = Join-Path $managed[0].Folder $managed[0].File
+            if ($row.Relative -ne $managedRelative) {
+                throw "solo se permite declarar ausencia del archivo administrado; no '$($row.Relative)'"
+            }
+        }
+    }
+    return $rows
+}
+
+function Invoke-VerifyBackup([string]$Root) {
+    $Root = Resolve-OwnedBackup $Root
+    $manifest = @(Read-Manifest $Root)
+    $ok = 0; $bad = 0; $missing = 0
+    foreach ($row in $manifest) {
+        $copy = Resolve-ContainedPath (Join-Path $Root $row.Version) $row.Relative
+        if ($row.Existed -eq 'False') {
+            if (Test-Path -LiteralPath $copy) { $bad++ } else { $ok++ }
+            continue
+        }
+        if (-not (Test-Path -LiteralPath $copy)) { $missing++; continue }
+        if ((Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash -eq $row.Sha256) { $ok++ }
+        else { $bad++ }
+    }
+    if ($bad -or $missing) { throw "backup no restaurable: $bad distintos, $missing ausentes" }
+    return [pscustomobject]@{ Correct = $ok; Bad = $bad; Missing = $missing }
+}
+
+function Invoke-RestoreBackup([string]$Root) {
+    $Root = Resolve-OwnedBackup $Root
+    $manifest = @(Read-Manifest $Root)
+    foreach ($row in $manifest) {
+        if ($row.Existed -eq 'False') { continue }
+        $copy = Resolve-ContainedPath (Join-Path $Root $row.Version) $row.Relative
+        if (-not (Test-Path -LiteralPath $copy)) { throw "falta en backup: $($row.Relative)" }
+        if ((Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash -ne $row.Sha256) {
+            throw "hash corrupto en backup: $($row.Relative)"
+        }
+    }
+    foreach ($row in $manifest) {
+        $target = Resolve-ContainedPath (Get-PluginsDir $row.Version) $row.Relative
+        if ($row.Existed -eq 'False') {
+            if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
+        } else {
+            $copy = Resolve-ContainedPath (Join-Path $Root $row.Version) $row.Relative
+            Publish-FileAtomic $copy $target
+        }
+    }
+    $mismatched = 0
+    foreach ($row in $manifest) {
+        $target = Resolve-ContainedPath (Get-PluginsDir $row.Version) $row.Relative
+        if ($row.Existed -eq 'False') {
+            if (Test-Path -LiteralPath $target) { $mismatched++ }
+        } elseif (-not (Test-Path -LiteralPath $target) -or
+                  (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne $row.Sha256) {
+            $mismatched++
+        }
+    }
+    if ($mismatched) { throw "la restauracion dejo $mismatched discrepancias" }
+    return $manifest.Count
+}
+
+if ($SelfTest) {
+    $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('naviscoord-swap-selftest-' + [guid]::NewGuid().ToString('N'))
+    $oldAppData = $env:APPDATA
+    $checks = 0
+    try {
+        $env:APPDATA = Join-Path $testRoot 'appdata'
+        $backup = Join-Path $testRoot 'backup'
+        $versionBackup = Join-Path $backup '2026'
+        New-Item -ItemType Directory -Path $versionBackup -Force | Out-Null
+        @{ schema = 'naviscoord.smoke-backup/1' } | ConvertTo-Json |
+            Set-Content -LiteralPath (Join-Path $backup '.naviscoord-smoke-backup.json') -Encoding UTF8
+        @([pscustomobject]@{
+            Version = '2026'; Relative = 'NavisCoord\NavisCoord.dll';
+            Existed = $false; Bytes = 0; Sha256 = ''
+        }) | Export-Csv -LiteralPath (Join-Path $backup 'manifest.csv') -NoTypeInformation -Encoding UTF8
+
+        $target = Join-Path (Get-PluginsDir '2026') 'NavisCoord\NavisCoord.dll'
+        $thirdParty = Join-Path (Get-PluginsDir '2026') 'OtroPlugin\tercero.dll'
+        New-Item -ItemType Directory -Path (Split-Path $target -Parent) -Force | Out-Null
+        New-Item -ItemType Directory -Path (Split-Path $thirdParty -Parent) -Force | Out-Null
+        [IO.File]::WriteAllText($target, 'dll temporal')
+        [IO.File]::WriteAllText($thirdParty, 'tercero intacto')
+        [void](Invoke-VerifyBackup $backup); $checks++
+        [void](Invoke-RestoreBackup $backup)
+        if (Test-Path -LiteralPath $target) { throw 'Restore no retiro un DLL originalmente ausente' }
+        $checks++
+        if ([IO.File]::ReadAllText($thirdParty) -ne 'tercero intacto') { throw 'se altero un plugin de terceros' }
+        $checks++
+
+        foreach ($hostile in @('..\..\victima.dll', 'C:\Windows\x.dll', '\\servidor\share\x.dll', 'NavisCoord\x.dll:oculto')) {
+            @([pscustomobject]@{
+                Version = '2026'; Relative = $hostile;
+                Existed = $true; Bytes = 1; Sha256 = '00'
+            }) | Export-Csv -LiteralPath (Join-Path $backup 'manifest.csv') -NoTypeInformation -Encoding UTF8
+            $rejected = $false
+            try { [void](Read-Manifest $backup) } catch { $rejected = $true }
+            if (-not $rejected) { throw "no rechazo ruta hostil: $hostile" }
+            $checks++
+        }
+
+        Set-Content -LiteralPath (Join-Path $backup 'manifest.csv') -Value ''
+        $rejected = $false
+        try { [void](Read-Manifest $backup) } catch { $rejected = $true }
+        if (-not $rejected) { throw 'un manifest vacio dio verde' }
+        $checks++
+
+        Write-Host "Smoke-AddinSwap self-test: $checks comprobaciones, 0 fallos"
+        exit 0
+    } finally {
+        $env:APPDATA = $oldAppData
+        $full = [IO.Path]::GetFullPath($testRoot)
+        $temp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+        if (($full + [IO.Path]::DirectorySeparatorChar).StartsWith($temp, [StringComparison]::OrdinalIgnoreCase) -and
+            (Test-Path -LiteralPath $full)) {
+            Remove-Item -LiteralPath $full -Recurse -Force
+        }
+    }
+}
+
 switch ($Mode) {
 
 # ------------------------------------------------------------------ Backup
 'Backup' {
     Assert-NoNavisworks
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $stamp = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
     $root  = Join-Path $env:TEMP "NavisCoord-smoke-backup-$stamp"
-    New-Item -ItemType Directory -Force -Path $root | Out-Null
+    New-Item -ItemType Directory -Path $root | Out-Null
+    @{ schema = 'naviscoord.smoke-backup/1'; created = (Get-Date).ToUniversalTime().ToString('o') } |
+        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root '.naviscoord-smoke-backup.json') -Encoding UTF8
 
     $manifest = @()
     # Split on commas as well: `powershell -File script.ps1 -Versions 2026,2024`
@@ -78,14 +268,23 @@ switch ($Mode) {
         New-Item -ItemType Directory -Force -Path $dest | Out-Null
         # The WHOLE Plugins tree, not only what will be replaced: a restore
         # that can only put back what it expected to change is not a restore.
-        Copy-Item -Path (Join-Path $src '*') -Destination $dest -Recurse -Force
+        $children = @(Get-ChildItem -LiteralPath $src -Force)
+        if ($children.Count) { $children | Copy-Item -Destination $dest -Recurse -Force }
         foreach ($f in Get-ChildItem $src -Recurse -File) {
             $manifest += [pscustomobject]@{
                 Version  = $v
                 Relative = $f.FullName.Substring($src.Length).TrimStart('\')
-                Original = $f.FullName
+                Existed  = $true
                 Bytes    = $f.Length
                 Sha256   = (Get-FileHash $f.FullName -Algorithm SHA256).Hash
+            }
+        }
+        foreach ($m in $managed) {
+            $relative = Join-Path $m.Folder $m.File
+            if (-not ($manifest | Where-Object { $_.Version -eq $v -and $_.Relative -eq $relative })) {
+                $manifest += [pscustomobject]@{
+                    Version = $v; Relative = $relative; Existed = $false; Bytes = 0; Sha256 = ''
+                }
             }
         }
         Write-Host "  NW${v}: respaldado en $dest"
@@ -112,22 +311,8 @@ manifest.csv lleva ruta original, tamano y SHA-256 de cada archivo.
 # ------------------------------------------------------------------ Verify
 'Verify' {
     if (-not $BackupRoot) { throw 'Verify necesita -BackupRoot' }
-    $manifest = @(Import-Csv (Join-Path $BackupRoot 'manifest.csv'))
-    # An empty backup used to "verify" cleanly, which is the worst possible
-    # answer: it green-lights replacing an installation there is nothing to
-    # restore from.
-    if ($manifest.Count -eq 0) {
-        throw "el backup en $BackupRoot esta VACIO: no hay nada que restaurar, no se puede continuar"
-    }
-    $ok = 0; $bad = 0; $missing = 0
-    foreach ($row in $manifest) {
-        $copy = Join-Path (Join-Path $BackupRoot $row.Version) $row.Relative
-        if (-not (Test-Path $copy)) { $missing++; Write-Host "  FALTA en backup: $($row.Relative)"; continue }
-        $hash = (Get-FileHash $copy -Algorithm SHA256).Hash
-        if ($hash -eq $row.Sha256) { $ok++ } else { $bad++; Write-Host "  HASH DISTINTO: $($row.Relative)" }
-    }
-    Write-Host "Backup verificable: $ok correctos, $bad distintos, $missing ausentes"
-    if ($bad -or $missing) { throw 'el backup NO es restaurable con fidelidad' }
+    $report = Invoke-VerifyBackup $BackupRoot
+    Write-Host "Backup verificable: $($report.Correct) correctos, 0 distintos, 0 ausentes"
 }
 
 # ----------------------------------------------------------------- Install
@@ -143,7 +328,7 @@ manifest.csv lleva ruta original, tamano y SHA-256 de cada archivo.
             $targetDir = Join-Path (Get-PluginsDir $v) $m.Folder
             if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Force -Path $targetDir | Out-Null }
             $target = Join-Path $targetDir $m.File
-            Copy-Item $staged -Destination $target -Force
+            Publish-FileAtomic $staged $target
             $h = (Get-FileHash $target -Algorithm SHA256).Hash
             Write-Host ("  NW{0} {1,-16} instalado  {2}  {3} bytes" -f $v, $m.File, $h.Substring(0,16), (Get-Item $target).Length)
         }
@@ -154,20 +339,8 @@ manifest.csv lleva ruta original, tamano y SHA-256 de cada archivo.
 'Restore' {
     Assert-NoNavisworks
     if (-not $BackupRoot) { throw 'Restore necesita -BackupRoot' }
-    $manifest = Import-Csv (Join-Path $BackupRoot 'manifest.csv')
-    $restored = 0; $mismatched = 0
-    foreach ($row in $manifest) {
-        $copy = Join-Path (Join-Path $BackupRoot $row.Version) $row.Relative
-        if (-not (Test-Path $copy)) { continue }
-        $targetDir = Split-Path $row.Original -Parent
-        if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Force -Path $targetDir | Out-Null }
-        Copy-Item $copy -Destination $row.Original -Force
-        $hash = (Get-FileHash $row.Original -Algorithm SHA256).Hash
-        if ($hash -eq $row.Sha256) { $restored++ }
-        else { $mismatched++; Write-Host "  NO COINCIDE tras restaurar: $($row.Relative)" }
-    }
-    Write-Host "Restaurados con hash identico: $restored; discrepancias: $mismatched"
-    if ($mismatched) { throw 'la restauracion no reprodujo el estado original' }
+    $restored = Invoke-RestoreBackup $BackupRoot
+    Write-Host "Restaurados o retirados según estado original: $restored; discrepancias: 0"
 }
 
 }

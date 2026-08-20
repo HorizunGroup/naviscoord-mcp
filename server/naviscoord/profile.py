@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -106,9 +107,8 @@ def _canonical(value: Any, out: list[str]) -> None:
 
 
 def _canonical_float(value: float) -> str:
-    if value != value or value in (float("inf"), float("-inf")):
-        # JSON has no way to say these, and neither end should pretend.
-        return "null"
+    if not math.isfinite(value):
+        raise ValueError("JSON canónico no admite NaN ni Infinity")
     if value.is_integer() and abs(value) <= _EXACT_INT_LIMIT:
         return str(int(value))
     # repr gives the shortest string that round-trips; the add-in reaches the
@@ -175,7 +175,14 @@ class Profile:
                 target = candidate
         if not target.exists():
             raise FileNotFoundError(f"profile not found: {target}")
-        return cls.from_json(json.loads(target.read_text(encoding="utf-8")))
+        return cls.from_json(
+            json.loads(
+                target.read_text(encoding="utf-8"),
+                parse_constant=lambda value: (_ for _ in ()).throw(
+                    ValueError(f"JSON no admite la constante {value}")
+                ),
+            )
+        )
 
     @classmethod
     def from_json(cls, raw: dict[str, Any]) -> "Profile":
@@ -346,20 +353,113 @@ class Profile:
     def validate(self) -> list[str]:
         """Return human-readable complaints about a hand-edited profile."""
         problems: list[str] = []
-        total = sum((self.section("severity").get("weights") or {}).values())
+        _find_non_finite(self.raw, "$", problems)
+        weights = self.section("severity").get("weights") or {}
+        numeric_weights = [value for value in weights.values() if isinstance(value, (int, float)) and not isinstance(value, bool)]
+        if len(numeric_weights) != len(weights) or any(not math.isfinite(float(value)) for value in numeric_weights):
+            problems.append("severity.weights debe contener solo números JSON finitos.")
+            total = 0.0
+        else:
+            total = sum(float(value) for value in numeric_weights)
         if total and abs(total - 1.0) > 0.01:
             problems.append(
                 f"Los pesos de severidad suman {total:.2f} y deberían sumar 1.00; "
                 "la puntuación quedará fuera del rango 0-100."
             )
-        eps = float(self.cluster_param("eps_m", 0.0))
-        if eps <= 0.0:
+        eps = _number(self.cluster_param("eps_m", None), "clustering.eps_m", problems)
+        if eps is not None and eps <= 0.0:
             problems.append("clustering.eps_m debe ser mayor que cero.")
-        bands = self.section("severity").get("priority_bands") or {}
-        ordered = [bands.get("critical", 75.0), bands.get("high", 55.0), bands.get("medium", 35.0)]
-        if ordered != sorted(ordered, reverse=True):
+        clustering = self.section("clustering")
+        if "max_cluster_span_m" in clustering:
+            max_span = _number(
+                clustering["max_cluster_span_m"],
+                "clustering.max_cluster_span_m", problems,
+            )
+            if max_span is not None and max_span <= 0.0:
+                problems.append("clustering.max_cluster_span_m debe ser mayor que cero.")
+        min_samples = self.cluster_param("min_samples", 1)
+        if isinstance(min_samples, bool) or not isinstance(min_samples, int) or min_samples < 1:
+            problems.append("clustering.min_samples debe ser un entero mayor o igual a 1.")
+        saturation = self.severity_param("cluster_size_saturation", 25.0)
+        if isinstance(saturation, bool) or not isinstance(saturation, (int, float)) or not math.isfinite(float(saturation)) or float(saturation) <= 1.0:
+            problems.append("severity.cluster_size_saturation debe ser un número finito mayor que 1.")
+        severity = self.section("severity")
+        for key, allow_zero in (
+            ("penetration_ratio_cap", False),
+            ("congestion_radius_m", True),
+            ("congestion_saturation", False),
+        ):
+            if key not in severity:
+                continue
+            value = _number(severity.get(key), f"severity.{key}", problems)
+            if value is not None and (value < 0.0 if allow_zero else value <= 0.0):
+                problems.append(
+                    f"severity.{key} debe ser {'mayor o igual a 0' if allow_zero else 'mayor que 0'}."
+                )
+
+        bands = severity.get("priority_bands") or {}
+        ordered = [
+            _number(bands.get(key, default), f"severity.priority_bands.{key}", problems)
+            for key, default in (("critical", 75.0), ("high", 55.0), ("medium", 35.0))
+        ]
+        if all(value is not None for value in ordered) and not (
+            100.0 >= ordered[0] > ordered[1] > ordered[2] >= 0.0
+        ):
             problems.append("priority_bands debe ir de mayor a menor: critical > high > medium.")
+
+        for path, value, zero_ok in (
+            ("noise_filter.min_penetration_m", self.noise_param("min_penetration_m", 0.0), True),
+            ("noise_filter.insulation_penetration_tolerance_m", self.noise_param("insulation_penetration_tolerance_m", 0.0), True),
+            ("root_cause.systemic_elevation.max_z_stddev_m", self.root_cause_param("systemic_elevation", "max_z_stddev_m", None), False),
+            ("root_cause.missing_penetration.search_radius_m", self.root_cause_param("missing_penetration", "search_radius_m", None), False),
+            ("root_cause.repeated_typology.xy_tolerance_m", self.root_cause_param("repeated_typology", "xy_tolerance_m", None), False),
+            ("root_cause.congested_zone.radius_m", self.root_cause_param("congested_zone", "radius_m", None), False),
+        ):
+            if value is None:
+                continue
+            number = _number(value, path, problems)
+            if number is not None and (number < 0.0 if zero_ok else number <= 0.0):
+                problems.append(f"{path} debe ser {'no negativo' if zero_ok else 'mayor que cero'}.")
+
+        pairs = self.section("clash_matrix").get("pairs") or []
+        if not isinstance(pairs, list):
+            problems.append("clash_matrix.pairs debe ser una lista.")
+        else:
+            for index, pair in enumerate(pairs):
+                path = f"clash_matrix.pairs[{index}]"
+                if not isinstance(pair, dict):
+                    problems.append(f"{path} debe ser un objeto.")
+                    continue
+                if not str(pair.get("a") or "").strip() or not str(pair.get("b") or "").strip():
+                    problems.append(f"{path} debe declarar disciplinas a y b.")
+                if str(pair.get("type", "Hard")) not in {"Hard", "Clearance", "Duplicate", "Soft"}:
+                    problems.append(f"{path}.type no es un tipo de clash soportado.")
+                tolerance = _number(pair.get("tolerance_m", 0.0), f"{path}.tolerance_m", problems)
+                if tolerance is not None and tolerance < 0.0:
+                    problems.append(f"{path}.tolerance_m no puede ser negativo.")
         return problems
+
+
+def _number(value: Any, path: str, problems: list[str]) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        problems.append(f"{path} debe ser un número JSON finito.")
+        return None
+    number = float(value)
+    if not math.isfinite(number):
+        problems.append(f"{path} debe ser un número JSON finito.")
+        return None
+    return number
+
+
+def _find_non_finite(value: Any, path: str, problems: list[str]) -> None:
+    if isinstance(value, float) and not math.isfinite(value):
+        problems.append(f"{path} contiene un número no finito.")
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            _find_non_finite(child, f"{path}.{key}", problems)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _find_non_finite(child, f"{path}[{index}]", problems)
 
 
 # Values Navisworks publishes for its own node classes. They appear in the

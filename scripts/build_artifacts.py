@@ -65,6 +65,13 @@ def source_date_epoch() -> str:
 def stage_legal() -> list[Path]:
     """Copies the root licence files and README into the package directory."""
     staged: list[Path] = []
+    collisions = [SERVER / name for name in STAGED if (SERVER / name).exists()]
+    if collisions:
+        names = ", ".join(str(path) for path in collisions)
+        raise SystemExit(
+            "no se prepara el build porque ya existen archivos locales que "
+            f"serían sobrescritos y después borrados: {names}"
+        )
     for name in STAGED:
         source = ROOT / name
         if not source.is_file():
@@ -189,6 +196,10 @@ def verify() -> int:
         # packaged profile — not just the code.
         if not any(n.endswith("naviscoord/profiles/default.json") for n in names):
             problems.append(f"{sdist.name}: falta el perfil por defecto")
+        if any("/tests/" in n or n.endswith("/tests") for n in names):
+            problems.append(
+                f"{sdist.name}: incluye tests internos sin sus recursos de repositorio"
+            )
 
     # Neither archive may name the machine that built it. The add-in has its
     # own guard; this is the same rule for the Python half, where the usual

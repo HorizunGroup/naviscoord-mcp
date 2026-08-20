@@ -18,20 +18,156 @@ codes its elements differently changes the profile, not this file.
 from __future__ import annotations
 
 import csv
+import hashlib
+import io
 import json
+import os
+import uuid
 from collections.abc import Iterable
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from .analysis.pipeline import AnalysisResult
 from .model import ClashExport, ElementRef, Issue
-from .paths import OutputPolicy
+from .paths import OutputPolicy, PathPolicyError
 from .paths import policy as default_policy
 from .profile import Profile
 from .safety import sanitize_csv, sanitize_row
 
 HANDOFF_SCHEMA = "naviscoord.coordination/1"
+_BUNDLE_LOCK = ".naviscoord-handoff.lock"
+_BUNDLE_MANIFEST = "handoff_manifest.json"
+
+
+@contextmanager
+def _handoff_lock(directory: Path) -> Iterator[None]:
+    """Hold a process-wide filesystem lock for one handoff directory."""
+    lock_path = directory / _BUNDLE_LOCK
+    handle = lock_path.open("a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:  # pragma: no cover - exercised by Linux CI
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise PathPolicyError(
+                f"Ya se está publicando otro handoff en «{directory}»."
+            ) from exc
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:  # pragma: no cover - exercised by Linux CI
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
+def _csv_bytes(rows: list[dict[str, Any]]) -> bytes:
+    """Render one table completely before any bundle file is published."""
+    if not rows:
+        return b"\xef\xbb\xbf"
+    text = io.StringIO(newline="")
+    fieldnames = list(rows[0].keys())
+    writer = csv.writer(text)
+    writer.writerow([sanitize_csv(name) for name in fieldnames])
+    for row in rows:
+        safe = sanitize_row(row)
+        writer.writerow([safe.get(name, "") for name in fieldnames])
+    return b"\xef\xbb\xbf" + text.getvalue().encode("utf-8")
+
+
+def _replace_file(source: Path, destination: Path) -> None:
+    """Patch seam for failure-injection tests; both paths share a volume."""
+    os.replace(source, destination)
+
+
+def _publish_bundle(
+    directory: Path,
+    artifacts: dict[str, bytes],
+    policy: OutputPolicy,
+    *,
+    overwrite: bool,
+) -> list[str]:
+    """Publish all files as one rollback-capable writer transaction."""
+    run_id = uuid.uuid4().hex
+    manifest = {
+        "schema": "naviscoord.handoff-manifest/1",
+        "run_id": run_id,
+        "artifacts": {
+            name: {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
+            for name, data in sorted(artifacts.items())
+        },
+    }
+    all_artifacts = dict(artifacts)
+    all_artifacts[_BUNDLE_MANIFEST] = json.dumps(
+        manifest, ensure_ascii=False, indent=2
+    ).encode("utf-8")
+
+    with _handoff_lock(directory):
+        targets: dict[str, Path] = {}
+        for name in all_artifacts:
+            targets[name] = policy.resolve_file(
+                directory / name, overwrite=overwrite
+            ).path
+
+        staged: dict[str, Path] = {}
+        backups: dict[str, Path] = {}
+        published: list[Path] = []
+        try:
+            for name, data in all_artifacts.items():
+                temp = directory / f".{name}.{run_id}.stage"
+                temp.write_bytes(data)
+                staged[name] = temp
+
+            for name, target in targets.items():
+                if target.exists():
+                    backup = directory / f".{name}.{run_id}.backup"
+                    os.replace(target, backup)
+                    backups[name] = backup
+
+            order = [n for n in all_artifacts if n != _BUNDLE_MANIFEST]
+            order.append(_BUNDLE_MANIFEST)
+            for name in order:
+                _replace_file(staged[name], targets[name])
+                published.append(targets[name])
+
+        except BaseException:
+            for target in reversed(published):
+                try:
+                    target.unlink()
+                except OSError:
+                    pass
+            for name, backup in backups.items():
+                if backup.exists():
+                    os.replace(backup, targets[name])
+            raise
+        finally:
+            for path in list(staged.values()) + list(backups.values()):
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+
+    return [str(targets[name]) for name in all_artifacts]
 
 
 def _first_prop(element: ElementRef, keys: Iterable[str]) -> str:
@@ -297,31 +433,23 @@ def write_handoff(
     worklist = revit_worklist(handoff)
     tables = powerbi_tables(handoff)
 
-    written: list[str] = []
-
-    def authorise(name: str):
-        return policy_in_use.resolve_file(directory / name, overwrite=overwrite)
-
-    # Every artifact is reserved atomically and published by rename. Writing
-    # straight to the destination would leave a truncated JSON behind if the
-    # run failed midway, and two concurrent handoffs into the same directory
-    # would interleave instead of one of them being refused.
+    artifacts: dict[str, bytes] = {}
     for name, payload in (
         ("coordination_handoff.json", handoff),
         ("revit_worklist.json", worklist),
     ):
-        slot = authorise(name)
-        slot.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
-        written.append(str(slot.path))
+        artifacts[name] = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
 
     for name, rows in tables.items():
-        slot = authorise(f"{name}.csv")
-        with slot.staged_write() as temp:
-            _write_csv(temp, rows)
-        written.append(str(slot.path))
+        artifacts[f"{name}.csv"] = _csv_bytes(rows)
+
+    written = _publish_bundle(
+        directory, artifacts, policy_in_use, overwrite=overwrite
+    )
 
     return {
         "written": written,
+        "manifest": str(directory / _BUNDLE_MANIFEST),
         "directory": str(directory),
         "allowed_root": str(target_dir.root),
         "issues": len(handoff["issues"]),

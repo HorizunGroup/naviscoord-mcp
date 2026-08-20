@@ -18,6 +18,7 @@ namespace NavisCoord
     /// </remarks>
     internal static class Json
     {
+        public const int MaxDepth = 128;
         // ------------------------------------------------------------ write
 
         public static string Write(object value)
@@ -129,7 +130,7 @@ namespace NavisCoord
         {
             if (string.IsNullOrWhiteSpace(text)) return new Dictionary<string, object>();
             var index = 0;
-            var value = ParseValue(text, ref index);
+            var value = ParseValue(text, ref index, 0);
             return value as Dictionary<string, object> ?? new Dictionary<string, object>();
         }
 
@@ -157,19 +158,20 @@ namespace NavisCoord
             var i = 0;
             SkipWhitespace(text, ref i);
             if (i >= text.Length || text[i] != '{') return false;
-            if (!ScanValue(text, ref i)) return false;
+            if (!ScanValue(text, ref i, 0)) return false;
             SkipWhitespace(text, ref i);
             return i >= text.Length;   // trailing junk is not well-formed either
         }
 
-        private static bool ScanValue(string s, ref int i)
+        private static bool ScanValue(string s, ref int i, int depth)
         {
+            if (depth > MaxDepth) return false;
             SkipWhitespace(s, ref i);
             if (i >= s.Length) return false;
             switch (s[i])
             {
-                case '{': return ScanMap(s, ref i);
-                case '[': return ScanList(s, ref i);
+                case '{': return ScanMap(s, ref i, depth + 1);
+                case '[': return ScanList(s, ref i, depth + 1);
                 case '"': return ScanString(s, ref i);
                 case 't': return ScanLiteral(s, ref i, "true");
                 case 'f': return ScanLiteral(s, ref i, "false");
@@ -178,7 +180,7 @@ namespace NavisCoord
             }
         }
 
-        private static bool ScanMap(string s, ref int i)
+        private static bool ScanMap(string s, ref int i, int depth)
         {
             i++; // '{'
             SkipWhitespace(s, ref i);
@@ -191,7 +193,7 @@ namespace NavisCoord
                 SkipWhitespace(s, ref i);
                 if (i >= s.Length || s[i] != ':') return false;
                 i++;
-                if (!ScanValue(s, ref i)) return false;
+                if (!ScanValue(s, ref i, depth)) return false;
                 SkipWhitespace(s, ref i);
                 if (i >= s.Length) return false;
                 if (s[i] == ',') { i++; continue; }
@@ -200,14 +202,14 @@ namespace NavisCoord
             }
         }
 
-        private static bool ScanList(string s, ref int i)
+        private static bool ScanList(string s, ref int i, int depth)
         {
             i++; // '['
             SkipWhitespace(s, ref i);
             if (i < s.Length && s[i] == ']') { i++; return true; }
             while (true)
             {
-                if (!ScanValue(s, ref i)) return false;
+                if (!ScanValue(s, ref i, depth)) return false;
                 SkipWhitespace(s, ref i);
                 if (i >= s.Length) return false;
                 if (s[i] == ',') { i++; continue; }
@@ -236,6 +238,10 @@ namespace NavisCoord
                         }
                         i += 4;
                     }
+                    else if ("\"\\/bfnrt".IndexOf(s[i]) < 0)
+                    {
+                        return false;
+                    }
                     i++;
                     continue;
                 }
@@ -257,26 +263,56 @@ namespace NavisCoord
         private static bool ScanNumber(string s, ref int i)
         {
             var start = i;
-            if (i < s.Length && (s[i] == '-' || s[i] == '+')) i++;
-            var digits = 0;
-            while (i < s.Length && (char.IsDigit(s[i]) || s[i] == '.' ||
-                                    s[i] == 'e' || s[i] == 'E' || s[i] == '-' || s[i] == '+'))
+            if (i < s.Length && s[i] == '-') i++;
+            if (i >= s.Length) return false;
+
+            if (s[i] == '0')
             {
-                if (char.IsDigit(s[i])) digits++;
                 i++;
+                // Leading zeroes are not JSON numbers.
+                if (i < s.Length && char.IsDigit(s[i])) return false;
             }
-            return digits > 0 && i > start;
+            else if (s[i] >= '1' && s[i] <= '9')
+            {
+                while (i < s.Length && char.IsDigit(s[i])) i++;
+            }
+            else
+            {
+                return false;
+            }
+
+            if (i < s.Length && s[i] == '.')
+            {
+                i++;
+                var fraction = i;
+                while (i < s.Length && char.IsDigit(s[i])) i++;
+                if (i == fraction) return false;
+            }
+
+            if (i < s.Length && (s[i] == 'e' || s[i] == 'E'))
+            {
+                i++;
+                if (i < s.Length && (s[i] == '+' || s[i] == '-')) i++;
+                var exponent = i;
+                while (i < s.Length && char.IsDigit(s[i])) i++;
+                if (i == exponent) return false;
+            }
+
+            var token = s.Substring(start, i - start);
+            return double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) &&
+                   IsFinite(value);
         }
 
-        private static object ParseValue(string s, ref int i)
+        private static object ParseValue(string s, ref int i, int depth)
         {
+            if (depth > MaxDepth) return null;
             SkipWhitespace(s, ref i);
             if (i >= s.Length) return null;
 
             switch (s[i])
             {
-                case '{': return ParseMap(s, ref i);
-                case '[': return ParseList(s, ref i);
+                case '{': return ParseMap(s, ref i, depth + 1);
+                case '[': return ParseList(s, ref i, depth + 1);
                 case '"': return ParseString(s, ref i);
                 case 't': i += 4; return true;
                 case 'f': i += 5; return false;
@@ -285,7 +321,7 @@ namespace NavisCoord
             }
         }
 
-        private static Dictionary<string, object> ParseMap(string s, ref int i)
+        private static Dictionary<string, object> ParseMap(string s, ref int i, int depth)
         {
             var map = new Dictionary<string, object>(StringComparer.Ordinal);
             i++; // '{'
@@ -298,7 +334,7 @@ namespace NavisCoord
                 var key = ParseString(s, ref i);
                 SkipWhitespace(s, ref i);
                 if (i < s.Length && s[i] == ':') i++;
-                map[key] = ParseValue(s, ref i);
+                map[key] = ParseValue(s, ref i, depth);
                 SkipWhitespace(s, ref i);
                 if (i < s.Length && s[i] == ',') { i++; continue; }
                 if (i < s.Length && s[i] == '}') { i++; break; }
@@ -307,7 +343,7 @@ namespace NavisCoord
             return map;
         }
 
-        private static List<object> ParseList(string s, ref int i)
+        private static List<object> ParseList(string s, ref int i, int depth)
         {
             var list = new List<object>();
             i++; // '['
@@ -316,7 +352,7 @@ namespace NavisCoord
 
             while (i < s.Length)
             {
-                list.Add(ParseValue(s, ref i));
+                list.Add(ParseValue(s, ref i, depth));
                 SkipWhitespace(s, ref i);
                 if (i < s.Length && s[i] == ',') { i++; continue; }
                 if (i < s.Length && s[i] == ']') { i++; break; }

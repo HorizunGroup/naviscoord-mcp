@@ -15,15 +15,24 @@ confundirlas.
 - **Autodesk Navisworks Manage 2024, 2025 o 2026**, con licencia. El
   complemento compila contra el API de la instalación local; no se
   redistribuye ningún ensamblado de Autodesk.
-- **.NET SDK 8 o superior** solo si vas a compilar el complemento tú.
+- **.NET SDK 8 o superior** solo si vas a compilar el complemento tú. Los
+  proyectos apuntan a .NET Framework 4.8 y restauran
+  `Microsoft.NETFramework.ReferenceAssemblies`; no dependen de que Visual
+  Studio haya instalado casualmente el Developer Pack. Sí necesitan el API de
+  la versión local de Navisworks.
 
 ### Qué NO hace el launcher
 
 **No instala un Python.** Crea un entorno virtual a partir del intérprete con
 el que el cliente lo arrancó, en
-`%LOCALAPPDATA%\NavisCoord\runtime\py3XX\venv`, e instala ahí las tres
+`%LOCALAPPDATA%\NavisCoord\runtime\py3XX-<identidad>\venv`, e instala ahí las tres
 dependencias. Si ese intérprete es demasiado antiguo, lo dice y se detiene —
 no hay nada más que honestamente pueda hacer.
+
+La identidad incluye ejecutable, arquitectura, ABI, versión del plugin y
+contrato de dependencias. El entorno se construye en una carpeta hermana bajo
+lock y solo se publica cuando imports **y versiones** son válidos; dos hosts no
+ejecutan `venv`/`pip` simultáneamente sobre la misma carpeta.
 
 Si el runtime no se puede provisionar, el servidor **no muere**: arranca en
 modo degradado con una sola herramienta, `navis_install_status`, que dice qué
@@ -31,9 +40,29 @@ falló, con qué intérprete, y el comando exacto para arreglarlo a mano.
 
 ## Instalar el complemento
 
-Requiere **Navisworks cerrado**. El script lo comprueba y se niega si está
-abierto: con el proceso vivo el DLL queda bloqueado y la copia falla a
-medias, que es peor que no copiar.
+Requiere **Navisworks cerrado**. Para una instalación normal no necesitas
+Visual Studio, Git ni el SDK de .NET. Descarga
+[`Install-NavisCoord.ps1`](../Install-NavisCoord.ps1) y ejecútalo desde la
+carpeta donde quedó guardado:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Install-NavisCoord.ps1
+```
+
+El instalador detecta Navisworks Manage 2024–2026, descarga el ZIP de la
+[última versión publicada](https://github.com/HorizunGroup/naviscoord-mcp/releases/latest),
+verifica su SHA-256, rechaza rutas inesperadas y publica los archivos con
+rollback. Se niega a continuar si Navisworks está abierto.
+
+- `-Version 2025` limita la instalación a una versión.
+- `-ReleaseTag v0.3.1` fija una versión publicada concreta.
+- `-WhatIf` muestra qué haría sin copiar nada.
+- `-SelfTest` prueba el instalador sin descargar ni instalar el add-in.
+
+### Instalar compilando desde el código fuente
+
+Esta vía es para desarrolladores. Requiere Git, .NET SDK 8+ y el API de cada
+Navisworks local. Desde la raíz del repositorio:
 
 ```powershell
 .\install.ps1
@@ -43,8 +72,8 @@ Detecta cada Navisworks Manage 2024–2026 instalado, compila el complemento
 contra el API de **cada uno** —cada versión trae su propio ensamblado, un DLL
 no sirve para todas— e instala por versión verificando cada copia.
 
-- `.\install.ps1 -Version 2025` limita a una versión.
-- `.\install.ps1 -Uninstall` desinstala de todas.
+- `.\install.ps1 -Version 2025` limita la compilación a una versión.
+- `.\install.ps1 -Uninstall` desinstala de todas las versiones detectadas.
 
 ### Sin herramientas de compilación
 
@@ -66,7 +95,7 @@ Descomprime el paquete del complemento de tu versión en:
 
 ```
 /plugin marketplace add HorizunGroup/naviscoord-mcp
-/plugin install naviscoord-mcp
+/plugin install naviscoord-mcp@horizun-navis
 ```
 
 El manifiesto usa `${CLAUDE_PLUGIN_ROOT}` para localizar el launcher.
@@ -74,7 +103,7 @@ El manifiesto usa `${CLAUDE_PLUGIN_ROOT}` para localizar el launcher.
 ### Como plugin (Codex)
 
 Agrega este repositorio como marketplace y habilita el plugin
-`naviscoord-mcp`. Codex instala el paquete en su caché y sustituye
+`naviscoord-mcp@horizun-navis`. Codex instala el paquete en su caché y sustituye
 `${CLAUDE_PLUGIN_ROOT}` por la raíz real del plugin; usar una ruta relativa
 sería incorrecto porque el directorio de trabajo del proceso no está
 garantizado. Este flujo se verificó contra una instalación real de Codex.

@@ -52,10 +52,11 @@ $ErrorActionPreference = 'Stop'
 # reject a legitimate build that merely names its own symbol file. What must
 # not ship is a pdb reference that carries a location.
 $script:ForbiddenPatterns = [ordered]@{
-    'ruta de usuario Windows' = '[A-Za-z]:\\+Users\\+[^\\/:*?"<>|\r\n]{1,64}'
+    'ruta absoluta Windows'   = '[A-Za-z]:\\+(?:[^\\/:*?"<>|\x00-\x1f]+\\+)+[^\\/:*?"<>|\x00-\x1f]*'
+    'ruta UNC o dispositivo'  = '\\\\[A-Za-z0-9._$-]{1,64}\\+[A-Za-z0-9._$ -]{1,128}(?:\\+[A-Za-z0-9._$ -]{1,128})*'
     'ruta de usuario macOS'   = '/Users/[A-Za-z0-9._-]{1,64}/'
     'ruta de usuario Linux'   = '/home/[A-Za-z0-9._-]{1,64}/'
-    'raiz absoluta Windows'   = '[A-Za-z]:\\+(?:Program Files|ProgramData|Temp|Windows|Work|src|repos|dev)\\+'
+    'raiz absoluta POSIX de build' = '/(?:tmp|workspace|builds|mnt|var/tmp)/[^\r\n" ]+'
     'PDB con ruta absoluta'   = '(?:[A-Za-z]:\\+|/)[^\r\n"]{0,200}\.pdb'
 }
 
@@ -125,6 +126,9 @@ if ($SelfTest) {
         'ruta Linux'           = $enc.GetBytes('blah /home/ejemplo/work/repo/x')
         'pdb con ruta'         = $enc.GetBytes('D:\build\out\NavisCoord.pdb')
         'Program Files'        = $enc.GetBytes('ref C:\Program Files\Autodesk\x.dll')
+        'raiz Jenkins arbitraria' = $enc.GetBytes('D:\JenkinsBuild\job42\source.cs')
+        'ruta UNC'             = $enc.GetBytes('\\servidor\share\build\x.dll')
+        'workspace Linux'      = $enc.GetBytes('/workspace/runner/repo/source.cs')
     }
     $mustPass = [ordered]@{
         'binario neutro'       = $enc.GetBytes('NavisCoord 0.2.2 MIT HorizunGroup')

@@ -13,10 +13,15 @@ from typing import Any
 
 import pytest
 from naviscoord.analysis import analyze
+from naviscoord.analysis.cluster import build_clusters
 from naviscoord.analysis.noise import NoiseFilter
-from naviscoord.analysis.rootcause import RootCauseDetector
+from naviscoord.analysis.rootcause import RootCause, RootCauseDetector
+from naviscoord.analysis.pipeline import AnalysisResult
+from naviscoord.analysis.pipeline import hotspots
+from naviscoord import samples
 from naviscoord.model import Clash, ClashExport, ElementRef, Issue
-from naviscoord.profile import Profile
+from naviscoord.profile import Profile, canonical_text
+from naviscoord.plan import assign_decision_owners, build_plan
 
 
 def element(
@@ -45,6 +50,90 @@ def clash(guid: str, a: ElementRef, b: ElementRef, *, depth: float = 0.05,
         guid=guid, test="T", name=guid, a=a, b=b,
         distance_m=-depth, point=point, level=level,
     )
+
+
+class TestPlanSeparatesCoverageFromExecution:
+    def _fixture(self) -> tuple[list[Issue], list[RootCause]]:
+        issues: list[Issue] = []
+        ids = [f"ISS-{index:04d}" for index in range(1, 6)]
+        for issue_id in ids:
+            issues.append(
+                Issue(
+                    issue_id=issue_id,
+                    kind="pair",
+                    discipline_pair=("EST", "HID"),
+                    clash_ids=["g-" + issue_id],
+                    centroid=(0, 0, 0),
+                    bbox_min=(0, 0, 0),
+                    bbox_max=(1, 1, 1),
+                    severity=80,
+                    priority="high",
+                    responsible="HID",
+                    root_cause={"cause_id": "RC-A", "kind": "repeated_typology"},
+                )
+            )
+        causes = [
+            RootCause(
+                kind="repeated_typology", title="Causa nombrada", detail="",
+                confidence=0.8, affected_issue_ids=list(ids), clash_count=20,
+                cause_id="RC-A", source_cause_ids=["RC-A"], suggested_action="resolver A",
+            ),
+            RootCause(
+                kind="repeated_typology", title="Causa solapada", detail="",
+                confidence=0.95, affected_issue_ids=list(ids), clash_count=30,
+                cause_id="RC-B", source_cause_ids=["RC-B"], suggested_action="resolver B",
+            ),
+        ]
+        return issues, causes
+
+    def test_owner_is_deterministic_and_prefers_the_named_cause(self) -> None:
+        issues, causes = self._fixture()
+        forward = assign_decision_owners(issues, causes)
+        backward = assign_decision_owners(list(reversed(issues)), list(reversed(causes)))
+        assert forward == backward
+        assert set(forward.values()) == {"RC-A"}
+
+    def test_overlap_stays_visible_without_duplicate_work(self, profile: Profile) -> None:
+        issues, causes = self._fixture()
+        result = AnalysisResult(issues=issues, root_causes=causes)
+        before = [issue.to_json() for issue in issues]
+
+        plan = build_plan(result, profile)
+
+        assert len(plan.executable_packages) == 1
+        assert len(plan.packages) == 2
+        executable = plan.executable_packages[0]
+        advisory = next(package for package in plan.packages if package.kind == "advisory")
+        assert executable.decision_issue_ids == [issue.issue_id for issue in issues]
+        assert advisory.decision_issue_ids == []
+        assert advisory.affected_issue_ids == [issue.issue_id for issue in issues]
+        assert advisory.shared_affected_issue_ids == [issue.issue_id for issue in issues]
+        assert "Sin trabajo propio" in advisory.action
+
+        decisions = [
+            issue_id for package in plan.packages for issue_id in package.decision_issue_ids
+        ]
+        assert len(decisions) == len(set(decisions)) == 5
+        assert plan.unique_affected_issues == 5
+        assert plan.gross_affected_memberships == 10
+        assert plan.overlapping_issues == 5
+        assert plan.overlap_memberships == 10
+        assert [issue.to_json() for issue in issues] == before, "construir el plan no muta el análisis"
+
+    def test_public_numeric_bounds_fail_before_division_or_range(self, profile: Profile) -> None:
+        with pytest.raises(ValueError, match="cell_size"):
+            hotspots(AnalysisResult(), cell_size=0)
+        with pytest.raises(ValueError, match="limit"):
+            hotspots(AnalysisResult(), limit=0)
+        with pytest.raises(ValueError, match="session_max"):
+            build_plan(AnalysisResult(), profile, session_max=0)
+
+    def test_validation_rejects_nonfinite_anywhere_and_bad_ranges(self, profile: Profile) -> None:
+        profile.raw.setdefault("interop", {})["nested"] = [1, {"bad": float("inf")}]
+        profile.raw.setdefault("root_cause", {}).setdefault("congested_zone", {})["radius_m"] = 0
+        problems = profile.validate()
+        assert any("no finito" in problem for problem in problems)
+        assert any("congested_zone.radius_m" in problem for problem in problems)
 
 
 # ------------------------------------------------------- colour by responsible
@@ -343,3 +432,62 @@ def _sleeve_count(causes: list[Any]) -> int:
         if cause.kind == "missing_penetration":
             return int(cause.evidence["sleeves_found_in_model"])
     return -1
+
+
+class TestStableRootCauseIdentity:
+    def test_detector_positions_are_sealed_before_issue_ranking(self) -> None:
+        profile = Profile.load()
+        result = analyze(ClashExport.from_json(samples.full_project_case()), profile)
+
+        cause = next(c for c in result.root_causes if c.kind == "systemic_elevation")
+        assert set(cause.affected_issue_ids) == {
+            "ISS-0008", "ISS-0009", "ISS-0010",
+            "ISS-0017", "ISS-0018", "ISS-0019", "ISS-0020",
+            "ISS-0021", "ISS-0022", "ISS-0023",
+        }
+        assert all(
+            next(i for i in result.issues if i.issue_id == issue_id).root_cause.get("cause_id")
+            == cause.cause_id
+            for issue_id in cause.affected_issue_ids
+        )
+
+
+class TestHardClusterSpanLimit:
+    def test_connected_chain_is_split_even_if_dbscan_keeps_one_part(self) -> None:
+        raw: list[Clash] = []
+        for index in range(21):
+            x = index * 0.35
+            a = element(f"a{index}", "EST", "Structural Framing", at=(x, 0, 0))
+            b = element(f"b{index}", "MEC", "Ducts", at=(x, 0, 0))
+            raw.append(clash(f"g{index}", a, b, point=(x, 0, 0)))
+
+        profile = Profile.load()
+        from naviscoord.analysis.discipline import DisciplineTagger
+        export = ClashExport(clashes=raw)
+        DisciplineTagger(profile).tag_export(export)
+        clusters = build_clusters(export.clashes, profile)
+
+        maximum = float(profile.cluster_param("max_cluster_span_m", 6.0))
+        assert len(clusters) > 1
+        assert all(cluster.span <= maximum for cluster in clusters)
+        assert sum(len(cluster.clashes) for cluster in clusters) == len(raw)
+
+
+class TestFiniteProfileNumbers:
+    def test_nonfinite_number_never_collides_with_json_null(self) -> None:
+        with pytest.raises(ValueError, match="NaN|Infinity"):
+            canonical_text({"weight": float("nan")})
+
+    def test_profile_loader_rejects_nonstandard_nan(self, tmp_path) -> None:
+        path = tmp_path / "bad.json"
+        path.write_text(
+            '{"name":"bad","severity":{"weights":{"penetration":NaN}}}',
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="NaN"):
+            Profile.load(path)
+
+    def test_cluster_saturation_one_is_rejected_before_scoring(self) -> None:
+        profile = Profile.load()
+        profile.raw["severity"]["cluster_size_saturation"] = 1
+        assert any("cluster_size_saturation" in problem for problem in profile.validate())

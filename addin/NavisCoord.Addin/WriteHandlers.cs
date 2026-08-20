@@ -44,6 +44,9 @@ namespace NavisCoord
                     ["name"] = saved.DisplayName ?? string.Empty,
                     ["guid"] = saved.Guid.ToString(),
                     ["is_group"] = saved.IsGroup,
+                    ["kind"] = saved.IsGroup ? "folder" :
+                        saved is SelectionSet explicitSet && explicitSet.ExplicitModelItems != null
+                            ? "explicit" : "search",
                     ["item_count"] = saved is SelectionSet set && set.ExplicitModelItems != null
                         ? (double)set.ExplicitModelItems.Count
                         : 0.0
@@ -147,22 +150,45 @@ namespace NavisCoord
             {
                 if (pair.Value.Count == 0) continue;
                 var name = $"{prefix} - {pair.Key}";
-                RemoveSetByName(doc, name);
-
                 var set = new SelectionSet(pair.Value) { DisplayName = name };
-                doc.SelectionSets.AddCopy(set);
+                // Replace in one Navisworks operation.  Remove + AddCopy left
+                // a real interval in which the named set did not exist and a
+                // failure in AddCopy made that data loss permanent.
+                var matches = doc.SelectionSets.RootItem.Children
+                    .Where(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (matches.Count > 1)
+                    throw new InvalidOperationException($"Hay {matches.Count} conjuntos raíz llamados '{name}'.");
+                if (matches.Count == 1)
+                {
+                    var index = doc.SelectionSets.RootItem.Children.IndexOfGuid(matches[0].Guid);
+                    if (index < 0) throw new InvalidOperationException($"No se pudo re-resolver '{name}'.");
+                    doc.SelectionSets.ReplaceWithCopy(index, set);
+                }
+                else
+                {
+                    doc.SelectionSets.AddCopy(set);
+                }
                 created.Add(name);
             }
 
             // Verification: re-read the sets from the document rather than
             // trusting that AddCopy did what it said.
             var observed = new Dictionary<string, object>();
-            foreach (var saved in doc.SelectionSets.RootItem.Children)
+            var verificationFailures = new List<object>();
+            foreach (var pair in buckets.Where(p => p.Value.Count > 0))
             {
-                if (saved is SelectionSet set && (saved.DisplayName ?? string.Empty).StartsWith(prefix, StringComparison.Ordinal))
+                var name = $"{prefix} - {pair.Key}";
+                var matches = doc.SelectionSets.RootItem.Children
+                    .OfType<SelectionSet>()
+                    .Where(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (matches.Count == 1 && matches[0].ExplicitModelItems != null &&
+                    matches[0].ExplicitModelItems.ValueEquals(pair.Value))
                 {
-                    observed[saved.DisplayName] = (double)(set.ExplicitModelItems?.Count ?? 0);
+                    observed[name] = (double)matches[0].ExplicitModelItems.Count;
                 }
+                else verificationFailures.Add(name);
             }
 
             return Ok("build_sets", new Dictionary<string, object>
@@ -171,15 +197,9 @@ namespace NavisCoord
                 ["scanned_items"] = (double)scanned,
                 ["routing"] = routing,
                 ["planned"] = plan,
-                ["verified_in_document"] = observed
+                ["verified_in_document"] = observed,
+                ["verification_failures"] = verificationFailures
             });
-        }
-
-        private static void RemoveSetByName(Document doc, string name)
-        {
-            var existing = doc.SelectionSets.RootItem.Children
-                .FirstOrDefault(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase));
-            if (existing != null) doc.SelectionSets.Remove(existing);
         }
 
         // ------------------------------------------- search sets (criterios)
@@ -284,44 +304,208 @@ namespace NavisCoord
 
             if (dryRun) return Ok("build_search_sets", result);
 
+            // Snapshot only stable names before the first tree mutation.  A
+            // SelectionSets edit may invalidate every SavedItem wrapper, so
+            // neither the gate nor later iterations retain those wrappers.
+            var existingNames = doc.SelectionSets.RootItem.Children
+                .Select(s => s.DisplayName ?? string.Empty)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .ToList();
+            var referencedNames = ReferencedRootFolderNames(doc);
+            var publicationGate = new SelectionSetPublicationGate(existingNames, referencedNames);
+            var publications = new List<object>();
+            var previousGuids = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var group in pending.GroupBy(p => p.Item1))
             {
-                var existing = doc.SelectionSets.RootItem.Children
-                    .FirstOrDefault(s => string.Equals(s.DisplayName, group.Key, StringComparison.OrdinalIgnoreCase));
-                if (existing != null)
+                // Resolve inside this iteration.  A previous ReplaceWithCopy
+                // may have rebuilt the SavedItem tree.
+                var matches = doc.SelectionSets.RootItem.Children
+                    .Where(s => string.Equals(s.DisplayName, group.Key, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (matches.Count > 1)
                 {
-                    // Sin replace la carpeta existente se respeta: los clash
-                    // tests la referencian por SelectionSource y recrearla
-                    // rompería ese enlace y borraría resultados corridos.
-                    if (!replace) continue;
-                    doc.SelectionSets.Remove(existing);
+                    publications.Add(PublicationReport(group.Key, "rejected", false,
+                        "hay más de una carpeta raíz con ese nombre"));
+                    continue;
                 }
+
+                var existing = matches.SingleOrDefault();
                 var folder = new FolderItem { DisplayName = group.Key };
                 foreach (var entry in group)
                 {
                     folder.Children.Add(new SelectionSet(entry.Item3) { DisplayName = entry.Item2 });
                 }
-                doc.SelectionSets.AddCopy(folder);
+
+                if (existing != null)
+                {
+                    previousGuids[group.Key] = existing.Guid;
+                    if (!replace)
+                    {
+                        publications.Add(PublicationReport(group.Key, "preserved", true,
+                            "replace_existing=false"));
+                        continue;
+                    }
+
+                    if (referencedNames.Contains(group.Key))
+                    {
+                        // Replacing this object (or one of its children) would
+                        // orphan a ClashTest SelectionSource.  Preserve it and
+                        // let the exact post-read verification decide whether
+                        // its current definition already satisfies the profile.
+                        publicationGate.PreserveReferenced(group.Key);
+                        publications.Add(PublicationReport(group.Key, "preserved_referenced", true,
+                            "uno o más clash tests apuntan a la carpeta o a sus hijos"));
+                        continue;
+                    }
+
+                    var oldGuid = existing.Guid;
+                    var index = doc.SelectionSets.RootItem.Children.IndexOfGuid(oldGuid);
+                    try
+                    {
+                        publicationGate.ReplaceUnreferenced(group.Key,
+                            () => doc.SelectionSets.ReplaceWithCopy(index, folder));
+                        publications.Add(PublicationReport(group.Key, "replaced_atomically", true));
+                    }
+                    catch (Exception ex)
+                    {
+                        // Never attempt a Remove/Add repair here.  A failed
+                        // swap is re-read below and reported as indeterminate.
+                        publications.Add(PublicationReport(group.Key, "replace_failed", false, ex.Message));
+                    }
+                    continue;
+                }
+
+                try
+                {
+                    publicationGate.AddNew(group.Key, () => doc.SelectionSets.AddCopy(folder));
+                    publications.Add(PublicationReport(group.Key, "added", true));
+                }
+                catch (Exception ex)
+                {
+                    publications.Add(PublicationReport(group.Key, "add_failed", false, ex.Message));
+                }
             }
 
-            // Verificación: releer el documento, no confiar en AddCopy.
+            // Verification is exact: one root folder, precisely the requested
+            // children, and each saved Search equal by value to the planned
+            // definition.  Merely finding a folder with the right name is not
+            // evidence that configure succeeded.
             var verified = new List<object>();
             foreach (var group in pending.GroupBy(p => p.Item1))
             {
-                var saved = doc.SelectionSets.RootItem.Children
-                    .FirstOrDefault(s => string.Equals(s.DisplayName, group.Key, StringComparison.OrdinalIgnoreCase));
+                var roots = doc.SelectionSets.RootItem.Children
+                    .Where(s => string.Equals(s.DisplayName, group.Key, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                var saved = roots.Count == 1 ? roots[0] : null;
+                var expected = group.ToDictionary(e => e.Item2, e => e.Item3,
+                    StringComparer.OrdinalIgnoreCase);
+                var actualNames = saved is GroupItem actualGroup
+                    ? actualGroup.Children.Select(c => c.DisplayName ?? string.Empty).ToList()
+                    : new List<string>();
+                var exactChildren = roots.Count == 1 &&
+                    new HashSet<string>(actualNames, StringComparer.OrdinalIgnoreCase)
+                        .SetEquals(expected.Keys) && actualNames.Count == expected.Count;
+                var definitionsMatch = exactChildren && saved is GroupItem definitionGroup &&
+                    expected.All(pair =>
+                    {
+                        var child = definitionGroup.Children.FirstOrDefault(c =>
+                            string.Equals(c.DisplayName, pair.Key, StringComparison.OrdinalIgnoreCase));
+                        if (!(child is SelectionSet selectionSet)) return false;
+                        try { return selectionSet.Search.ValueEquals(pair.Value); }
+                        catch { return false; }
+                    });
+
+                var priorAbsentOrPreserved = true;
+                if (saved != null && previousGuids.TryGetValue(group.Key, out var previousGuid))
+                {
+                    // ReplaceWithCopy is allowed to preserve identity.  If it
+                    // does not, the old root GUID must no longer exist.
+                    priorAbsentOrPreserved = saved.Guid == previousGuid ||
+                        doc.SelectionSets.RootItem.Children.IndexOfGuid(previousGuid) < 0;
+                }
+                var verifiedOk = roots.Count == 1 && saved.IsGroup && exactChildren &&
+                                 definitionsMatch && priorAbsentOrPreserved;
                 verified.Add(new Dictionary<string, object>
                 {
                     ["folder"] = group.Key,
-                    ["exists"] = saved != null,
+                    ["exists"] = roots.Count == 1,
+                    ["root_matches"] = (double)roots.Count,
                     ["is_group"] = saved != null && saved.IsGroup,
-                    ["children"] = saved is GroupItem g
-                        ? (object)g.Children.Select(c => c.DisplayName ?? string.Empty).ToList()
-                        : new List<string>()
+                    ["children"] = actualNames,
+                    ["exact_children"] = exactChildren,
+                    ["definitions_match"] = definitionsMatch,
+                    ["previous_identity_absent_or_preserved"] = priorAbsentOrPreserved,
+                    ["verified"] = verifiedOk
                 });
             }
+            var allVerified = verified.OfType<Dictionary<string, object>>()
+                .All(v => v.TryGetValue("verified", out var value) && value is bool ok && ok);
+            result["ok"] = allVerified;
+            result["publications"] = publications;
             result["verified_in_document"] = verified;
+            if (!allVerified)
+            {
+                result["error"] = "selection_set_verification_failed";
+                result["message"] = "Una o más carpetas no coinciden exactamente con el perfil tras releer el documento.";
+            }
             return Ok("build_search_sets", result);
+        }
+
+        private static Dictionary<string, object> PublicationReport(
+            string folder, string operation, bool accepted, string detail = "")
+        {
+            var report = new Dictionary<string, object>
+            {
+                ["folder"] = folder ?? string.Empty,
+                ["operation"] = operation ?? string.Empty,
+                ["accepted"] = accepted
+            };
+            if (!string.IsNullOrWhiteSpace(detail)) report["detail"] = detail;
+            return report;
+        }
+
+        private static HashSet<string> ReferencedRootFolderNames(Document doc)
+        {
+            var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var root in doc.SelectionSets.RootItem.Children.OfType<GroupItem>())
+            {
+                var descendantIds = new HashSet<Guid>();
+                CollectSavedItemGuids(root, descendantIds);
+                var found = doc.GetClash().TestsData.Tests.OfType<ClashTest>().Any(test =>
+                    SelectionReferencesAny(doc, test.SelectionA.Selection, descendantIds) ||
+                    SelectionReferencesAny(doc, test.SelectionB.Selection, descendantIds));
+                if (found && !string.IsNullOrWhiteSpace(root.DisplayName)) referenced.Add(root.DisplayName);
+            }
+            return referenced;
+        }
+
+        private static void CollectSavedItemGuids(SavedItem item, ISet<Guid> destination)
+        {
+            if (item == null) return;
+            destination.Add(item.Guid);
+            if (!(item is GroupItem group)) return;
+            foreach (var child in group.Children) CollectSavedItemGuids(child, destination);
+        }
+
+        private static bool SelectionReferencesAny(
+            Document doc, Selection selection, ISet<Guid> candidateIds)
+        {
+            if (selection == null || !selection.HasSelectionSources) return false;
+            foreach (var source in selection.SelectionSources)
+            {
+                try
+                {
+                    var resolved = doc.SelectionSets.ResolveSelectionSource(source);
+                    if (resolved != null && candidateIds.Contains(resolved.Guid)) return true;
+                }
+                catch
+                {
+                    // An unresolvable source is already stale.  It cannot be
+                    // used as evidence that this live folder is referenced.
+                }
+            }
+            return false;
         }
 
         private static ModelItemCollection ResolveScope(Document doc, string token, out List<string> names)
@@ -835,8 +1019,7 @@ namespace NavisCoord
             var pairs = Json.Arr(payload, "pairs");
             if (pairs.Count == 0) throw new ArgumentException("Se requiere 'pairs' con al menos un par de disciplinas.");
 
-            var clash = doc.GetClash();
-            var existing = clash.TestsData.Tests
+            var existing = doc.GetClash().TestsData.Tests
                 .Select(t => t.DisplayName ?? string.Empty)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -896,13 +1079,13 @@ namespace NavisCoord
                 var setB = FindSet(doc, $"{prefix} - {spec.B}");
                 if (setA?.ExplicitModelItems == null || setB?.ExplicitModelItems == null) continue;
 
-                if (replace)
-                {
-                    var duplicate = clash.TestsData.Tests
-                        .OfType<ClashTest>()
-                        .FirstOrDefault(t => string.Equals(t.DisplayName, spec.Name, StringComparison.OrdinalIgnoreCase));
-                    if (duplicate != null) clash.TestsData.TestsRemove(duplicate);
-                }
+                var testsData = doc.GetClash().TestsData;
+                var duplicates = testsData.Tests
+                    .OfType<ClashTest>()
+                    .Where(t => string.Equals(t.DisplayName, spec.Name, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (duplicates.Count > 1)
+                    throw new InvalidOperationException($"Hay {duplicates.Count} tests llamados '{spec.Name}'.");
 
                 var test = new ClashTest
                 {
@@ -912,21 +1095,46 @@ namespace NavisCoord
                 };
                 test.SelectionA.Selection.CopyFrom(setA.ExplicitModelItems);
                 test.SelectionB.Selection.CopyFrom(setB.ExplicitModelItems);
-                clash.TestsData.TestsAddCopy(test);
+                if (replace && duplicates.Count == 1)
+                {
+                    var index = testsData.Tests.IndexOfGuid(duplicates[0].Guid);
+                    if (index < 0) throw new InvalidOperationException($"No se pudo re-resolver el test '{spec.Name}'.");
+                    testsData.TestsReplaceWithCopy(index, test);
+                }
+                else
+                {
+                    testsData.TestsAddCopy(test);
+                }
                 created++;
             }
 
-            var verified = clash.TestsData.Tests
-                .Select(t => t.DisplayName ?? string.Empty)
-                .Where(n => n.StartsWith(prefix, StringComparison.Ordinal))
-                .ToList();
+            var verified = new List<object>();
+            var verificationFailures = new List<object>();
+            foreach (var spec in toCreate)
+            {
+                var setA = FindSet(doc, $"{prefix} - {spec.A}");
+                var setB = FindSet(doc, $"{prefix} - {spec.B}");
+                var matches = doc.GetClash().TestsData.Tests.OfType<ClashTest>()
+                    .Where(t => string.Equals(t.DisplayName, spec.Name, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                var match = matches.Count == 1 ? matches[0] : null;
+                var exact = match != null && setA?.ExplicitModelItems != null && setB?.ExplicitModelItems != null &&
+                    match.TestType == spec.Type && Math.Abs(match.Tolerance - spec.Tolerance) < 0.0001 &&
+                    match.SelectionA.Selection.HasExplicitSelection &&
+                    match.SelectionB.Selection.HasExplicitSelection &&
+                    match.SelectionA.Selection.ExplicitSelection.ValueEquals(setA.ExplicitModelItems) &&
+                    match.SelectionB.Selection.ExplicitSelection.ValueEquals(setB.ExplicitModelItems);
+                if (exact) verified.Add(spec.Name);
+                else verificationFailures.Add(spec.Name);
+            }
 
             return Ok("build_matrix", new Dictionary<string, object>
             {
                 ["dry_run"] = false,
                 ["planned"] = plan,
                 ["created"] = (double)created,
-                ["verified_in_document"] = verified
+                ["verified_in_document"] = verified,
+                ["verification_failures"] = verificationFailures
             });
         }
 
@@ -944,6 +1152,10 @@ namespace NavisCoord
         public static Dictionary<string, object> RunTests(Dictionary<string, object> payload)
         {
             var doc = Router.RequireDocument();
+            var result = new MutationResult("clash/run")
+            {
+                FingerprintBefore = DocumentContext.Fingerprint(doc)
+            };
             var requested = new HashSet<string>(Json.StrArr(payload, "tests"), StringComparer.OrdinalIgnoreCase);
 
             // Snapshot names only. Any object captured here would be dead by
@@ -953,6 +1165,15 @@ namespace NavisCoord
                 .Select(t => t.DisplayName ?? string.Empty)
                 .Where(n => requested.Count == 0 || requested.Contains(n))
                 .ToList();
+            result.Requested = names.Count;
+
+            if (Json.Bool(payload, "dry_run", true))
+            {
+                result.DryRun = true;
+                result.Detail["would_run"] = names.Cast<object>().ToList();
+                result.FingerprintAfter = result.FingerprintBefore;
+                return result.ToJson();
+            }
 
             var ran = new List<object>();
             foreach (var name in names)
@@ -978,11 +1199,19 @@ namespace NavisCoord
 
             if (ran.Count == 0)
             {
-                throw new InvalidOperationException(
-                    "Ningún test coincidió. Verifica los nombres con clash/tests.");
+                result.Fail("Ningún test coincidió. Verifica los nombres con clash/tests.");
+                result.FingerprintAfter = DocumentContext.Fingerprint(doc);
+                return result.ToJson();
             }
 
-            return Ok("run_tests", new Dictionary<string, object> { ["tests"] = ran });
+            result.Applied = ran.Count;
+            result.Verified = ran.OfType<Dictionary<string, object>>()
+                .Count(row => string.Equals(Json.Str(row, "status"),
+                    ClashTestStatus.Complete.ToString(), StringComparison.OrdinalIgnoreCase));
+            result.Failed = result.Applied - result.Verified;
+            result.Detail["tests"] = ran;
+            result.FingerprintAfter = DocumentContext.Fingerprint(doc);
+            return result.ToJson();
         }
 
         private static ClashTest FindTest(Document doc, string name)
@@ -1009,21 +1238,20 @@ namespace NavisCoord
             var groups = Json.Arr(payload, "groups");
             if (groups.Count == 0) throw new ArgumentException("Se requiere 'groups'.");
 
-            var clash = doc.GetClash();
-            var index = BuildResultIndex(clash);
+            var ownerIndex = BuildOwnerIndex(doc.GetClash());
 
             var plan = new List<object>();
             foreach (var raw in groups)
             {
                 if (!(raw is Dictionary<string, object> spec)) continue;
                 var guids = Json.StrArr(spec, "clash_guids");
-                var found = guids.Count(g => index.ContainsKey(g));
+                var found = guids.Count(g => ownerIndex.ContainsKey(g));
 
                 // A Navisworks clash group lives under exactly one test, so an
                 // issue whose clashes span several becomes several groups. The
                 // dry run has to say so: a plan that under-reports what the
                 // commit will do is worse than no plan at all.
-                var spanned = OwningTests(guids, index);
+                var spanned = ClashPlanning.OwningTests(guids, ownerIndex);
                 plan.Add(new Dictionary<string, object>
                 {
                     ["name"] = Json.Str(spec, "name"),
@@ -1061,7 +1289,7 @@ namespace NavisCoord
                 // the group is created inside whichever test owns them.
                 // Names, not objects: the handles are re-resolved below and
                 // anything captured here would be dead after the first move.
-                var owners = OwningTests(guids, index);
+                var owners = ClashPlanning.OwningTests(guids, ownerIndex);
                 if (owners.Count == 0) continue;
 
                 foreach (var testName in owners)
@@ -1069,11 +1297,7 @@ namespace NavisCoord
                     // One group per owning test. Suffixed only when the issue
                     // actually spans several, so the common case stays clean.
                     var groupName = owners.Count > 1 ? $"{name} · {testName}" : name;
-                    var mine = guids
-                        .Where(g => index.ContainsKey(g) &&
-                                    string.Equals(index[g].Test.DisplayName, testName,
-                                        StringComparison.OrdinalIgnoreCase))
-                        .ToList();
+                    var mine = ClashPlanning.ForOwner(guids, ownerIndex, testName);
 
                     var host = FindTest(doc, testName);
                     if (host == null) continue;
@@ -1084,7 +1308,8 @@ namespace NavisCoord
                         .Any(g => string.Equals(g.DisplayName, groupName, StringComparison.Ordinal));
                     if (!existente)
                     {
-                        clash.TestsData.TestsAddCopy(host, new ClashResultGroup { DisplayName = groupName });
+                        doc.GetClash().TestsData.TestsAddCopy(
+                            host, new ClashResultGroup { DisplayName = groupName });
                     }
 
                     // Every TestsMove rebuilds the children tree and disposes
@@ -1144,9 +1369,8 @@ namespace NavisCoord
             }
 
             var guids = Json.StrArr(payload, "clash_guids");
-            var clash = doc.GetClash();
-            var index = BuildResultIndex(clash);
-            var targets = guids.Where(index.ContainsKey).ToList();
+            var ownerIndex = BuildOwnerIndex(doc.GetClash());
+            var targets = guids.Where(ownerIndex.ContainsKey).ToList();
 
             if (dryRun)
             {
@@ -1159,13 +1383,11 @@ namespace NavisCoord
                 });
             }
 
-            var changed = 0;
-            foreach (var guid in targets)
-            {
-                var entry = index[guid];
-                EditResultStatus(clash.TestsData, entry.Result, status);
-                changed++;
-            }
+            var outcome = ClashPlanning.ApplyEach(
+                targets,
+                guid => ResolveResult(doc, guid),
+                (_, fresh) => EditResultStatus(fresh.Data, fresh.Result, status));
+            var changed = outcome.Applied.Count;
 
             // Verify by re-reading rather than by counting successful calls.
             var reindexed = BuildResultIndex(doc.GetClash());
@@ -1178,7 +1400,9 @@ namespace NavisCoord
                 ["status"] = status.ToString(),
                 ["attempted"] = (double)changed,
                 ["verified_in_document"] = (double)confirmed,
-                ["mismatch"] = (double)(changed - confirmed)
+                ["mismatch"] = (double)(changed - confirmed),
+                ["not_resolved"] = outcome.Vanished.Cast<object>().ToList(),
+                ["failed_guids"] = outcome.Failed.Cast<object>().ToList()
             });
         }
 
@@ -1246,6 +1470,17 @@ namespace NavisCoord
                 throw new InvalidOperationException("Ningún elemento se pudo resolver a partir de 'path_ids'.");
             }
 
+            if (Json.Bool(payload, "dry_run", true))
+            {
+                return Ok("color", new Dictionary<string, object>
+                {
+                    ["dry_run"] = true,
+                    ["requested"] = (double)pathIds.Count,
+                    ["unique_requested"] = (double)unique,
+                    ["would_color"] = (double)items.Count
+                });
+            }
+
             var color = Color.FromByteRGB(
                 (byte)Math.Min(255, Math.Max(0, Json.Int(payload, "r", 255))),
                 (byte)Math.Min(255, Math.Max(0, Json.Int(payload, "g", 0))),
@@ -1276,6 +1511,16 @@ namespace NavisCoord
             var doc = Router.RequireDocument();
             var pathIds = Json.StrArr(payload, "path_ids");
 
+            if (Json.Bool(payload, "dry_run", true))
+            {
+                return Ok("reset_appearance", new Dictionary<string, object>
+                {
+                    ["dry_run"] = true,
+                    ["scope"] = pathIds.Count == 0 ? "todo el modelo" : "selección",
+                    ["would_reset"] = (double)pathIds.Distinct(StringComparer.Ordinal).Count()
+                });
+            }
+
             if (pathIds.Count == 0)
             {
                 doc.Models.ResetAllPermanentMaterials();
@@ -1298,6 +1543,17 @@ namespace NavisCoord
             var unique = pathIds.Distinct(StringComparer.Ordinal).Count();
             var items = NavisContext.ResolveMany(doc, pathIds);
 
+            if (Json.Bool(payload, "dry_run", true))
+            {
+                return Ok("select", new Dictionary<string, object>
+                {
+                    ["dry_run"] = true,
+                    ["requested"] = (double)pathIds.Count,
+                    ["unique_requested"] = (double)unique,
+                    ["would_select"] = (double)items.Count
+                });
+            }
+
             doc.CurrentSelection.Clear();
             doc.CurrentSelection.CopyFrom(items);
 
@@ -1317,6 +1573,20 @@ namespace NavisCoord
         {
             public ClashResult Result;
             public ClashTest Test;
+        }
+
+        private sealed class ResolvedResult
+        {
+            public DocumentClashTests Data;
+            public ClashResult Result;
+        }
+
+        private static ResolvedResult ResolveResult(Document doc, string guid)
+        {
+            if (!Guid.TryParse(guid, out var parsed)) return null;
+            var data = doc.GetClash().TestsData;
+            var result = data.ResolveGuid(parsed) as ClashResult;
+            return result == null ? null : new ResolvedResult { Data = data, Result = result };
         }
 
         /// <summary>
@@ -1370,15 +1640,20 @@ namespace NavisCoord
             _editStatusMethod.Invoke(data, new object[] { result, status, assignee });
         }
 
-        /// <summary>Distinct test names owning the given clash results.</summary>
-        private static List<string> OwningTests(
-            IEnumerable<string> guids, Dictionary<string, ResultEntry> index)
-            => guids
-                .Where(index.ContainsKey)
-                .Select(g => index[g].Test.DisplayName ?? string.Empty)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+        private static Dictionary<string, string> BuildOwnerIndex(DocumentClash clash)
+        {
+            var owners = new List<KeyValuePair<string, string>>();
+            foreach (var saved in clash.TestsData.Tests)
+            {
+                if (!(saved is ClashTest test)) continue;
+                var name = test.DisplayName ?? string.Empty;
+                foreach (var result in Router.EnumerateResults(test))
+                {
+                    owners.Add(new KeyValuePair<string, string>(result.Guid.ToString(), name));
+                }
+            }
+            return ClashPlanning.SnapshotOwners(owners);
+        }
 
         private static Dictionary<string, ResultEntry> BuildResultIndex(DocumentClash clash)
         {

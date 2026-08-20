@@ -151,4 +151,10 @@
     <Copy SourceFiles="@(RibbonIcon)" DestinationFolder="$(OutDir)" />
   </Target>
 
+  <ItemGroup>
+    <!-- Lets a clean .NET SDK target net48 without relying on an incidental
+         Visual Studio Developer Pack installation. Not copied to the add-in. -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies"
+                      Version="1.0.3" PrivateAssets="All" />
+  </ItemGroup>
 </Project>

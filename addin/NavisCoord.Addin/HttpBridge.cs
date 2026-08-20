@@ -267,12 +267,19 @@ namespace NavisCoord
             // answering while a job owns the UI thread.
             if (NonDocumentRoutes.Contains(route))
             {
-                TryRespond(context, 200, HandleWithoutDocument(route, payload));
+                var value = HandleWithoutDocument(route, payload);
+                TryRespond(context, DomainStatus(value, 200), value);
                 return;
             }
 
             if (string.Equals(route, "job/submit", StringComparison.OrdinalIgnoreCase))
             {
+                var sessionProblem = MutationTargeting.ValidateSession(payload, _sessionId, route);
+                if (sessionProblem != null)
+                {
+                    TryRespond(context, 409, sessionProblem);
+                    return;
+                }
                 var submission = SubmitJob(payload);
                 TryRespond(context, SubmitStatus(submission), submission);
                 return;
@@ -300,6 +307,14 @@ namespace NavisCoord
             var outcome = _dispatcher.Invoke(
                 () =>
                 {
+                    if (Router.IsMutation(route))
+                    {
+                        var document = Autodesk.Navisworks.Api.Application.ActiveDocument;
+                        var fingerprint = DocumentContext.Fingerprint(document);
+                        var targetProblem = MutationTargeting.Validate(
+                            payload, fingerprint, _sessionId, route);
+                        if (targetProblem != null) return targetProblem;
+                    }
                     var value = _router.Dispatch(route, payload);
                     RefreshSession();
                     return value;
@@ -335,9 +350,10 @@ namespace NavisCoord
                 return;
             }
 
+            var response = Decorate(outcome.Value, outcome.WaitedMs);
             var exitAfterResponse = string.Equals(route, "application/exit", StringComparison.OrdinalIgnoreCase) &&
                                     Json.Bool(outcome.Value, "exit_requested", false);
-            TryRespond(context, 200, Decorate(outcome.Value, outcome.WaitedMs));
+            TryRespond(context, DomainStatus(response, 200), response);
             if (exitAfterResponse)
             {
                 // The response stream is closed synchronously above.  Only
@@ -579,28 +595,6 @@ namespace NavisCoord
                 };
             }
 
-            // …and one still in flight returns THAT job rather than a second
-            // one. The ledger is only written when the work finishes, so
-            // without this a client that retried during execution got a
-            // duplicate submission — refused as a conflict, which is safe but
-            // tells the caller the wrong story about what happened.
-            var inFlight = JobManager.FindByIdempotencyKey(key, route, expectedFingerprint);
-            if (inFlight != null)
-            {
-                return new Dictionary<string, object>
-                {
-                    ["accepted"] = true,
-                    ["job_id"] = inFlight.Id,
-                    ["route"] = inFlight.Operation,
-                    ["state"] = inFlight.State,
-                    ["idempotent_replay"] = true,
-                    ["session_id"] = _sessionId,
-                    ["detail"] = "Ya había un trabajo con esta idempotency_key; se devuelve ese, " +
-                                 "no se envió uno nuevo.",
-                    ["poll"] = "job/status con {\"job_id\": \"" + inFlight.Id + "\"}"
-                };
-            }
-
             // Collision BEFORE touching the document: asking Navisworks for a
             // fingerprint while a job owns the UI thread blocks for the whole
             // dispatcher timeout, so a submit during a long run took twenty
@@ -616,31 +610,68 @@ namespace NavisCoord
                     TimeSpan.FromSeconds(20));
             var currentFingerprint = fingerprint.Ok ? fingerprint.Value : string.Empty;
 
-            if (JobManager.WouldCollide(currentFingerprint, out var collision))
-            {
-                return Error("job_conflict", collision);
-            }
+            // Payload and profile are snapshots of the admission request, not
+            // shared dictionaries that another request can change while this
+            // job waits in the queue.
+            var frozenBody = Json.ParseObject(Json.Write(body));
+            // The outer envelope was bound to this authenticated instance.
+            // Propagate that identity into the actual mutation payload and do
+            // not trust a conflicting nested value supplied by the caller.
+            frozenBody["session_id"] = _sessionId;
+            frozenBody["target_id"] = _sessionId;
+            var frozenProfile = ProfileStore.SnapshotActive();
 
-            var job = JobManager.Submit(
+            var admission = JobManager.TrySubmit(
                 route,
                 j =>
                 {
                     // The work still runs on the UI thread — the API leaves no
                     // choice — but the HTTP caller is no longer waiting on it.
-                    var outcome = _dispatcher.Invoke(() => handler(body, j), TimeSpan.FromMinutes(30));
+                    var outcome = _dispatcher.Invoke(() =>
+                    {
+                        var document = Autodesk.Navisworks.Api.Application.ActiveDocument;
+                        var targetProblem = MutationTargeting.Validate(
+                            frozenBody, DocumentContext.Fingerprint(document), _sessionId, route);
+                        return targetProblem ?? handler(frozenBody, j);
+                    }, TimeSpan.FromMinutes(30));
                     if (outcome.Ok) return outcome.Value;
                     throw outcome.Error ?? new InvalidOperationException(
                         outcome.Rejection ?? "El puente rechazó el trabajo.");
                 },
-                targetId: Json.Str(payload, "target_id"),
+                targetId: _sessionId,
                 sessionId: _sessionId,
                 fingerprint: currentFingerprint,
                 idempotencyKey: key,
                 // Frozen here, before the job can start: the profile in force
                 // at submit is the one it will be judged by, and ProfileStore
                 // refuses to swap it while the job runs.
-                profileChecksum: ProfileStore.ActiveChecksum(),
-                cancellable: Router.IsCancellable(route));
+                profileChecksum: frozenProfile?.Checksum ?? string.Empty,
+                cancellable: Router.IsCancellable(route),
+                profileSnapshot: frozenProfile);
+
+            if (!admission.Accepted)
+            {
+                return Error("job_conflict", admission.Error);
+            }
+
+            var job = admission.Job;
+            if (admission.IdempotentReplay)
+            {
+                var replay = new Dictionary<string, object>
+                {
+                    ["accepted"] = true,
+                    ["job_id"] = job.Id,
+                    ["route"] = job.Operation,
+                    ["state"] = job.State,
+                    ["idempotent_replay"] = true,
+                    ["session_id"] = _sessionId,
+                    ["detail"] = "Esta idempotency_key ya reservó o terminó un trabajo; " +
+                                 "se devuelve el mismo sin enviar otro.",
+                    ["poll"] = "job/status con {\"job_id\": \"" + job.Id + "\"}"
+                };
+                if (job.Result != null) replay["result"] = job.Result;
+                return replay;
+            }
 
             return new Dictionary<string, object>
             {
@@ -685,6 +716,41 @@ namespace NavisCoord
                     return 400;
                 default:
                     return 400;
+            }
+        }
+
+        private static int DomainStatus(Dictionary<string, object> result, int success)
+        {
+            if (result == null) return 500;
+            var error = Json.Str(result, "error");
+            if (string.IsNullOrWhiteSpace(error) &&
+                !string.Equals(Json.Str(result, "status"), "failed", StringComparison.OrdinalIgnoreCase))
+            {
+                return success;
+            }
+
+            switch (error)
+            {
+                case "unknown_route":
+                case "unknown_job":
+                    return 404;
+                case "job_conflict":
+                case "profile_locked":
+                case "document_changed":
+                case "session_changed":
+                case "mutation_target_required":
+                case "no_document":
+                    return 409;
+                case "capability_unavailable":
+                    return 501;
+                case "profile_invalid":
+                    return 422;
+                case "profile_missing":
+                case "profile_unreadable":
+                case "profile_checksum_mismatch":
+                    return 400;
+                default:
+                    return 422;
             }
         }
 

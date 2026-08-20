@@ -89,6 +89,13 @@ namespace NavisCoord
             lock (Gate)
             {
                 if (!IsRunning) return "NavisCoord no estaba activo.";
+                var busy = JobManager.BlockingMutation();
+                if (busy != null)
+                {
+                    return "NavisCoord NO se detuvo: el trabajo " + busy.Id + " (" +
+                           busy.Operation + ") está reservado o ejecutándose. Cancélalo si aún " +
+                           "está en cola, o espera su estado terminal antes de detener el puente.";
+                }
                 _bridge.Dispose();
                 _bridge = null;
                 return "NavisCoord detenido y token de sesión eliminado.";

@@ -154,58 +154,73 @@ function New-DeterministicZip {
 
 if ($VerifyReproducible) {
     $head = (& git -C $repoRoot rev-parse HEAD).Trim()
+    $dirty = @(& git -C $repoRoot status --porcelain --untracked-files=all)
+    if ($dirty.Count -gt 0) {
+        throw "-VerifyReproducible construye el commit $head en clones limpios, pero el árbol tiene cambios sin commit. Confírmalos o descártalos antes para no certificar un código distinto del que estás viendo."
+    }
     Write-Host "Verificando reproducibilidad de $head en dos rutas distintas."
 
     # Dos rutas deliberadamente desiguales en longitud y forma: la fuga que
     # esto persigue era precisamente una ruta absoluta incrustada, y dos
     # carpetas hermanas del mismo largo podrían ocultarla por casualidad.
-    $a = Join-Path ([System.IO.Path]::GetTempPath()) 'nvc-repro-a'
-    $b = Join-Path ([System.IO.Path]::GetTempPath()) 'nvc-repro-b-una-ruta-bastante-mas-larga\anidada'
-
-    $results = @()
-    foreach ($pair in @(@{ Path = $a; Tag = 'A' }, @{ Path = $b; Tag = 'B' })) {
-        $dir = $pair.Path
-        if (Test-Path $dir) { Remove-Item -Recurse -Force -LiteralPath $dir }
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        & git clone --quiet --no-checkout $repoRoot $dir 2>&1 | Out-Null
-        & git -C $dir checkout --quiet --detach $head 2>&1 | Out-Null
-        Write-Host "[$($pair.Tag)] construyendo en $dir"
-        # El mismo host que corre esto, no «powershell»: en una máquina con
-        # PowerShell 7 esa palabra invoca al 5.1 del sistema, y comparar dos
-        # builds hechos por intérpretes distintos no demuestra nada sobre el
-        # build.
-        $host_exe = (Get-Process -Id $PID).Path
-        & $host_exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir 'scripts\Build-Release.ps1') -Version $Version 2>&1 |
-            Select-Object -Last 3 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "[$($pair.Tag)] el build falló en $dir" }
-        $results += [pscustomobject]@{ Tag = $pair.Tag; Root = $dir }
+    $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+    $reproRoot = [System.IO.Path]::GetFullPath(
+        (Join-Path $tempRoot ('naviscoord-repro-' + [guid]::NewGuid().ToString('N'))))
+    if (-not $reproRoot.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        -not [System.IO.Path]::GetFileName($reproRoot).StartsWith('naviscoord-repro-', [StringComparison]::Ordinal)) {
+        throw "Ruta temporal de reproducibilidad insegura: $reproRoot"
     }
+    $a = Join-Path $reproRoot 'a'
+    $b = Join-Path $reproRoot 'b-una-ruta-bastante-mas-larga\anidada'
 
-    Write-Host ''
-    $rows = @()
-    $rootA = (Join-Path $results[0].Root 'dist\addin')
-    $rootB = (Join-Path $results[1].Root 'dist\addin')
-    foreach ($item in (Get-ChildItem $rootA -File | Sort-Object Name)) {
-        $other = Join-Path $rootB $item.Name
-        $ha = (Get-FileHash $item.FullName -Algorithm SHA256).Hash
-        $hb = if (Test-Path $other) { (Get-FileHash $other -Algorithm SHA256).Hash } else { '(ausente)' }
-        $rows += [pscustomobject]@{ Artefacto = $item.Name; A = $ha.Substring(0, 16); B = $hb.Substring(0, 16); Identico = ($ha -eq $hb) }
-    }
-    foreach ($v in @('2024', '2025', '2026')) {
-        $da = Join-Path $rootA "$v\NavisCoord.dll"; $db = Join-Path $rootB "$v\NavisCoord.dll"
-        if ((Test-Path $da) -and (Test-Path $db)) {
-            $ha = (Get-FileHash $da -Algorithm SHA256).Hash; $hb = (Get-FileHash $db -Algorithm SHA256).Hash
-            $rows += [pscustomobject]@{ Artefacto = "NW$v/NavisCoord.dll"; A = $ha.Substring(0, 16); B = $hb.Substring(0, 16); Identico = ($ha -eq $hb) }
+    try {
+        $results = @()
+        foreach ($pair in @(@{ Path = $a; Tag = 'A' }, @{ Path = $b; Tag = 'B' })) {
+            $dir = $pair.Path
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            & git clone --quiet --no-checkout $repoRoot $dir 2>&1 | Out-Null
+            & git -C $dir checkout --quiet --detach $head 2>&1 | Out-Null
+            Write-Host "[$($pair.Tag)] construyendo en $dir"
+            # El mismo host que corre esto, no «powershell»: en una máquina con
+            # PowerShell 7 esa palabra invoca al 5.1 del sistema, y comparar dos
+            # builds hechos por intérpretes distintos no demuestra nada sobre el
+            # build.
+            $host_exe = (Get-Process -Id $PID).Path
+            & $host_exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir 'scripts\Build-Release.ps1') -Version $Version 2>&1 |
+                Select-Object -Last 3 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "[$($pair.Tag)] el build falló en $dir" }
+            $results += [pscustomobject]@{ Tag = $pair.Tag; Root = $dir }
+        }
+
+        Write-Host ''
+        $rows = @()
+        $rootA = (Join-Path $results[0].Root 'dist\addin')
+        $rootB = (Join-Path $results[1].Root 'dist\addin')
+        foreach ($item in (Get-ChildItem $rootA -File | Sort-Object Name)) {
+            $other = Join-Path $rootB $item.Name
+            $ha = (Get-FileHash $item.FullName -Algorithm SHA256).Hash
+            $hb = if (Test-Path $other) { (Get-FileHash $other -Algorithm SHA256).Hash } else { '(ausente)' }
+            $rows += [pscustomobject]@{ Artefacto = $item.Name; A = $ha.Substring(0, 16); B = $hb.Substring(0, 16); Identico = ($ha -eq $hb) }
+        }
+        foreach ($v in @('2024', '2025', '2026')) {
+            $da = Join-Path $rootA "$v\NavisCoord.dll"; $db = Join-Path $rootB "$v\NavisCoord.dll"
+            if ((Test-Path $da) -and (Test-Path $db)) {
+                $ha = (Get-FileHash $da -Algorithm SHA256).Hash; $hb = (Get-FileHash $db -Algorithm SHA256).Hash
+                $rows += [pscustomobject]@{ Artefacto = "NW$v/NavisCoord.dll"; A = $ha.Substring(0, 16); B = $hb.Substring(0, 16); Identico = ($ha -eq $hb) }
+            }
+        }
+        $rows | Sort-Object Artefacto | Format-Table -AutoSize | Out-String | Write-Host
+
+        $bad = @($rows | Where-Object { -not $_.Identico })
+        if ($bad) { throw "No reproducible: $($bad.Count) artefacto(s) difieren entre las dos rutas." }
+        Write-Host "Reproducible: $($rows.Count) artefacto(s) idénticos entre dos clones en rutas distintas."
+    } finally {
+        # $reproRoot is unique, rooted in TEMP and owned by this invocation.
+        # Always remove it — also when clone/build/hash comparison throws.
+        if (Test-Path -LiteralPath $reproRoot) {
+            Remove-Item -Recurse -Force -LiteralPath $reproRoot
         }
     }
-    $rows | Sort-Object Artefacto | Format-Table -AutoSize | Out-String | Write-Host
-
-    $bad = @($rows | Where-Object { -not $_.Identico })
-    if ($bad) {
-        Write-Error "No reproducible: $($bad.Count) artefacto(s) difieren entre las dos rutas."
-        exit 1
-    }
-    Write-Host "Reproducible: $($rows.Count) artefacto(s) idénticos entre dos clones en rutas distintas."
     exit 0
 }
 
@@ -305,8 +320,8 @@ foreach ($f in $found) {
     # funcionaron.
     $packedDll = Join-Path $packDir $project.Dll
     if (-not (Test-Path $packedDll)) { throw "[$v] la copia no dejo $($project.Dll) en $packDir" }
-    if ((Get-Item $builtDll).Length -ne (Get-Item $packedDll).Length) {
-        throw "[$v] el DLL empaquetado no coincide en tamano con el compilado; la copia quedo incompleta."
+    if ((Get-FileHash $builtDll -Algorithm SHA256).Hash -ne (Get-FileHash $packedDll -Algorithm SHA256).Hash) {
+        throw "[$v] el DLL empaquetado no coincide en SHA-256 con el compilado."
     }
     foreach ($name in ($legal + $profileName)) {
         if (-not (Test-Path (Join-Path $packDir $name))) { throw "[$v] falta $name en $packDir" }
@@ -316,9 +331,13 @@ foreach ($f in $found) {
     # build de Release no emite simbolos, asi que uno aqui solo puede venir de
     # una copia manual o de un build de Debug mal dirigido.
     $allowed = @($project.Dll, $profileName) + $legal
-    $stray = Get-ChildItem $packDir -Recurse -File | Where-Object { $_.Name -notin $allowed }
+    $stray = Get-ChildItem $packDir -Recurse -Force | Where-Object {
+        if ($_.PSIsContainer) { return $true }
+        $relative = $_.FullName.Substring($packDir.Length).TrimStart('\','/')
+        return $relative.Contains('\') -or $relative.Contains('/') -or $relative -notin $allowed
+    }
     if ($stray) {
-        throw "[$v] el paquete lleva archivos inesperados: $(($stray | ForEach-Object { $_.Name }) -join ', ')"
+        throw "[$v] el paquete lleva rutas inesperadas: $(($stray | ForEach-Object { $_.FullName.Substring($packDir.Length).TrimStart('\','/') }) -join ', ')"
     }
 
     # Y la comprobacion de rutas se repite sobre la carpeta ya armada, que es

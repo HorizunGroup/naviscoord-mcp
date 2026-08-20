@@ -279,6 +279,36 @@ namespace NavisCoord.Tests
             // An empty body is not malformed: most routes take no arguments.
             Check(!Json.IsWellFormedObject(""), "la cadena vacía no es un objeto…");
             Check(!Json.IsWellFormedObject("   "), "…ni un cuerpo en blanco");
+
+            foreach (var badNumber in new[]
+                     {
+                         "{\"a\":1..2}", "{\"a\":+1}", "{\"a\":01}",
+                         "{\"a\":1e}", "{\"a\":.5}", "{\"a\":1.}",
+                         "{\"a\":--1}", "{\"a\":1e9999}"
+                     })
+            {
+                Check(!Json.IsWellFormedObject(badNumber),
+                    $"«{badNumber}» contiene un número JSON inválido");
+            }
+            Check(!Json.IsWellFormedObject("{\"a\":\"\\q\"}"),
+                "un escape de cadena no reconocido se rechaza");
+
+            var atLimit = "{\"x\":" + new string('[', Json.MaxDepth - 1) + "0" +
+                          new string(']', Json.MaxDepth - 1) + "}";
+            var overLimit = "{\"x\":" + new string('[', Json.MaxDepth) + "0" +
+                            new string(']', Json.MaxDepth) + "}";
+            Check(Json.IsWellFormedObject(atLimit), "el máximo de profundidad documentado se acepta");
+            Check(!Json.IsWellFormedObject(overLimit),
+                "un cuerpo que supera la profundidad máxima se rechaza sin recursión ilimitada");
+            try
+            {
+                Check(Json.ParseObject(overLimit) != null,
+                    "el parser permisivo también corta profundidad sin StackOverflow");
+            }
+            catch (Exception ex)
+            {
+                Fail("el límite de profundidad lanzó " + ex.GetType().Name);
+            }
         }
 
         /// <summary>

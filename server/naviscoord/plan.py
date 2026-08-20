@@ -37,7 +37,7 @@ SESSION_MAX = 25
 @dataclass(slots=True)
 class Package:
     package_id: str
-    kind: str  # "systemic" | "session" | "tail"
+    kind: str  # "systemic" | "session" | "advisory" | "tail"
     title: str
     owner: str
     counterpart: str
@@ -47,6 +47,9 @@ class Package:
     clashes: int
     action: str
     issue_ids: list[str] = field(default_factory=list)
+    affected_issue_ids: list[str] = field(default_factory=list)
+    decision_issue_ids: list[str] = field(default_factory=list)
+    shared_affected_issue_ids: list[str] = field(default_factory=list)
     rationale: str = ""
 
     @property
@@ -68,6 +71,10 @@ class Package:
             "action": self.action,
             "rationale": self.rationale,
             "issue_ids": self.issue_ids[:40],
+            "affected_issue_ids": self.affected_issue_ids[:80],
+            "decision_issue_ids": self.decision_issue_ids[:80],
+            "shared_affected_issue_ids": self.shared_affected_issue_ids[:80],
+            "executable": self.kind != "advisory" and bool(self.decision_issue_ids),
         }
 
 
@@ -77,6 +84,17 @@ class Plan:
     covered_issues: int
     total_issues: int
     tail_issues: int
+    unique_affected_issues: int = 0
+    gross_affected_memberships: int = 0
+    overlapping_issues: int = 0
+    overlap_memberships: int = 0
+
+    @property
+    def executable_packages(self) -> list[Package]:
+        return [
+            package for package in self.packages
+            if package.kind != "advisory" and package.decision_issue_ids
+        ]
 
     def to_json(self, limit: int = 20) -> dict[str, Any]:
         return {
@@ -85,6 +103,11 @@ class Plan:
             "covered_issues": self.covered_issues,
             "total_issues": self.total_issues,
             "tail_issues": self.tail_issues,
+            "executable_package_count": len(self.executable_packages),
+            "unique_affected_issues": self.unique_affected_issues,
+            "gross_affected_memberships": self.gross_affected_memberships,
+            "overlapping_issues": self.overlapping_issues,
+            "overlap_memberships": self.overlap_memberships,
             "summary": (
                 f"{self.total_issues} decisiones se agrupan en {len(self.packages)} "
                 f"paquetes de trabajo. Los primeros cierran la mayor parte."
@@ -134,8 +157,10 @@ def _merge_elevation_causes(causes: list[Any]) -> list[Any]:
         f"«{c.evidence.get('system', '?')}» ({c.clash_count})" for c in worst
     )
     affected: list[int] = []
+    affected_issue_ids: list[str] = []
     for cause in causes:
         affected.extend(cause.affected_clusters)
+        affected_issue_ids.extend(cause.affected_issue_ids)
 
     return [
         RootCause(
@@ -148,6 +173,7 @@ def _merge_elevation_causes(causes: list[Any]) -> list[Any]:
             ),
             confidence=max(c.confidence for c in causes),
             affected_clusters=sorted(set(affected)),
+            affected_issue_ids=list(dict.fromkeys(affected_issue_ids)),
             clash_count=sum(c.clash_count for c in causes),
             evidence={"systems": len(causes), "worst": named},
             suggested_action=(
@@ -155,8 +181,47 @@ def _merge_elevation_causes(causes: list[Any]) -> list[Any]:
                 f"rebajar los recorridos afectados de una pasada. Los peores: {named}."
             ),
             cause_id="RC-ALT",
+            source_cause_ids=sorted(
+                {
+                    source
+                    for cause in causes
+                    for source in (cause.source_cause_ids or [cause.cause_id])
+                    if source
+                }
+            ),
         )
     ]
+
+
+def assign_decision_owners(
+    decisions: list[Issue], causes: list[Any]
+) -> dict[str, str]:
+    """Assign each executable decision to at most one systemic cause.
+
+    Coverage remains many-to-many. Ownership is selected independently and
+    deterministically: the cause already named on the issue, then confidence,
+    impact and finally cause_id. Input ordering is intentionally irrelevant.
+    """
+    owners: dict[str, str] = {}
+    for issue in sorted(decisions, key=lambda item: item.issue_id):
+        candidates = [
+            cause for cause in causes if issue.issue_id in cause.affected_issue_ids
+        ]
+        if not candidates:
+            continue
+        named = str((issue.root_cause or {}).get("cause_id", ""))
+
+        def key(cause: Any) -> tuple[int, float, int, str]:
+            aliases = set(cause.source_cause_ids or [cause.cause_id])
+            return (
+                0 if named and named in aliases else 1,
+                -float(cause.confidence),
+                -int(cause.clash_count),
+                str(cause.cause_id),
+            )
+
+        owners[issue.issue_id] = min(candidates, key=key).cause_id
+    return owners
 
 
 def build_plan(
@@ -165,6 +230,8 @@ def build_plan(
     *,
     session_max: int = SESSION_MAX,
 ) -> Plan:
+    if isinstance(session_max, bool) or not isinstance(session_max, int) or session_max < SESSION_MIN:
+        raise ValueError(f"session_max debe ser un entero mayor o igual a {SESSION_MIN}.")
     decisions = result.decisions
     packages: list[Package] = []
     claimed: set[str] = set()
@@ -179,7 +246,7 @@ def build_plan(
     single_decision_kinds = {"missing_penetration", "systemic_elevation", "repeated_typology"}
     decision_ids = {issue.issue_id for issue in decisions}
     by_id = {issue.issue_id: issue for issue in decisions}
-    index_by_position = {i: issue for i, issue in enumerate(result.issues)}
+    all_by_id = {issue.issue_id: issue for issue in result.issues}
 
     # Systemic elevation causes are merged into one package. A real model
     # produces dozens of them — 48 on this project — and emitting one package
@@ -192,21 +259,35 @@ def build_plan(
         c for c in result.root_causes if c.kind != "systemic_elevation"
     ]
 
-    for cause in sorted(ordered, key=lambda c: -c.clash_count):
-        if cause.confidence < 0.7 or cause.kind not in single_decision_kinds:
+    eligible = [
+        cause
+        for cause in ordered
+        if cause.confidence >= 0.7 and cause.kind in single_decision_kinds
+    ]
+    decision_owners = assign_decision_owners(decisions, eligible)
+
+    for cause in sorted(eligible, key=lambda c: (-c.clash_count, c.cause_id)):
+        affected = list(
+            dict.fromkeys(
+                issue_id
+                for issue_id in cause.affected_issue_ids
+                if issue_id in all_by_id
+            )
+        )
+        affected_decisions = [issue_id for issue_id in affected if issue_id in decision_ids]
+        if len(affected_decisions) < SESSION_MIN:
             continue
-        # Folded issues are closed by their representative and are not in
-        # `decisions`; counting them made coverage exceed the total and the
-        # tail come out negative.
+
         fresh = [
-            index_by_position[i].issue_id
-            for i in cause.affected_clusters
-            if i in index_by_position
-            and index_by_position[i].issue_id in decision_ids
-            and index_by_position[i].issue_id not in claimed
+            issue_id
+            for issue_id in affected_decisions
+            if decision_owners.get(issue_id) == cause.cause_id
         ]
-        if len(fresh) < SESSION_MIN:
-            continue
+        shared = [
+            issue_id
+            for issue_id in affected_decisions
+            if decision_owners.get(issue_id) not in (None, cause.cause_id)
+        ]
 
         owners: dict[str, int] = defaultdict(int)
         criticals = 0
@@ -231,11 +312,12 @@ def build_plan(
         # Picking an arbitrary pair out of four titled the sleeve-schedule
         # package "Arquitectura × Eléctrica" and contradicted the owner line
         # printed directly underneath it.
+        context_ids = fresh or affected_decisions
         pairs = {
-            " × ".join(profile.label(d) for d in by_id[i].discipline_pair if d)
-            for i in fresh
+            " × ".join(profile.label(d) for d in all_by_id[i].discipline_pair if d)
+            for i in context_ids
         }
-        levels = sorted({by_id[i].level for i in fresh if by_id[i].level})
+        levels = sorted({all_by_id[i].level for i in context_ids if all_by_id[i].level})
         qualifier = ""
         if len(pairs) == 1:
             qualifier = " · " + next(iter(pairs))
@@ -247,22 +329,33 @@ def build_plan(
             )
 
         counter += 1
+        advisory = not fresh
         packages.append(
             Package(
                 package_id=f"PQ-{counter:02d}",
-                kind="systemic",
+                kind="advisory" if advisory else "systemic",
                 title=cause.title + qualifier,
-                owner=owner if spans <= 2 else "",
-                counterpart=counterpart if spans <= 2 else "",
+                owner=owner if not advisory and spans <= 2 else "",
+                counterpart=counterpart if not advisory and spans <= 2 else "",
                 scope="todo el modelo",
                 issues=len(fresh),
                 critical=criticals,
                 clashes=cause.clash_count,
-                action=cause.suggested_action,
+                action=(
+                    "Sin trabajo propio: sus decisiones se ejecutan en otros paquetes. "
+                    "Se conserva como contexto causal y no se suma a la carga de ejecución."
+                    if advisory
+                    else cause.suggested_action
+                ),
                 issue_ids=fresh,
+                affected_issue_ids=affected,
+                decision_issue_ids=fresh,
+                shared_affected_issue_ids=shared,
                 rationale=(
-                    "Una sola decisión cierra todo el paquete; hacerla primero encoge "
-                    "el resto del plan."
+                    ("Cobertura causal sin decisiones propias; no es un paquete ejecutable."
+                     if advisory else
+                     "Una sola decisión cierra todo el paquete; hacerla primero encoge "
+                     "el resto del plan.")
                     + (
                         f" Toca a {spans} especialidades, así que la decisión es de "
                         "coordinación, no de una sola."
@@ -322,6 +415,8 @@ def build_plan(
                         "resueltas de una pasada."
                     ),
                     issue_ids=[i.issue_id for i in chunk],
+                    affected_issue_ids=[i.issue_id for i in chunk],
+                    decision_issue_ids=[i.issue_id for i in chunk],
                     rationale=(
                         "Una pareja de especialidades y una zona: alcance cerrado, "
                         "responsable único, cabe en una reunión."
@@ -330,14 +425,32 @@ def build_plan(
             )
             claimed.update(i.issue_id for i in chunk)
 
-    packages.sort(key=lambda p: (p.kind != "systemic", -p.critical, -p.issues))
+    kind_order = {"systemic": 0, "session": 1, "advisory": 2, "tail": 3}
+    packages.sort(key=lambda p: (kind_order.get(p.kind, 9), -p.critical, -p.issues, p.title))
     for position, package in enumerate(packages, start=1):
         package.package_id = f"PQ-{position:02d}"
 
-    covered = len(claimed)
+    execution_memberships = [
+        issue_id for package in packages for issue_id in package.decision_issue_ids
+    ]
+    if len(execution_memberships) != len(set(execution_memberships)):
+        raise RuntimeError("El plan asignó una decisión ejecutable a más de un paquete.")
+
+    affected_memberships = [
+        issue_id for package in packages for issue_id in package.affected_issue_ids
+    ]
+    affected_counts: dict[str, int] = defaultdict(int)
+    for issue_id in affected_memberships:
+        affected_counts[issue_id] += 1
+    covered = len(set(execution_memberships))
+    overlap_counts = [count for count in affected_counts.values() if count > 1]
     return Plan(
         packages=packages,
         covered_issues=covered,
         total_issues=len(decisions),
         tail_issues=len(decisions) - covered,
+        unique_affected_issues=len(affected_counts),
+        gross_affected_memberships=len(affected_memberships),
+        overlapping_issues=len(overlap_counts),
+        overlap_memberships=sum(overlap_counts),
     )

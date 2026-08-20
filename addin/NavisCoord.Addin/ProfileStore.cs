@@ -144,11 +144,18 @@ namespace NavisCoord
                     " bytes y el máximo es " + MaxProfileBytes.ToString(CultureInfo.InvariantCulture) + ".");
             }
 
+            if (!Json.IsWellFormedObject(canonical))
+            {
+                return Error("profile_unreadable",
+                    "El perfil no es un objeto JSON completo, usa números inválidos o supera " +
+                    Json.MaxDepth + " niveles de anidamiento.");
+            }
+
             // A mutation already running was planned against the profile in
             // force when it was submitted, and it will verify its work when it
             // finishes. Swapping the criteria underneath it would produce a
             // job that applied one set of rules and checked another.
-            var busy = JobManager.Active();
+            var busy = JobManager.BlockingMutation();
             if (busy != null)
             {
                 return Error("profile_locked",
@@ -233,7 +240,7 @@ namespace NavisCoord
         /// <summary>Drops the pushed profile; the on-disk default applies again.</summary>
         public static Dictionary<string, object> Reset()
         {
-            var busy = JobManager.Active();
+            var busy = JobManager.BlockingMutation();
             if (busy != null)
             {
                 return Error("profile_locked",
@@ -275,6 +282,29 @@ namespace NavisCoord
             return LoadDefault();
         }
 
+        /// <summary>Deep immutable snapshot for a queued job.</summary>
+        public static ActiveProfile SnapshotActive()
+        {
+            var active = Active();
+            if (active == null) return null;
+            return new ActiveProfile
+            {
+                Content = active.Content == null
+                    ? null
+                    : Json.ParseObject(Json.Write(active.Content)),
+                Canonical = active.Canonical,
+                Checksum = active.Checksum,
+                Name = active.Name,
+                Schema = active.Schema,
+                Source = active.Source,
+                Path = active.Path,
+                LoadedUtc = active.LoadedUtc,
+                Warnings = active.Warnings == null
+                    ? new List<string>()
+                    : active.Warnings.ToList()
+            };
+        }
+
         /// <summary>True when the caller pushed a profile for this session.</summary>
         public static bool HasExplicit
         {
@@ -307,7 +337,9 @@ namespace NavisCoord
             Dictionary<string, object> content;
             try
             {
-                content = Json.ParseObject(File.ReadAllText(path));
+                var source = File.ReadAllText(path);
+                if (!Json.IsWellFormedObject(source)) return null;
+                content = Json.ParseObject(source);
             }
             catch
             {
@@ -316,6 +348,7 @@ namespace NavisCoord
             if (content.Count == 0) return null;
 
             var validation = ProfileSchema.Validate(content);
+            if (!validation.Ok) return null;
             var resolved = new ActiveProfile
             {
                 Content = content,

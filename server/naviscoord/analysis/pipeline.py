@@ -175,6 +175,7 @@ def analyze(
         issue.issue_id = f"ISS-{rank:04d}"
         ranked.append(issue)
 
+    _bind_root_cause_issue_ids(result.root_causes, issues)
     _fold_shared_causes(ranked, profile)
     result.issues = ranked
     return result
@@ -290,8 +291,32 @@ def _attach_root_causes(issues: list[Issue], causes: list[RootCause]) -> None:
             issue.kind = "systemic"
 
 
+def _bind_root_cause_issue_ids(causes: list[RootCause], issues: list[Issue]) -> None:
+    """Seal detector positions to stable issue IDs before positions are lost.
+
+    Detectors necessarily work against the cluster list and therefore return
+    cluster indexes.  Issue ranking deliberately changes the order.  Keeping
+    those indexes beyond this boundary made the work plan associate a cause
+    with whichever issue happened to occupy the old position after sorting.
+    """
+    for cause in causes:
+        cause.affected_issue_ids = [
+            issues[index].issue_id
+            for index in cause.affected_clusters
+            if 0 <= index < len(issues)
+        ]
+
+
 def hotspots(result: AnalysisResult, cell_size: float = 5.0, limit: int = 10) -> list[dict[str, Any]]:
     """Worst zones by accumulated severity, for walking a model in order."""
+    if (
+        isinstance(cell_size, bool)
+        or not isinstance(cell_size, (int, float))
+        or not 0.0 < float(cell_size)
+    ):
+        raise ValueError("cell_size debe ser un número mayor que cero.")
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        raise ValueError("limit debe ser un entero mayor o igual a 1.")
     cells: dict[tuple[int, int, int], list[Issue]] = defaultdict(list)
     for issue in result.issues:
         centroid = issue.centroid

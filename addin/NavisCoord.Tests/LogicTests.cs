@@ -41,6 +41,8 @@ namespace NavisCoord.Tests
             RepeatSeriesTests();
             ViewPurityTests();
             MutationEnvelopeTests();
+            ClashPlanningTests();
+            SelectionSetPublicationTests();
             IdempotencyTests();
             JobStateMachineTests();
             PathPolicyTests();
@@ -93,6 +95,99 @@ namespace NavisCoord.Tests
                 "un lanzamiento interactivo conserva el handle del proceso como fallback");
             _eq(IntPtr.Zero, ExitWindowPolicy.PreferredHandle(IntPtr.Zero, IntPtr.Zero),
                 "sin ninguna ventana no se inventa un destino para WM_CLOSE");
+        }
+
+        private sealed class GenerationHandle
+        {
+            public int Generation;
+            public string Id;
+        }
+
+        private static void ClashPlanningTests()
+        {
+            _section("handles frescos del árbol de Clash");
+
+            var generation = 0;
+            var resolutions = new List<string>();
+            var references = new List<GenerationHandle>();
+            var outcome = ClashPlanning.ApplyEach(
+                new[] { "a", "b", "c" },
+                id =>
+                {
+                    resolutions.Add(id);
+                    return new GenerationHandle { Generation = generation, Id = id };
+                },
+                (id, handle) =>
+                {
+                    if (handle.Generation != generation)
+                        throw new InvalidOperationException("handle muerto");
+                    references.Add(handle);
+                    generation++;
+                });
+
+            _eq(3, outcome.Applied.Count, "cada GUID se aplica");
+            _eq(3, resolutions.Count, "cada edición tiene su propia resolución");
+            _check(!ReferenceEquals(references[0], references[1]) &&
+                   !ReferenceEquals(references[1], references[2]),
+                "cada edición recibe un objeto distinto por referencia");
+
+            generation = 0;
+            var disappearing = ClashPlanning.ApplyEach(
+                new[] { "a", "b", "c" },
+                id => id == "b" && generation > 0
+                    ? null
+                    : new GenerationHandle { Generation = generation, Id = id },
+                (_, handle) =>
+                {
+                    if (handle.Generation != generation) throw new InvalidOperationException();
+                    generation++;
+                });
+            _eq(2, disappearing.Applied.Count, "los handles presentes se aplican");
+            _eq(1, disappearing.Vanished.Count, "un GUID desaparecido se declara");
+            _eq("b", disappearing.Vanished[0], "se nombra el GUID desaparecido");
+
+            var owners = ClashPlanning.SnapshotOwners(new[]
+            {
+                new KeyValuePair<string, string>("g1", "Test A"),
+                new KeyValuePair<string, string>("g2", "Test B"),
+                new KeyValuePair<string, string>("g3", "Test A")
+            });
+            _eq(2, ClashPlanning.OwningTests(new[] { "g1", "g2", "g3" }, owners).Count,
+                "el snapshot reparte un problema entre tests sin wrappers");
+            _eq(2, ClashPlanning.ForOwner(new[] { "g1", "g2", "g3" }, owners, "test a").Count,
+                "el reparto por test usa solo strings estables");
+        }
+
+        private static void SelectionSetPublicationTests()
+        {
+            _section("publicación segura de Selection Sets");
+
+            var calls = new List<string>();
+            var gate = new SelectionSetPublicationGate(
+                new[] { "ARQ", "MEP" }, new[] { "ARQ" });
+
+            gate.PreserveReferenced("arq");
+            _eq(0, calls.Count, "preservar una carpeta referenciada no muta el árbol");
+
+            gate.ReplaceUnreferenced("MEP", () => calls.Add("replace"));
+            _eq(1, calls.Count, "el reemplazo no referenciado es una sola operación semántica");
+
+            gate.AddNew("EST", () => calls.Add("add"));
+            _eq(2, calls.Count, "una carpeta ausente se publica como nueva");
+
+            _check(Throws(() => gate.ReplaceUnreferenced("ARQ", () => calls.Add("unsafe"))),
+                "una carpeta referenciada no puede entrar por la ruta de reemplazo");
+            _check(Throws(() => gate.AddNew("MEP", () => calls.Add("duplicate"))),
+                "una carpeta existente no puede entrar por la ruta de alta");
+            _check(Throws(() => gate.ReplaceUnreferenced("FANTASMA", () => calls.Add("missing"))),
+                "una carpeta inexistente no puede fingir un reemplazo");
+            _eq(2, calls.Count, "las operaciones inválidas se rechazan antes de ejecutar callbacks");
+        }
+
+        private static bool Throws(Action action)
+        {
+            try { action(); return false; }
+            catch (InvalidOperationException) { return true; }
         }
 
         // ------------------------------------------------------ body limit
@@ -719,6 +814,31 @@ namespace NavisCoord.Tests
             var unverified = new MutationResult("clash/group") { Requested = 5, Applied = 5, Verified = 0 };
             _eq("failed", unverified.Status(), "aplicado sin verificar = failed, nunca completed");
 
+            var legacyStatus = LegacyMutationEnvelope.Wrap(
+                "clash/status",
+                new Dictionary<string, object> { ["clash_guids"] = new List<object> { "a", "b" } },
+                new Dictionary<string, object>
+                {
+                    ["attempted"] = 2.0,
+                    ["verified_in_document"] = 1.0,
+                    ["mismatch"] = 1.0
+                }, "fp", "fp");
+            _eq("partial", legacyStatus["status"],
+                "un handler heredado con mismatch no puede fingir completed");
+            _eq(1.0, legacyStatus["verified"],
+                "el adapter conserva solo la verificación releída");
+
+            var unverifiedColour = LegacyMutationEnvelope.Wrap(
+                "appearance/color",
+                new Dictionary<string, object> { ["path_ids"] = new List<object> { "p" } },
+                new Dictionary<string, object>
+                {
+                    ["unique_requested"] = 1.0,
+                    ["resolved"] = 1.0
+                }, "fp", "fp");
+            _eq("failed", unverifiedColour["status"],
+                "un override sin API de read-back no se declara verificado");
+
             var dry = new MutationResult("clash/group") { Requested = 5, DryRun = true };
             _eq("planned", dry.Status(), "un ensayo es 'planned', no 'completed'");
             _eq("not_applicable", dry.ToJson()["verification_source"],
@@ -751,6 +871,28 @@ namespace NavisCoord.Tests
                 "una expectativa vacía significa 'no pregunté', y se acepta");
             _check(!DocumentFingerprint.Matches("fp-a", "fp-b"),
                 "una expectativa distinta NO coincide");
+
+            var targeted = new Dictionary<string, object>
+            {
+                ["expected_document_fingerprint"] = "fp-a",
+                ["session_id"] = "session-a",
+                ["target_id"] = "session-a"
+            };
+            _check(MutationTargeting.Validate(targeted, "fp-a", "session-a", "x") == null,
+                "documento, sesión y target exactos atraviesan la compuerta de mutación");
+            _eq("mutation_target_required",
+                MutationTargeting.Validate(new Dictionary<string, object>(),
+                    "fp-a", "session-a", "x")["error"],
+                "una mutación sin identidad explícita falla cerrada");
+            targeted["session_id"] = "session-b";
+            _eq("session_changed",
+                MutationTargeting.Validate(targeted, "fp-a", "session-a", "x")["error"],
+                "otra sesión no puede dirigir una mutación");
+            targeted["session_id"] = "session-a";
+            targeted["expected_document_fingerprint"] = "fp-b";
+            _eq("document_changed",
+                MutationTargeting.Validate(targeted, "fp-a", "session-a", "x")["error"],
+                "una huella obsoleta se rechaza antes de mutar");
 
             var json = full.ToJson();
             foreach (var key in new[]
@@ -976,6 +1118,43 @@ namespace NavisCoord.Tests
             _check(listed.Count >= 1, "job/list devuelve los trabajos conocidos");
             _check(JobManager.Cancel("fantasma").ContainsKey("error"),
                 "cancelar un id inexistente devuelve un error explícito");
+
+            // Admission is one critical section.  Several concurrent HTTP
+            // retries must all observe the same reservation, never enqueue a
+            // duplicate between separate check/collision/submit calls.
+            JobManager.Reset();
+            var startTogether = new ManualResetEventSlim(false);
+            var releaseWork = new ManualResetEventSlim(false);
+            var admissions = new List<JobManager.Admission>();
+            var threads = Enumerable.Range(0, 12).Select(_ => new Thread(() =>
+            {
+                startTogether.Wait();
+                var admitted = JobManager.TrySubmit(
+                    "workflow/run",
+                    __ => { releaseWork.Wait(3000); return Ok(); },
+                    fingerprint: "fp-atomic",
+                    idempotencyKey: "same-request");
+                lock (admissions) admissions.Add(admitted);
+            })).ToList();
+            foreach (var thread in threads) thread.Start();
+            startTogether.Set();
+            foreach (var thread in threads) thread.Join(3000);
+
+            _eq(12, admissions.Count, "todas las admisiones concurrentes respondieron");
+            _eq(1, admissions.Count(a => a.Accepted && !a.IdempotentReplay),
+                "solo una llamada concurrente reserva trabajo nuevo");
+            _eq(1, admissions.Select(a => a.Job?.Id).Distinct().Count(),
+                "todos los reintentos reciben exactamente el mismo job_id");
+            _eq(11, admissions.Count(a => a.IdempotentReplay),
+                "las otras llamadas se declaran replays, no trabajos nuevos");
+
+            var collisionAdmission = JobManager.TrySubmit(
+                "workflow/rules", _ => Ok(), fingerprint: "fp-atomic",
+                idempotencyKey: "different-request");
+            _check(!collisionAdmission.Accepted && collisionAdmission.Error.Contains("trabajo"),
+                "otra mutación no puede colarse junto a una reserva pendiente o activa");
+            releaseWork.Set();
+            WaitUntil(() => admissions[0].Job.FinishedUtc.HasValue, 4000);
 
             JobManager.Reset();
         }

@@ -30,10 +30,17 @@ class RootCause:
     detail: str
     confidence: float
     affected_clusters: list[int] = field(default_factory=list)
+    # Stable public identity populated by the pipeline once issue IDs have
+    # been assigned.  Cluster positions are an internal detector detail and
+    # stop referring to the same issue as soon as the result is ranked.
+    affected_issue_ids: list[str] = field(default_factory=list)
     clash_count: int = 0
     evidence: dict[str, Any] = field(default_factory=dict)
     suggested_action: str = ""
     cause_id: str = ""
+    # IDs represented by this cause after planning-time merges. A merged
+    # cause must still answer to the IDs already stamped on issues.
+    source_cause_ids: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -42,10 +49,12 @@ class RootCause:
             "title": self.title,
             "detail": self.detail,
             "confidence": round(self.confidence, 2),
-            "affected_issues": len(self.affected_clusters),
+            "affected_issues": len(self.affected_issue_ids or self.affected_clusters),
+            "affected_issue_ids": list(self.affected_issue_ids),
             "clash_count": self.clash_count,
             "evidence": self.evidence,
             "suggested_action": self.suggested_action,
+            "source_cause_ids": list(self.source_cause_ids or ([self.cause_id] if self.cause_id else [])),
         }
 
 
@@ -74,6 +83,7 @@ class RootCauseDetector:
         causes.sort(key=lambda c: (-c.clash_count, -c.confidence))
         for index, cause in enumerate(causes, start=1):
             cause.cause_id = f"RC-{index:03d}"
+            cause.source_cause_ids = [cause.cause_id]
         return causes
 
     # ------------------------------------------------- systemic elevation
