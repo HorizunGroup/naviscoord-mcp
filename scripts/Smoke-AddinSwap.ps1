@@ -57,7 +57,11 @@ function Assert-NoNavisworks {
 }
 
 function Resolve-ContainedPath([string]$Root, [string]$Relative) {
-    if ([string]::IsNullOrWhiteSpace($Relative) -or [IO.Path]::IsPathRooted($Relative) -or $Relative.Contains(':')) {
+    if ([string]::IsNullOrWhiteSpace($Relative) -or
+        [IO.Path]::IsPathRooted($Relative) -or
+        $Relative.StartsWith('\\') -or
+        $Relative.StartsWith('/') -or
+        $Relative.Contains(':')) {
         throw "ruta relativa hostil en manifiesto: '$Relative'"
     }
     $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
