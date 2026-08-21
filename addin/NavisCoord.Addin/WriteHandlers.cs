@@ -33,6 +33,188 @@ namespace NavisCoord
             return result;
         }
 
+        /// <summary>
+        /// The guards a synchronous mutation shares with a job.
+        /// </summary>
+        /// <remarks>
+        /// Protecting only the job path was half a policy. A caller that skips
+        /// <c>job/submit</c> and calls <c>clash/status</c> or
+        /// <c>appearance/color</c> directly reaches the document through the
+        /// same route table, and until this existed it did so without anybody
+        /// checking which document it was about to edit.
+        ///
+        /// Returns the envelope to send INSTEAD of running, or null when it is
+        /// safe to proceed.
+        /// </remarks>
+        internal static Dictionary<string, object> MutationPreflight(
+            string route, Dictionary<string, object> payload)
+        {
+            var contract = RouteContracts.For(route);
+            if (contract == null || !contract.IsMutation) return null;
+
+            var doc = Router.RequireDocument();
+            var live = DocumentContext.Fingerprint(doc);
+            var expected = Json.Str(payload, "expected_document_fingerprint");
+
+            if (contract.RequiresFingerprint && string.IsNullOrWhiteSpace(expected))
+            {
+                return Refusal(route, "fingerprint_required", live,
+                    "Esta ruta muta el documento y exige 'expected_document_fingerprint'. " +
+                    "Léelo de 'health' y repite. No se tocó nada.");
+            }
+            if (!DocumentFingerprint.Matches(expected, live))
+            {
+                return Refusal(route, "document_changed", live,
+                    "El documento activo no es el que esperabas (esperado " + expected +
+                    ", activo " + live + "). No se tocó nada.");
+            }
+            return null;
+        }
+
+        private static Dictionary<string, object> Refusal(
+            string route, string error, string live, string detail)
+        {
+            var result = new MutationResult(route)
+            {
+                FingerprintBefore = live,
+                FingerprintAfter = live,
+                VerificationSource = VerificationSources.NotApplicable
+            };
+            result.Fail(detail);
+            var payload = result.ToJson();
+            payload["status"] = "failed";
+            payload["error"] = error;
+            payload["detail"] = detail;
+            payload["verification_source"] = VerificationSources.None;
+            return payload;
+        }
+
+        /// <summary>
+        /// Validate a handler's evidence and wrap it in the mutation envelope.
+        /// </summary>
+        /// <remarks>
+        /// A validator, not a generator. It never derives one count from
+        /// another and never supplies a missing one — a route that does not
+        /// know what it verified has to say so and fail, because the whole
+        /// point of making the envelope mandatory was to stop a reply looking
+        /// successful by omitting the hard part.
+        ///
+        /// Concretely, it refuses to be handed:
+        ///
+        /// * a `verificationSource` outside the closed set — no free text, and
+        ///   in particular nothing naming something that happened before the
+        ///   write, which is how `resolved` used to pass for `verified`;
+        /// * `verified` above `applied`, or `applied` above `requested`;
+        /// * a real run claiming `not_applicable`, or a rehearsal claiming a
+        ///   re-read.
+        ///
+        /// On any of those it returns an <c>invalid_mutation_result</c>
+        /// envelope rather than a tidier version of the handler's claim.
+        /// </remarks>
+        private static Dictionary<string, object> Sealed(
+            string route,
+            Dictionary<string, object> payload,
+            Dictionary<string, object> body,
+            int requested,
+            int applied,
+            int verified,
+            string verificationSource,
+            bool dryRun = false,
+            int preserved = 0,
+            int blocked = 0,
+            string verificationLimit = null,
+            IEnumerable<string> warnings = null)
+        {
+            var doc = Router.RequireDocument();
+            var after = DocumentContext.Fingerprint(doc);
+
+            var complaints = new List<string>();
+            if (!VerificationSources.IsKnown(verificationSource))
+            {
+                complaints.Add("fuente de verificación no permitida: '" + verificationSource + "'");
+            }
+            if (dryRun && verificationSource != VerificationSources.NotApplicable)
+            {
+                complaints.Add("un ensayo no verifica: su fuente debe ser '" +
+                               VerificationSources.NotApplicable + "'");
+            }
+            if (!dryRun && verificationSource == VerificationSources.NotApplicable)
+            {
+                complaints.Add("una corrida real no puede declarar '" +
+                               VerificationSources.NotApplicable + "'");
+            }
+            if (requested < 0 || applied < 0 || verified < 0 || preserved < 0 || blocked < 0)
+            {
+                complaints.Add("los conteos no pueden ser negativos");
+            }
+            if (applied > requested)
+            {
+                complaints.Add("applied (" + applied + ") supera requested (" + requested + ")");
+            }
+            if (verified > applied)
+            {
+                complaints.Add("verified (" + verified + ") supera applied (" + applied + ")");
+            }
+            if (verified > 0 && !VerificationSources.ProvesVerification(verificationSource))
+            {
+                complaints.Add("se declaran " + verified + " unidades verificadas con la fuente '" +
+                               verificationSource + "', que no demuestra nada posterior");
+            }
+
+            if (complaints.Count > 0)
+            {
+                var broken = new Dictionary<string, object>
+                {
+                    ["operation"] = route,
+                    ["operation_id"] = Guid.NewGuid().ToString("N").Substring(0, 12),
+                    ["status"] = "failed",
+                    ["error"] = EnvelopeContract.InvalidMutationResult,
+                    ["dry_run"] = dryRun,
+                    ["requested"] = (double)Math.Max(0, requested),
+                    ["applied"] = 0.0,
+                    ["verified"] = 0.0,
+                    ["failed"] = (double)Math.Max(0, requested),
+                    ["preserved"] = 0.0,
+                    ["blocked"] = 0.0,
+                    ["verification_source"] = VerificationSources.None,
+                    ["document_fingerprint_before"] = after,
+                    ["document_fingerprint_after"] = after,
+                    ["warnings"] = new List<object>(),
+                    ["errors"] = complaints.Cast<object>().ToList(),
+                    ["detail"] = "La ruta '" + route + "' entregó evidencia incoherente: " +
+                                 string.Join("; ", complaints) + "."
+                };
+                return broken;
+            }
+
+            var result = new MutationResult(route)
+            {
+                TargetId = Json.Str(payload, "target_id"),
+                IdempotencyKey = Json.Str(payload, "idempotency_key"),
+                FingerprintBefore = Json.Str(payload, "expected_document_fingerprint", after),
+                FingerprintAfter = after,
+                Requested = requested,
+                Applied = applied,
+                Verified = verified,
+                Preserved = preserved,
+                Blocked = blocked,
+                DryRun = dryRun,
+                VerificationSource = verificationSource,
+                ProfileChecksum = ProfileStore.ActiveChecksum()
+            };
+            result.Failed = Math.Max(0, applied - verified);
+            foreach (var warning in warnings ?? Enumerable.Empty<string>()) result.Warn(warning);
+            foreach (var pair in body ?? new Dictionary<string, object>())
+            {
+                result.Detail[pair.Key] = pair.Value;
+            }
+            if (!string.IsNullOrEmpty(verificationLimit))
+            {
+                result.Detail["verification_limit"] = verificationLimit;
+            }
+            return result.ToJson();
+        }
+
         public static Dictionary<string, object> ListSets(Dictionary<string, object> payload)
         {
             var doc = Router.RequireDocument();
@@ -44,15 +226,64 @@ namespace NavisCoord
                     ["name"] = saved.DisplayName ?? string.Empty,
                     ["guid"] = saved.Guid.ToString(),
                     ["is_group"] = saved.IsGroup,
-                    ["kind"] = saved.IsGroup ? "folder" :
-                        saved is SelectionSet explicitSet && explicitSet.ExplicitModelItems != null
-                            ? "explicit" : "search",
-                    ["item_count"] = saved is SelectionSet set && set.ExplicitModelItems != null
-                        ? (double)set.ExplicitModelItems.Count
-                        : 0.0
+                    ["item_count"] = (double?)ExplicitItems(saved as SelectionSet)?.Count ?? 0.0,
+                    // A search set stores the rule, not the result, so it has
+                    // no count until Navisworks re-evaluates it. Saying which
+                    // kind this is beats a zero that reads as "empty".
+                    ["is_search_set"] = saved is SelectionSet s && ExplicitItems(s) == null
                 });
             }
             return new Dictionary<string, object> { ["sets"] = sets };
+        }
+
+        /// <summary>
+        /// The items a set resolves to, or null when it stores a rule instead.
+        /// </summary>
+        /// <remarks>
+        /// `ExplicitModelItems` THROWS on a search set rather than returning
+        /// null — `InvalidOperationException: Invalid operation when
+        /// '!HasExplicitModelItems'` — so the null check that guarded every
+        /// call site blew up before it could be evaluated. Listing the sets of
+        /// a document containing one search set failed outright, and the
+        /// matrix builder, which skipped anything whose items came back null,
+        /// could not build a test from a search set at all: the one thing
+        /// `sets/build_search` exists to produce.
+        /// </remarks>
+        /// <summary>
+        /// A clash-test side pointing at saved sets by reference.
+        /// </summary>
+        /// <remarks>
+        /// Several per side on purpose: structure arrives as four sets —
+        /// walls, columns, framing, floors — and a side that could hold only
+        /// one meant either four tests where the coordinator wanted one, or a
+        /// fifth set built by walking the whole model to merge them.
+        ///
+        /// By reference, not by copying the items: a set rebuilt afterwards
+        /// is picked up on the next run instead of leaving the test comparing
+        /// what the model held the day the matrix was made. It is also the
+        /// only form that works for a search set, which has no items to copy.
+        /// </remarks>
+        private static SelectionSourceCollection SourcesFor(Document doc, IEnumerable<SavedItem> sets)
+        {
+            var sources = new SelectionSourceCollection();
+            foreach (var set in sets)
+            {
+                if (set != null) sources.Add(doc.SelectionSets.CreateSelectionSource(set));
+            }
+            return sources;
+        }
+
+        private static ModelItemCollection ExplicitItems(SelectionSet set)
+        {
+            if (set == null) return null;
+            try
+            {
+                return set.HasExplicitModelItems ? set.ExplicitModelItems : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -67,6 +298,12 @@ namespace NavisCoord
         /// </remarks>
         public static Dictionary<string, object> BuildSearchSets(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("sets/build", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
             var dryRun = Json.Bool(payload, "dry_run", true);
             var prefix = Json.Str(payload, "prefix", "NC");
@@ -85,6 +322,7 @@ namespace NavisCoord
             // that used to cost.
             var router = DisciplineRouter.FromSpecs(specs, Json.Str(payload, "fallback_discipline"));
             var buckets = new Dictionary<string, ModelItemCollection>(StringComparer.OrdinalIgnoreCase);
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var basis = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
             foreach (var raw in specs)
             {
@@ -117,16 +355,35 @@ namespace NavisCoord
                         buckets[verdict.Discipline] = bucket;
                         basis[verdict.Discipline] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                     }
-                    bucket.Add(item);
+                    // A rehearsal counts; it does not collect.
+                    //
+                    // `dry_run` was checked only after this walk, so the
+                    // rehearsal did the whole job — every leaf of every model
+                    // resolved and retained in a ModelItemCollection — and
+                    // then threw the collections away. On a real federation
+                    // that is hundreds of thousands of retained COM handles
+                    // on the UI thread, for an answer that is a handful of
+                    // integers. It took Navisworks down with it, which is a
+                    // remarkable thing for a command whose whole promise is
+                    // that it changes nothing.
+                    counts[verdict.Discipline] =
+                        counts.TryGetValue(verdict.Discipline, out var seen) ? seen + 1 : 1;
+                    if (!dryRun) bucket.Add(item);
                     var tally = basis[verdict.Discipline];
                     tally[verdict.Basis] = tally.TryGetValue(verdict.Basis, out var c) ? c + 1 : 1;
                     if (verdict.Ambiguous) ambiguous++;
                 }
             }
 
-            var plan = buckets.ToDictionary(
-                kv => kv.Key,
-                kv => (object)(double)kv.Value.Count);
+            var plan = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            foreach (var code in buckets.Keys)
+            {
+                plan[code] = (double)(counts.TryGetValue(code, out var n) ? n : 0);
+            }
+            foreach (var pair in counts)
+            {
+                if (!plan.ContainsKey(pair.Key)) plan[pair.Key] = (double)pair.Value;
+            }
 
             var routing = router.Describe();
             routing["assigned_by"] = basis.ToDictionary(
@@ -136,13 +393,15 @@ namespace NavisCoord
 
             if (dryRun)
             {
-                return Ok("build_sets", new Dictionary<string, object>
+                return Sealed("sets/build", payload, new Dictionary<string, object>
                 {
-                    ["dry_run"] = true,
+                    ["action"] = "build_sets",
                     ["scanned_items"] = (double)scanned,
                     ["routing"] = routing,
                     ["would_create"] = plan
-                });
+                },
+                requested: plan.Count, applied: 0, verified: 0,
+                verificationSource: VerificationSources.NotApplicable, dryRun: true);
             }
 
             var created = new List<object>();
@@ -150,56 +409,41 @@ namespace NavisCoord
             {
                 if (pair.Value.Count == 0) continue;
                 var name = $"{prefix} - {pair.Key}";
+                RemoveSetByName(doc, name);
+
                 var set = new SelectionSet(pair.Value) { DisplayName = name };
-                // Replace in one Navisworks operation.  Remove + AddCopy left
-                // a real interval in which the named set did not exist and a
-                // failure in AddCopy made that data loss permanent.
-                var matches = doc.SelectionSets.RootItem.Children
-                    .Where(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                if (matches.Count > 1)
-                    throw new InvalidOperationException($"Hay {matches.Count} conjuntos raíz llamados '{name}'.");
-                if (matches.Count == 1)
-                {
-                    var index = doc.SelectionSets.RootItem.Children.IndexOfGuid(matches[0].Guid);
-                    if (index < 0) throw new InvalidOperationException($"No se pudo re-resolver '{name}'.");
-                    doc.SelectionSets.ReplaceWithCopy(index, set);
-                }
-                else
-                {
-                    doc.SelectionSets.AddCopy(set);
-                }
+                doc.SelectionSets.AddCopy(set);
                 created.Add(name);
             }
 
             // Verification: re-read the sets from the document rather than
             // trusting that AddCopy did what it said.
             var observed = new Dictionary<string, object>();
-            var verificationFailures = new List<object>();
-            foreach (var pair in buckets.Where(p => p.Value.Count > 0))
+            foreach (var saved in doc.SelectionSets.RootItem.Children)
             {
-                var name = $"{prefix} - {pair.Key}";
-                var matches = doc.SelectionSets.RootItem.Children
-                    .OfType<SelectionSet>()
-                    .Where(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                if (matches.Count == 1 && matches[0].ExplicitModelItems != null &&
-                    matches[0].ExplicitModelItems.ValueEquals(pair.Value))
+                if (saved is SelectionSet set && (saved.DisplayName ?? string.Empty).StartsWith(prefix, StringComparison.Ordinal))
                 {
-                    observed[name] = (double)matches[0].ExplicitModelItems.Count;
+                    observed[saved.DisplayName] = (double)(ExplicitItems(set)?.Count ?? 0);
                 }
-                else verificationFailures.Add(name);
             }
 
-            return Ok("build_sets", new Dictionary<string, object>
+            return Sealed("sets/build", payload, new Dictionary<string, object>
             {
-                ["dry_run"] = false,
+                ["action"] = "build_sets",
                 ["scanned_items"] = (double)scanned,
                 ["routing"] = routing,
                 ["planned"] = plan,
-                ["verified_in_document"] = observed,
-                ["verification_failures"] = verificationFailures
-            });
+                ["verified_in_document"] = observed
+            },
+            requested: plan.Count, applied: created.Count, verified: observed.Count,
+            verificationSource: VerificationSources.DocumentReread);
+        }
+
+        private static void RemoveSetByName(Document doc, string name)
+        {
+            var existing = doc.SelectionSets.RootItem.Children
+                .FirstOrDefault(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+            if (existing != null) doc.SelectionSets.Remove(existing);
         }
 
         // ------------------------------------------- search sets (criterios)
@@ -221,6 +465,12 @@ namespace NavisCoord
         /// </remarks>
         public static Dictionary<string, object> BuildCriteriaSets(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("sets/build_search", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
             var dryRun = Json.Bool(payload, "dry_run", true);
             var replace = Json.Bool(payload, "replace_existing", true);
@@ -302,210 +552,327 @@ namespace NavisCoord
                 result["observed_categories"] = ObserveCategoryPairs(doc);
             }
 
-            if (dryRun) return Ok("build_search_sets", result);
+            // The plan, and the capability it was decided under.
+            //
+            // Reading the graph is free; discovering what the API preserves is
+            // not, and a dry run is not allowed to pay that price. So the
+            // capability is DECLARED — see ConfigurePlanning.MigrationCapability
+            // — and the same constant is reported on both paths, which is what
+            // makes the dry run an honest preview of the real one instead of a
+            // cheaper, more optimistic story.
+            var before = SnapshotTests(doc);
+            var dependents = ConfigurePlanning.DependentTests(before);
 
-            // Snapshot only stable names before the first tree mutation.  A
-            // SelectionSets edit may invalidate every SavedItem wrapper, so
-            // neither the gate nor later iterations retain those wrappers.
-            var existingNames = doc.SelectionSets.RootItem.Children
-                .Select(s => s.DisplayName ?? string.Empty)
-                .Where(n => !string.IsNullOrWhiteSpace(n))
-                .ToList();
-            var referencedNames = ReferencedRootFolderNames(doc);
-            var publicationGate = new SelectionSetPublicationGate(existingNames, referencedNames);
-            var publications = new List<object>();
-            var previousGuids = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+            // Every saved item ANY test points at, not only the ones behind a
+            // finished run. A test without results still holds a reference
+            // that nothing here can provably rebind.
+            var referenced = new HashSet<string>(
+                before.SelectMany(t => t.AllSourceGuids),
+                StringComparer.OrdinalIgnoreCase);
+
+            // Definitions are compared through the API's own `ValueEquals`
+            // rather than through any string this code invents: two sets are
+            // "the same" exactly when Navisworks says their searches are. The
+            // planner only needs a token that matches when they match, so the
+            // path is reused when equal and marked otherwise.
+            var existingSets = new List<ConfigurePlanning.SetSnapshot>();
+            var desiredSets = new List<ConfigurePlanning.DesiredSet>();
+            foreach (var entry in pending)
+            {
+                var path = entry.Item1 + "/" + entry.Item2;
+                desiredSets.Add(new ConfigurePlanning.DesiredSet
+                {
+                    Name = entry.Item2,
+                    Folder = entry.Item1,
+                    Definition = path
+                });
+
+                var live = FindSetIn(doc, entry.Item1, entry.Item2);
+                if (live == null) continue;
+                existingSets.Add(new ConfigurePlanning.SetSnapshot
+                {
+                    Guid = live.Guid.ToString(),
+                    Name = entry.Item2,
+                    Folder = entry.Item1,
+                    Definition = SameDefinition(live, entry.Item3) ? path : path + "#anterior"
+                });
+            }
+
+            var steps = ConfigurePlanning.Plan(existingSets, desiredSets, before, Capability);
+            result["plan"] = steps.Select(st => (object)st.ToJson()).ToList();
+            result["migration_capability"] = Capability == ConfigurePlanning.MigrationCapability.Unverified
+                ? ConfigurePlanning.CapabilityUnverified
+                : "migration_capability_verified_atomic_replace";
+
+            // Nothing below this line runs on a rehearsal. The dry run has now
+            // read the sets, read the tests, resolved every source and printed
+            // the plan it would execute — without one call that writes.
+            if (dryRun)
+            {
+                return Sealed("sets/build_search", payload, result,
+                    requested: pending.Count, applied: 0, verified: 0,
+                    verificationSource: VerificationSources.NotApplicable, dryRun: true);
+            }
+
+            var blocked = new List<object>();
+
+            // Built with the plan and with `allowed` tied to the rehearsal
+            // flag, so the ordering rules below are enforced by the gate
+            // rather than by this loop remembering them.
+            var gate = ConfigurePlanning.MutationGate.ForFolders(
+                !dryRun,
+                steps,
+                doc.SelectionSets.RootItem.Children.Select(c => c.DisplayName ?? string.Empty));
+            var failures = new List<object>();
+            var created = 0;
+
+            // Folders whose every set already says what it should. Rebuilding
+            // them would hand out new identities for no gain, which is the
+            // churn that broke the tests in the first place: a second run of
+            // the same configuration has nothing to do.
+            var settled = new HashSet<string>(
+                steps.Where(st => st.Action == ConfigurePlanning.UpdateInPlace)
+                     .Select(st => st.Target),
+                StringComparer.OrdinalIgnoreCase);
+            var untouched = new List<object>();
 
             foreach (var group in pending.GroupBy(p => p.Item1))
             {
-                // Resolve inside this iteration.  A previous ReplaceWithCopy
-                // may have rebuilt the SavedItem tree.
-                var matches = doc.SelectionSets.RootItem.Children
-                    .Where(s => string.Equals(s.DisplayName, group.Key, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                if (matches.Count > 1)
+                var existing = doc.SelectionSets.RootItem.Children
+                    .FirstOrDefault(s => string.Equals(s.DisplayName, group.Key, StringComparison.OrdinalIgnoreCase));
+
+                if (existing != null &&
+                    group.All(e => settled.Contains(group.Key + "/" + e.Item2)))
                 {
-                    publications.Add(PublicationReport(group.Key, "rejected", false,
-                        "hay más de una carpeta raíz con ese nombre"));
+                    untouched.Add(new Dictionary<string, object>
+                    {
+                        ["folder"] = group.Key,
+                        ["action"] = ConfigurePlanning.UpdateInPlace,
+                        ["reason"] = "ya coincide con la configuración pedida"
+                    });
                     continue;
                 }
 
-                var existing = matches.SingleOrDefault();
+                if (existing != null)
+                {
+                    // Sin replace la carpeta existente se respeta: los clash
+                    // tests la referencian por SelectionSource y recrearla
+                    // rompería ese enlace y borraría resultados corridos.
+                    if (!replace) continue;
+
+                    // And with replace, the same reasoning still applies — it
+                    // was just never enforced. `workflow/configure` forces the
+                    // flag on, so this branch removed folders whose sets a
+                    // clash test was pointing at, and the matrix step
+                    // afterwards kept that test because it had results. The
+                    // test survived holding a reference to nothing, and the
+                    // name-and-count verification reported the run green.
+                    //
+                    // The exit here is one-way on purpose. There IS an atomic
+                    // replace in the API — `ReplaceWithCopy(parent, index,
+                    // item)` swaps a child in a single call, with no prior
+                    // Remove — but its contract says it inserts "a copy of
+                    // item" and says nothing about the copy keeping the GUID,
+                    // and nothing at all about rebinding the SelectionSources
+                    // that clash tests declare. An atomic operation whose
+                    // preservation is undocumented is not a safe migration; it
+                    // is an untested one. Until an integration test against a
+                    // scratch document demonstrates otherwise and raises
+                    // `Capability`, the referenced folder is left exactly as
+                    // it is. Not updating a criterion is recoverable. Losing a
+                    // finished clash run is not.
+                    var held = GuidsUnder(existing).Where(referenced.Contains).ToList();
+                    if (held.Count > 0)
+                    {
+                        var affected = held
+                            .SelectMany(g => dependents.TryGetValue(g, out var users)
+                                ? users
+                                : Enumerable.Empty<string>())
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+                        var withResults = before
+                            .Where(t => t.HasResults && t.AllSourceGuids.Any(held.Contains))
+                            .Select(t => t.Name)
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+
+                        blocked.Add(new Dictionary<string, object>
+                        {
+                            ["folder"] = group.Key,
+                            ["action"] = ConfigurePlanning.Blocked,
+                            ["reason"] =
+                                "la usan " + held.Count + " conjunto(s) que " + affected.Count
+                                + " test(s) referencian"
+                                + (withResults.Count > 0
+                                    ? ", " + withResults.Count + " de ellos con resultados"
+                                    : "")
+                                + "; no hay una operación de reemplazo cuya conservación de "
+                                + "identidad y de enlace esté demostrada ("
+                                + ConfigurePlanning.CapabilityUnverified
+                                + "), así que la carpeta se conserva tal cual",
+                            ["held_guids"] = held.Cast<object>().ToList(),
+                            ["affected_tests"] = affected.Cast<object>().ToList(),
+                            ["tests_with_results"] = withResults.Cast<object>().ToList()
+                        });
+                        gate.PreserveReferenced(group.Key);
+                        continue;
+                    }
+                }
+
                 var folder = new FolderItem { DisplayName = group.Key };
                 foreach (var entry in group)
                 {
                     folder.Children.Add(new SelectionSet(entry.Item3) { DisplayName = entry.Item2 });
                 }
 
-                if (existing != null)
+                // Replace, or add — never remove-then-add.
+                //
+                // `ReplaceWithCopy(parent, index, item)` swaps a child in one
+                // call, which is the whole reason to use it here: the previous
+                // sequence removed the old folder and then added the new one,
+                // and between those two lines the document held neither. That
+                // nothing referenced the folder made the damage smaller, not
+                // the invariant satisfied — if the add threw, what the user
+                // got back was a project missing a discipline.
+                //
+                // Identity is not preserved and does not need to be: this
+                // branch only runs when no SelectionSource points inside.
+                var wantedNames = group.Select(e => e.Item2).ToList();
+                var previousGuid = existing?.Guid ?? Guid.Empty;
+                var replacing = existing != null;
+                try
                 {
-                    previousGuids[group.Key] = existing.Guid;
-                    if (!replace)
+                    if (replacing)
                     {
-                        publications.Add(PublicationReport(group.Key, "preserved", true,
-                            "replace_existing=false"));
-                        continue;
+                        gate.ReplaceUnreferenced(group.Key);
+                        var index = doc.SelectionSets.RootItem.Children.IndexOf(existing);
+                        doc.SelectionSets.ReplaceWithCopy(doc.SelectionSets.RootItem, index, folder);
                     }
-
-                    if (referencedNames.Contains(group.Key))
+                    else
                     {
-                        // Replacing this object (or one of its children) would
-                        // orphan a ClashTest SelectionSource.  Preserve it and
-                        // let the exact post-read verification decide whether
-                        // its current definition already satisfies the profile.
-                        publicationGate.PreserveReferenced(group.Key);
-                        publications.Add(PublicationReport(group.Key, "preserved_referenced", true,
-                            "uno o más clash tests apuntan a la carpeta o a sus hijos"));
-                        continue;
+                        gate.AddNew(group.Key);
+                        doc.SelectionSets.AddCopy(folder);
                     }
-
-                    var oldGuid = existing.Guid;
-                    var index = doc.SelectionSets.RootItem.Children.IndexOfGuid(oldGuid);
-                    try
+                }
+                catch (Exception error)
+                {
+                    // Re-read and describe. Not repaired: undoing a
+                    // half-applied swap with a remove and an add is exactly
+                    // the sequence this branch exists to avoid, and doing it
+                    // blind would turn an unknown state into a lost one.
+                    failures.Add(new Dictionary<string, object>
                     {
-                        publicationGate.ReplaceUnreferenced(group.Key,
-                            () => doc.SelectionSets.ReplaceWithCopy(index, folder));
-                        publications.Add(PublicationReport(group.Key, "replaced_atomically", true));
-                    }
-                    catch (Exception ex)
-                    {
-                        // Never attempt a Remove/Add repair here.  A failed
-                        // swap is re-read below and reported as indeterminate.
-                        publications.Add(PublicationReport(group.Key, "replace_failed", false, ex.Message));
-                    }
+                        ["folder"] = group.Key,
+                        ["operation"] = replacing ? "replace_with_copy" : "add_copy",
+                        ["error"] = error.Message,
+                        ["state"] = ConfigurePlanning.DescribeState(
+                            previousGuid != Guid.Empty && ResolveGuid(doc, previousGuid.ToString()) != null,
+                            group.All(e => SameDefinition(FindSetIn(doc, group.Key, e.Item2), e.Item3)))
+                    });
                     continue;
                 }
 
-                try
+                // Re-read what the call left behind, and require all of it:
+                // one folder at the path, the sets that were asked for and no
+                // others, each searching for what it should, and the previous
+                // item gone rather than sitting alongside its replacement.
+                var live = doc.SelectionSets.RootItem.Children
+                    .FirstOrDefault(s => string.Equals(
+                        s.DisplayName, group.Key, StringComparison.OrdinalIgnoreCase)) as GroupItem;
+                var survivor = previousGuid == Guid.Empty ? null : ResolveGuid(doc, previousGuid.ToString());
+                var observation = new ConfigurePlanning.FolderObservation
                 {
-                    publicationGate.AddNew(group.Key, () => doc.SelectionSets.AddCopy(folder));
-                    publications.Add(PublicationReport(group.Key, "added", true));
-                }
-                catch (Exception ex)
+                    Folder = group.Key,
+                    MatchingRootEntries = doc.SelectionSets.RootItem.Children.Count(
+                        s => string.Equals(s.DisplayName, group.Key, StringComparison.OrdinalIgnoreCase)),
+                    SetNames = live == null
+                        ? new List<string>()
+                        : live.Children.Select(c => c.DisplayName ?? string.Empty).ToList(),
+                    ExpectedSetNames = wantedNames,
+                    MismatchedDefinitions = group
+                        .Where(e => !SameDefinition(FindSetIn(doc, group.Key, e.Item2), e.Item3))
+                        .Select(e => e.Item2)
+                        .ToList(),
+                    // Only a leftover if it is a DIFFERENT item from the one
+                    // now at the path: were the API to preserve the GUID, the
+                    // survivor would be the replacement itself.
+                    PreviousItemStillPresent =
+                        survivor != null && (live == null || survivor.Guid != live.Guid)
+                };
+
+                var problems = ConfigurePlanning.VerifyReplacement(observation);
+                if (problems.Count > 0)
                 {
-                    publications.Add(PublicationReport(group.Key, "add_failed", false, ex.Message));
+                    failures.Add(new Dictionary<string, object>
+                    {
+                        ["folder"] = group.Key,
+                        ["operation"] = replacing ? "replace_with_copy" : "add_copy",
+                        ["problems"] = problems.Cast<object>().ToList(),
+                        ["state"] = ConfigurePlanning.DescribeState(
+                            observation.PreviousItemStillPresent,
+                            observation.MismatchedDefinitions.Count == 0 && live != null)
+                    });
+                    continue;
                 }
+                created++;
             }
 
-            // Verification is exact: one root folder, precisely the requested
-            // children, and each saved Search equal by value to the planned
-            // definition.  Merely finding a folder with the right name is not
-            // evidence that configure succeeded.
+            // Verificación: releer el documento, no confiar en AddCopy.
             var verified = new List<object>();
             foreach (var group in pending.GroupBy(p => p.Item1))
             {
-                var roots = doc.SelectionSets.RootItem.Children
-                    .Where(s => string.Equals(s.DisplayName, group.Key, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                var saved = roots.Count == 1 ? roots[0] : null;
-                var expected = group.ToDictionary(e => e.Item2, e => e.Item3,
-                    StringComparer.OrdinalIgnoreCase);
-                var actualNames = saved is GroupItem actualGroup
-                    ? actualGroup.Children.Select(c => c.DisplayName ?? string.Empty).ToList()
-                    : new List<string>();
-                var exactChildren = roots.Count == 1 &&
-                    new HashSet<string>(actualNames, StringComparer.OrdinalIgnoreCase)
-                        .SetEquals(expected.Keys) && actualNames.Count == expected.Count;
-                var definitionsMatch = exactChildren && saved is GroupItem definitionGroup &&
-                    expected.All(pair =>
-                    {
-                        var child = definitionGroup.Children.FirstOrDefault(c =>
-                            string.Equals(c.DisplayName, pair.Key, StringComparison.OrdinalIgnoreCase));
-                        if (!(child is SelectionSet selectionSet)) return false;
-                        try { return selectionSet.Search.ValueEquals(pair.Value); }
-                        catch { return false; }
-                    });
-
-                var priorAbsentOrPreserved = true;
-                if (saved != null && previousGuids.TryGetValue(group.Key, out var previousGuid))
-                {
-                    // ReplaceWithCopy is allowed to preserve identity.  If it
-                    // does not, the old root GUID must no longer exist.
-                    priorAbsentOrPreserved = saved.Guid == previousGuid ||
-                        doc.SelectionSets.RootItem.Children.IndexOfGuid(previousGuid) < 0;
-                }
-                var verifiedOk = roots.Count == 1 && saved.IsGroup && exactChildren &&
-                                 definitionsMatch && priorAbsentOrPreserved;
+                var saved = doc.SelectionSets.RootItem.Children
+                    .FirstOrDefault(s => string.Equals(s.DisplayName, group.Key, StringComparison.OrdinalIgnoreCase));
                 verified.Add(new Dictionary<string, object>
                 {
                     ["folder"] = group.Key,
-                    ["exists"] = roots.Count == 1,
-                    ["root_matches"] = (double)roots.Count,
+                    ["exists"] = saved != null,
                     ["is_group"] = saved != null && saved.IsGroup,
-                    ["children"] = actualNames,
-                    ["exact_children"] = exactChildren,
-                    ["definitions_match"] = definitionsMatch,
-                    ["previous_identity_absent_or_preserved"] = priorAbsentOrPreserved,
-                    ["verified"] = verifiedOk
+                    ["children"] = saved is GroupItem g
+                        ? (object)g.Children.Select(c => c.DisplayName ?? string.Empty).ToList()
+                        : new List<string>()
                 });
             }
-            var allVerified = verified.OfType<Dictionary<string, object>>()
-                .All(v => v.TryGetValue("verified", out var value) && value is bool ok && ok);
-            result["ok"] = allVerified;
-            result["publications"] = publications;
             result["verified_in_document"] = verified;
-            if (!allVerified)
-            {
-                result["error"] = "selection_set_verification_failed";
-                result["message"] = "Una o más carpetas no coinciden exactamente con el perfil tras releer el documento.";
-            }
-            return Ok("build_search_sets", result);
-        }
+            result["blocked"] = blocked;
+            result["untouched"] = untouched;
+            result["mutations"] = gate.Journal.Cast<object>().ToList();
+            result["folders_written"] = (double)created;
+            result["failures"] = failures;
 
-        private static Dictionary<string, object> PublicationReport(
-            string folder, string operation, bool accepted, string detail = "")
-        {
-            var report = new Dictionary<string, object>
-            {
-                ["folder"] = folder ?? string.Empty,
-                ["operation"] = operation ?? string.Empty,
-                ["accepted"] = accepted
-            };
-            if (!string.IsNullOrWhiteSpace(detail)) report["detail"] = detail;
-            return report;
-        }
+            // The whole chain, re-read and compared against how it started.
+            //
+            // "The test is still there" was the claim that let a broken run
+            // report green, so it is not the claim being made here. Every test
+            // is matched by identity, its declared sources are compared GUID
+            // by GUID against what it declared before, each of those GUIDs is
+            // resolved, what it resolves to is fingerprinted and compared, and
+            // the results, groups and status underneath it are required not to
+            // have shrunk. A single degradation is enough to withhold
+            // `completed` — including one nothing here predicted.
+            var after = SnapshotTests(doc);
+            var degraded = ConfigurePlanning.CompareIntegrity(before, after, ResolveSources(doc, after));
+            result["integrity"] = degraded.Cast<object>().ToList();
 
-        private static HashSet<string> ReferencedRootFolderNames(Document doc)
-        {
-            var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var root in doc.SelectionSets.RootItem.Children.OfType<GroupItem>())
-            {
-                var descendantIds = new HashSet<Guid>();
-                CollectSavedItemGuids(root, descendantIds);
-                var found = doc.GetClash().TestsData.Tests.OfType<ClashTest>().Any(test =>
-                    SelectionReferencesAny(doc, test.SelectionA.Selection, descendantIds) ||
-                    SelectionReferencesAny(doc, test.SelectionB.Selection, descendantIds));
-                if (found && !string.IsNullOrWhiteSpace(root.DisplayName)) referenced.Add(root.DisplayName);
-            }
-            return referenced;
-        }
-
-        private static void CollectSavedItemGuids(SavedItem item, ISet<Guid> destination)
-        {
-            if (item == null) return;
-            destination.Add(item.Guid);
-            if (!(item is GroupItem group)) return;
-            foreach (var child in group.Children) CollectSavedItemGuids(child, destination);
-        }
-
-        private static bool SelectionReferencesAny(
-            Document doc, Selection selection, ISet<Guid> candidateIds)
-        {
-            if (selection == null || !selection.HasSelectionSources) return false;
-            foreach (var source in selection.SelectionSources)
-            {
-                try
-                {
-                    var resolved = doc.SelectionSets.ResolveSelectionSource(source);
-                    if (resolved != null && candidateIds.Contains(resolved.Guid)) return true;
-                }
-                catch
-                {
-                    // An unresolvable source is already stale.  It cannot be
-                    // used as evidence that this live folder is referenced.
-                }
-            }
-            return false;
+            // `verified` counts only folders that were written AND came back
+            // clean. Preserved and blocked stay separate on purpose: a folder
+            // kept because a clash run depends on it is not a failure, but it
+            // is not completeness either.
+            var writtenFolders = pending
+                .Select(e => e.Item1)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+            var defects = degraded.Count + failures.Count;
+            var settledCount = created + untouched.Count;
+            return Sealed("sets/build_search", payload, result,
+                requested: writtenFolders,
+                applied: settledCount,
+                verified: Math.Max(0, settledCount - defects),
+                verificationSource: VerificationSources.SavedItemReread,
+                preserved: untouched.Count,
+                blocked: blocked.Count);
         }
 
         private static ModelItemCollection ResolveScope(Document doc, string token, out List<string> names)
@@ -769,6 +1136,12 @@ namespace NavisCoord
         /// </remarks>
         public static Dictionary<string, object> ApplyIgnoreRules(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("clash/apply_rules", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
             var dryRun = Json.Bool(payload, "dry_run", true);
             var onlyNew = Json.Bool(payload, "only_new", true);
@@ -917,6 +1290,11 @@ namespace NavisCoord
                 ["tests"] = report
             };
 
+            // Declared out here because the envelope below reports it, and a
+            // counter that only exists inside the branch that computes it
+            // cannot be reported by the branch that has to answer for it.
+            var verifiedTotal = 0;
+
             if (!dryRun)
             {
                 // Verification: re-read the document and count the results
@@ -924,7 +1302,6 @@ namespace NavisCoord
                 // calls that did not throw, which proves nothing — this is
                 // what makes the difference visible.
                 var verify = new Dictionary<string, object>();
-                var verifiedTotal = 0;
                 foreach (var pair in editedByTest)
                 {
                     var test = clash.TestsData.Tests
@@ -952,7 +1329,12 @@ namespace NavisCoord
                 response["verification_source"] = "document_reread";
             }
 
-            return Ok("apply_ignore_rules", response);
+            return Sealed("clash/apply_rules", payload, response,
+                requested: (int)Json.Num(response, "matched", 0),
+                applied: dryRun ? 0 : (int)Json.Num(response, "edited", 0),
+                verified: dryRun ? 0 : verifiedTotal,
+                verificationSource: dryRun ? VerificationSources.NotApplicable : VerificationSources.DocumentReread,
+                dryRun: dryRun);
         }
 
         private static void CollectResults(SavedItem node, List<ClashResult> into)
@@ -1010,6 +1392,12 @@ namespace NavisCoord
         /// </summary>
         public static Dictionary<string, object> BuildClashMatrix(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("clash/matrix", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
             var dryRun = Json.Bool(payload, "dry_run", true);
             var prefix = Json.Str(payload, "prefix", "NC");
@@ -1019,12 +1407,13 @@ namespace NavisCoord
             var pairs = Json.Arr(payload, "pairs");
             if (pairs.Count == 0) throw new ArgumentException("Se requiere 'pairs' con al menos un par de disciplinas.");
 
-            var existing = doc.GetClash().TestsData.Tests
+            var clash = doc.GetClash();
+            var existing = clash.TestsData.Tests
                 .Select(t => t.DisplayName ?? string.Empty)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var plan = new List<object>();
-            var toCreate = new List<(string Name, string A, string B, ClashTestType Type, double Tolerance)>();
+            var toCreate = new List<(string Name, List<SelectionSet> SetsA, List<SelectionSet> SetsB, ClashTestType Type, double Tolerance)>();
 
             foreach (var raw in pairs)
             {
@@ -1035,10 +1424,18 @@ namespace NavisCoord
                 var toleranceM = Json.Num(spec, "tolerance_m", 0.001);
                 var name = $"{prefix} {a} vs {b}";
 
-                var setA = FindSet(doc, $"{prefix} - {a}");
-                var setB = FindSet(doc, $"{prefix} - {b}");
-                var skip = setA == null || setB == null
-                    ? $"faltan conjuntos ({prefix} - {a} / {prefix} - {b}); corre sets/build primero"
+                // The server names the sets for each side, having matched the
+                // document's own against the profile's vocabulary. Falling
+                // back to `{prefix} - {code}` keeps an older caller working.
+                var namesA = Json.StrArr(spec, "sets_a");
+                var namesB = Json.StrArr(spec, "sets_b");
+                if (namesA.Count == 0) namesA = new List<string> { $"{prefix} - {a}" };
+                if (namesB.Count == 0) namesB = new List<string> { $"{prefix} - {b}" };
+
+                var setsA = namesA.Select(n => FindSet(doc, n)).Where(s => s != null).ToList();
+                var setsB = namesB.Select(n => FindSet(doc, n)).Where(s => s != null).ToList();
+                var skip = setsA.Count == 0 || setsB.Count == 0
+                    ? $"faltan conjuntos ({string.Join(", ", namesA)} / {string.Join(", ", namesB)})"
                     : existing.Contains(name) && !replace
                         ? "ya existe un test con ese nombre"
                         : null;
@@ -1048,8 +1445,8 @@ namespace NavisCoord
                     ["name"] = name,
                     ["type"] = typeName,
                     ["tolerance_m"] = toleranceM,
-                    ["items_a"] = (double)(setA?.ExplicitModelItems?.Count ?? 0),
-                    ["items_b"] = (double)(setB?.ExplicitModelItems?.Count ?? 0),
+                    ["sets_a"] = setsA.Select(s => (object)s.DisplayName).ToList(),
+                    ["sets_b"] = setsB.Select(s => (object)s.DisplayName).ToList(),
                     ["skipped"] = skip ?? string.Empty
                 });
 
@@ -1059,33 +1456,33 @@ namespace NavisCoord
                     // converted back into document units before it reaches
                     // Navisworks, or a millimetre becomes a metre on a
                     // project authored in feet.
-                    toCreate.Add((name, a, b, testType, toleranceM / (scale == 0 ? 1 : scale)));
+                    toCreate.Add((name, setsA, setsB, testType, toleranceM / (scale == 0 ? 1 : scale)));
                 }
             }
 
             if (dryRun)
             {
-                return Ok("build_matrix", new Dictionary<string, object>
+                return Sealed("clash/matrix", payload, new Dictionary<string, object>
                 {
-                    ["dry_run"] = true,
+                    ["action"] = "build_matrix",
                     ["would_create"] = plan
-                });
+                },
+                requested: plan.Count, applied: 0, verified: 0,
+                verificationSource: VerificationSources.NotApplicable, dryRun: true);
             }
 
             var created = 0;
             foreach (var spec in toCreate)
             {
-                var setA = FindSet(doc, $"{prefix} - {spec.A}");
-                var setB = FindSet(doc, $"{prefix} - {spec.B}");
-                if (setA?.ExplicitModelItems == null || setB?.ExplicitModelItems == null) continue;
+                if (spec.SetsA.Count == 0 || spec.SetsB.Count == 0) continue;
 
-                var testsData = doc.GetClash().TestsData;
-                var duplicates = testsData.Tests
-                    .OfType<ClashTest>()
-                    .Where(t => string.Equals(t.DisplayName, spec.Name, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                if (duplicates.Count > 1)
-                    throw new InvalidOperationException($"Hay {duplicates.Count} tests llamados '{spec.Name}'.");
+                if (replace)
+                {
+                    var duplicate = clash.TestsData.Tests
+                        .OfType<ClashTest>()
+                        .FirstOrDefault(t => string.Equals(t.DisplayName, spec.Name, StringComparison.OrdinalIgnoreCase));
+                    if (duplicate != null) clash.TestsData.TestsRemove(duplicate);
+                }
 
                 var test = new ClashTest
                 {
@@ -1093,49 +1490,67 @@ namespace NavisCoord
                     TestType = spec.Type,
                     Tolerance = spec.Tolerance
                 };
-                test.SelectionA.Selection.CopyFrom(setA.ExplicitModelItems);
-                test.SelectionB.Selection.CopyFrom(setB.ExplicitModelItems);
-                if (replace && duplicates.Count == 1)
-                {
-                    var index = testsData.Tests.IndexOfGuid(duplicates[0].Guid);
-                    if (index < 0) throw new InvalidOperationException($"No se pudo re-resolver el test '{spec.Name}'.");
-                    testsData.TestsReplaceWithCopy(index, test);
-                }
-                else
-                {
-                    testsData.TestsAddCopy(test);
-                }
+                // Pointed at the SETS, not at a snapshot of their contents.
+                //
+                // Copying the explicit items froze whatever the set held the
+                // moment the matrix was built, so a set rebuilt afterwards
+                // left the test comparing yesterday's elements — and it made
+                // search sets unusable, because they have no items to copy.
+                // A selection source resolves at run time and works for both.
+                test.SelectionA.Selection.CopyFrom(SourcesFor(doc, spec.SetsA));
+                test.SelectionB.Selection.CopyFrom(SourcesFor(doc, spec.SetsB));
+                clash.TestsData.TestsAddCopy(test);
                 created++;
             }
 
+            // Re-read each created test and check what it actually IS, not
+            // just that something with a matching name turned up: the type,
+            // the tolerance, and that both sides resolve to saved items. A
+            // name-prefix count would pass over a test whose sources were
+            // never bound.
             var verified = new List<object>();
-            var verificationFailures = new List<object>();
+            var soundTests = 0;
             foreach (var spec in toCreate)
             {
-                var setA = FindSet(doc, $"{prefix} - {spec.A}");
-                var setB = FindSet(doc, $"{prefix} - {spec.B}");
-                var matches = doc.GetClash().TestsData.Tests.OfType<ClashTest>()
-                    .Where(t => string.Equals(t.DisplayName, spec.Name, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                var match = matches.Count == 1 ? matches[0] : null;
-                var exact = match != null && setA?.ExplicitModelItems != null && setB?.ExplicitModelItems != null &&
-                    match.TestType == spec.Type && Math.Abs(match.Tolerance - spec.Tolerance) < 0.0001 &&
-                    match.SelectionA.Selection.HasExplicitSelection &&
-                    match.SelectionB.Selection.HasExplicitSelection &&
-                    match.SelectionA.Selection.ExplicitSelection.ValueEquals(setA.ExplicitModelItems) &&
-                    match.SelectionB.Selection.ExplicitSelection.ValueEquals(setB.ExplicitModelItems);
-                if (exact) verified.Add(spec.Name);
-                else verificationFailures.Add(spec.Name);
+                if (spec.SetsA.Count == 0 || spec.SetsB.Count == 0) continue;
+                var live = doc.GetClash().TestsData.Tests
+                    .OfType<ClashTest>()
+                    .FirstOrDefault(t => string.Equals(t.DisplayName, spec.Name,
+                        StringComparison.OrdinalIgnoreCase));
+                var sourcesA = live == null ? 0 : SourceGuids(doc, live.SelectionA).Count;
+                var sourcesB = live == null ? 0 : SourceGuids(doc, live.SelectionB).Count;
+                var sound = live != null &&
+                            live.TestType == spec.Type &&
+                            Math.Abs(live.Tolerance - spec.Tolerance) < 0.0001 &&
+                            sourcesA > 0 && sourcesB > 0;
+                if (sound) soundTests++;
+                verified.Add(new Dictionary<string, object>
+                {
+                    ["name"] = spec.Name,
+                    ["exists"] = live != null,
+                    ["type_ok"] = live != null && live.TestType == spec.Type,
+                    ["tolerance_ok"] = live != null &&
+                                       Math.Abs(live.Tolerance - spec.Tolerance) < 0.0001,
+                    ["sources_a"] = (double)sourcesA,
+                    ["sources_b"] = (double)sourcesB,
+                    ["ok"] = sound
+                });
             }
 
-            return Ok("build_matrix", new Dictionary<string, object>
+            return Sealed("clash/matrix", payload, new Dictionary<string, object>
             {
-                ["dry_run"] = false,
+                ["action"] = "build_matrix",
                 ["planned"] = plan,
                 ["created"] = (double)created,
-                ["verified_in_document"] = verified,
-                ["verification_failures"] = verificationFailures
-            });
+                ["verified_in_document"] = verified
+            },
+            requested: toCreate.Count, applied: created,
+            verified: Math.Min(created, soundTests),
+            verificationSource: VerificationSources.SelectionSourceReread,
+            warnings: soundTests < created
+                ? new[] { (created - soundTests) + " test(s) se crearon pero no releen con el " +
+                          "tipo, la tolerancia o las fuentes esperadas." }
+                : null);
         }
 
         /// <summary>
@@ -1151,11 +1566,13 @@ namespace NavisCoord
         /// </remarks>
         public static Dictionary<string, object> RunTests(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("clash/run", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
-            var result = new MutationResult("clash/run")
-            {
-                FingerprintBefore = DocumentContext.Fingerprint(doc)
-            };
             var requested = new HashSet<string>(Json.StrArr(payload, "tests"), StringComparer.OrdinalIgnoreCase);
 
             // Snapshot names only. Any object captured here would be dead by
@@ -1165,15 +1582,6 @@ namespace NavisCoord
                 .Select(t => t.DisplayName ?? string.Empty)
                 .Where(n => requested.Count == 0 || requested.Contains(n))
                 .ToList();
-            result.Requested = names.Count;
-
-            if (Json.Bool(payload, "dry_run", true))
-            {
-                result.DryRun = true;
-                result.Detail["would_run"] = names.Cast<object>().ToList();
-                result.FingerprintAfter = result.FingerprintBefore;
-                return result.ToJson();
-            }
 
             var ran = new List<object>();
             foreach (var name in names)
@@ -1199,19 +1607,24 @@ namespace NavisCoord
 
             if (ran.Count == 0)
             {
-                result.Fail("Ningún test coincidió. Verifica los nombres con clash/tests.");
-                result.FingerprintAfter = DocumentContext.Fingerprint(doc);
-                return result.ToJson();
+                throw new InvalidOperationException(
+                    "Ningún test coincidió. Verifica los nombres con clash/tests.");
             }
 
-            result.Applied = ran.Count;
-            result.Verified = ran.OfType<Dictionary<string, object>>()
-                .Count(row => string.Equals(Json.Str(row, "status"),
-                    ClashTestStatus.Complete.ToString(), StringComparison.OrdinalIgnoreCase));
-            result.Failed = result.Applied - result.Verified;
-            result.Detail["tests"] = ran;
-            result.FingerprintAfter = DocumentContext.Fingerprint(doc);
-            return result.ToJson();
+            // Only Complete counts, for the same reason it does in Run All:
+            // Old means the results describe a model that has since moved.
+            var complete = ran
+                .OfType<Dictionary<string, object>>()
+                .Count(t => string.Equals(Json.Str(t, "status"), RunVerification.Complete,
+                    StringComparison.OrdinalIgnoreCase));
+            return Sealed("clash/run", payload,
+                new Dictionary<string, object> { ["action"] = "run_tests", ["tests"] = ran },
+                requested: names.Count, applied: ran.Count, verified: complete,
+                verificationSource: VerificationSources.ClashTestStatusReread,
+                warnings: complete < ran.Count
+                    ? new[] { (ran.Count - complete) + " test(s) no quedaron Complete: sus " +
+                              "resultados no cuentan como verificados." }
+                    : null);
         }
 
         private static ClashTest FindTest(Document doc, string name)
@@ -1233,25 +1646,35 @@ namespace NavisCoord
         /// </summary>
         public static Dictionary<string, object> ApplyGroups(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("clash/group", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
             var dryRun = Json.Bool(payload, "dry_run", true);
             var groups = Json.Arr(payload, "groups");
             if (groups.Count == 0) throw new ArgumentException("Se requiere 'groups'.");
 
-            var ownerIndex = BuildOwnerIndex(doc.GetClash());
+            // Names, taken once. Nothing below dereferences a wrapper captured
+            // before a mutation — the previous version asked
+            // `index[guid].Test.DisplayName` while building the second group,
+            // by which time the first move had already rebuilt the tree.
+            var owners = BuildOwnerIndex(doc.GetClash());
 
             var plan = new List<object>();
             foreach (var raw in groups)
             {
                 if (!(raw is Dictionary<string, object> spec)) continue;
                 var guids = Json.StrArr(spec, "clash_guids");
-                var found = guids.Count(g => ownerIndex.ContainsKey(g));
+                var found = guids.Count(g => owners.ContainsKey(g));
 
                 // A Navisworks clash group lives under exactly one test, so an
                 // issue whose clashes span several becomes several groups. The
                 // dry run has to say so: a plan that under-reports what the
                 // commit will do is worse than no plan at all.
-                var spanned = ClashPlanning.OwningTests(guids, ownerIndex);
+                var spanned = ClashPlanning.OwningTests(guids, owners);
                 plan.Add(new Dictionary<string, object>
                 {
                     ["name"] = Json.Str(spec, "name"),
@@ -1270,11 +1693,13 @@ namespace NavisCoord
 
             if (dryRun)
             {
-                return Ok("apply_groups", new Dictionary<string, object>
+                return Sealed("clash/group", payload, new Dictionary<string, object>
                 {
-                    ["dry_run"] = true,
+                    ["action"] = "apply_groups",
                     ["would_create"] = plan
-                });
+                },
+                requested: plan.Count, applied: 0, verified: 0,
+                verificationSource: VerificationSources.NotApplicable, dryRun: true);
             }
 
             var created = new List<object>();
@@ -1286,18 +1711,14 @@ namespace NavisCoord
                 if (string.IsNullOrWhiteSpace(name) || guids.Count == 0) continue;
 
                 // Every result in a group must live under the same test, so
-                // the group is created inside whichever test owns them.
-                // Names, not objects: the handles are re-resolved below and
-                // anything captured here would be dead after the first move.
-                var owners = ClashPlanning.OwningTests(guids, ownerIndex);
-                if (owners.Count == 0) continue;
-
-                foreach (var testName in owners)
+                // the group is created inside whichever test owns them. The
+                // split is computed from names alone, in a function that has
+                // never seen the API — see ClashPlanning.
+                foreach (var step in ClashPlanning.PlanIssue(name, guids, owners))
                 {
-                    // One group per owning test. Suffixed only when the issue
-                    // actually spans several, so the common case stays clean.
-                    var groupName = owners.Count > 1 ? $"{name} · {testName}" : name;
-                    var mine = ClashPlanning.ForOwner(guids, ownerIndex, testName);
+                    var testName = step.TestName;
+                    var groupName = step.GroupName;
+                    var mine = step.Guids;
 
                     var host = FindTest(doc, testName);
                     if (host == null) continue;
@@ -1308,6 +1729,8 @@ namespace NavisCoord
                         .Any(g => string.Equals(g.DisplayName, groupName, StringComparison.Ordinal));
                     if (!existente)
                     {
+                        // Fetched here, not held from the top of the handler:
+                        // the previous group's moves have rebuilt the tree.
                         doc.GetClash().TestsData.TestsAddCopy(
                             host, new ClashResultGroup { DisplayName = groupName });
                     }
@@ -1317,6 +1740,7 @@ namespace NavisCoord
                     // the group are re-resolved on each pass. Indices shift
                     // too, which is why the position is found by GUID.
                     var moved = 0;
+                    var lost = new List<string>();
                     foreach (var guid in mine)
                     {
                         var currentTest = FindTest(doc, testName);
@@ -1328,7 +1752,14 @@ namespace NavisCoord
                         var position = currentTest.Children
                             .Select((child, i) => new { child, i })
                             .FirstOrDefault(x => x.child is ClashResult r && r.Guid.ToString() == guid);
-                        if (position == null) continue;
+                        if (position == null)
+                        {
+                            // Already moved, or gone. Either way there is no
+                            // handle to fall back on: the one from the plan
+                            // died with the tree that produced it.
+                            lost.Add(guid);
+                            continue;
+                        }
 
                         doc.GetClash().TestsData.TestsMove(currentTest, position.i, target, target.Children.Count);
                         moved++;
@@ -1338,6 +1769,16 @@ namespace NavisCoord
                         .OfType<ClashResultGroup>()
                         .LastOrDefault(g => string.Equals(g.DisplayName, groupName, StringComparison.Ordinal));
 
+                    // Which of the requested GUIDs are actually inside it. The
+                    // child COUNT includes whatever the group already held, so
+                    // a group that gained nothing could still look healthy.
+                    var inside = verified == null
+                        ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                        : new HashSet<string>(
+                            Router.EnumerateResults(verified).Select(r => r.Guid.ToString()),
+                            StringComparer.OrdinalIgnoreCase);
+                    var members = mine.Count(inside.Contains);
+
                     created.Add(new Dictionary<string, object>
                     {
                         ["name"] = groupName,
@@ -1345,20 +1786,45 @@ namespace NavisCoord
                         ["test"] = testName,
                         ["requested"] = (double)mine.Count,
                         ["moved"] = (double)moved,
-                        ["verified_children"] = (double)(verified?.Children.Count ?? 0)
+                        ["not_resolved"] = lost.Cast<object>().ToList(),
+                        ["verified_children"] = (double)(verified?.Children.Count ?? 0),
+                        ["verified_members"] = (double)members,
+                        ["outcome"] = ClashPlanning.Outcome(mine.Count, moved)
                     });
                 }
             }
 
-            return Ok("apply_groups", new Dictionary<string, object>
+            var requestedMoves = created.OfType<Dictionary<string, object>>()
+                .Sum(g => (int)Json.Num(g, "requested", 0));
+            var movedTotal = created.OfType<Dictionary<string, object>>()
+                .Sum(g => (int)Json.Num(g, "moved", 0));
+            // Membership by GUID. `verified_children` is the group's child
+            // COUNT, which includes anything that was already in it — so a
+            // group that gained nothing could still report a healthy number.
+            var verifiedMembers = created.OfType<Dictionary<string, object>>()
+                .Sum(g => (int)Json.Num(g, "verified_members", 0));
+            return Sealed("clash/group", payload, new Dictionary<string, object>
             {
-                ["dry_run"] = false,
+                ["action"] = "apply_groups",
                 ["groups"] = created
-            });
+            },
+            requested: requestedMoves, applied: movedTotal,
+            verified: Math.Min(movedTotal, verifiedMembers),
+            verificationSource: VerificationSources.GroupMembershipReread,
+            warnings: verifiedMembers < movedTotal
+                ? new[] { (movedTotal - verifiedMembers) + " resultado(s) se movieron pero no " +
+                          "aparecen dentro del grupo al releer por GUID." }
+                : null);
         }
 
         public static Dictionary<string, object> SetStatus(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("clash/status", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
             var dryRun = Json.Bool(payload, "dry_run", true);
             var statusName = Json.Str(payload, "status", "Reviewed");
@@ -1369,45 +1835,72 @@ namespace NavisCoord
             }
 
             var guids = Json.StrArr(payload, "clash_guids");
-            var ownerIndex = BuildOwnerIndex(doc.GetClash());
-            var targets = guids.Where(ownerIndex.ContainsKey).ToList();
+
+            // A snapshot of names, taken once and never dereferenced. The
+            // wrappers that produced it are dropped with the index.
+            var owners = BuildOwnerIndex(doc.GetClash());
+            var targets = guids.Where(owners.ContainsKey).ToList();
 
             if (dryRun)
             {
-                return Ok("set_status", new Dictionary<string, object>
+                return Sealed("clash/status", payload, new Dictionary<string, object>
                 {
-                    ["dry_run"] = true,
-                    ["status"] = status.ToString(),
+                    ["action"] = "set_status",
+                    ["clash_status"] = status.ToString(),
                     ["would_change"] = (double)targets.Count,
                     ["not_found"] = (double)(guids.Count - targets.Count)
-                });
+                },
+                requested: guids.Count, applied: 0, verified: 0,
+                verificationSource: VerificationSources.NotApplicable, dryRun: true);
             }
 
-            var outcome = ClashPlanning.ApplyEach(
+            // Every status edit can rebuild the tree, and a ClashResult held
+            // across one is a dangling native pointer — reusing it does not
+            // raise a managed exception, it kills the process. So the result
+            // is found again, through its owning test, immediately before the
+            // call that touches it, and nothing survives the iteration.
+            var report = ClashPlanning.ApplyEach(
                 targets,
-                guid => ResolveResult(doc, guid),
-                (_, fresh) => EditResultStatus(fresh.Data, fresh.Result, status));
-            var changed = outcome.Applied.Count;
+                guid =>
+                {
+                    var test = FindTest(doc, owners[guid]);
+                    return test == null ? null : FindResult(test, guid);
+                },
+                (guid, result) => EditResultStatus(doc.GetClash().TestsData, result, status));
+            var changed = report.Applied;
+            var vanished = report.Vanished;
 
             // Verify by re-reading rather than by counting successful calls.
-            var reindexed = BuildResultIndex(doc.GetClash());
-            var confirmed = targets.Count(g =>
-                reindexed.ContainsKey(g) && reindexed[g].Result.Status == status);
-
-            return Ok("set_status", new Dictionary<string, object>
+            var confirmed = 0;
+            foreach (var guid in targets)
             {
-                ["dry_run"] = false,
-                ["status"] = status.ToString(),
+                var test = FindTest(doc, owners[guid]);
+                var result = test == null ? null : FindResult(test, guid);
+                if (result != null && result.Status == status) confirmed++;
+            }
+
+            return Sealed("clash/status", payload, new Dictionary<string, object>
+            {
+                ["action"] = "set_status",
+                ["clash_status"] = status.ToString(),
                 ["attempted"] = (double)changed,
                 ["verified_in_document"] = (double)confirmed,
                 ["mismatch"] = (double)(changed - confirmed),
-                ["not_resolved"] = outcome.Vanished.Cast<object>().ToList(),
-                ["failed_guids"] = outcome.Failed.Cast<object>().ToList()
-            });
+                ["vanished"] = vanished.Cast<object>().ToList(),
+                ["status_outcome"] = ClashPlanning.Outcome(targets.Count, confirmed)
+            },
+            requested: guids.Count, applied: changed, verified: confirmed,
+            verificationSource: VerificationSources.DocumentReread);
         }
 
         public static Dictionary<string, object> SaveViewpoints(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("viewpoints/save", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
             var dryRun = Json.Bool(payload, "dry_run", true);
             var folder = Json.Str(payload, "folder", "NavisCoord");
@@ -1422,16 +1915,19 @@ namespace NavisCoord
 
             if (dryRun)
             {
-                return Ok("save_viewpoints", new Dictionary<string, object>
+                return Sealed("viewpoints/save", payload, new Dictionary<string, object>
                 {
-                    ["dry_run"] = true,
+                    ["action"] = "save_viewpoints",
                     ["would_save"] = (double)resolvable,
                     ["not_found"] = (double)(items.Count - resolvable)
-                });
+                },
+                requested: items.Count, applied: 0, verified: 0,
+                verificationSource: VerificationSources.NotApplicable, dryRun: true);
             }
 
             var before = doc.SavedViewpoints.RootItem.Children.Count;
             var saved = 0;
+            var savedNames = new List<string>();
             foreach (var raw in items)
             {
                 if (!(raw is Dictionary<string, object> spec)) continue;
@@ -1443,24 +1939,44 @@ namespace NavisCoord
 
                 var name = Json.Str(spec, "name", $"{folder} - {entry.Result.DisplayName}");
                 doc.SavedViewpoints.AddCopy(new SavedViewpoint(viewpoint) { DisplayName = name });
+                savedNames.Add(name);
                 saved++;
             }
 
+            // Re-read by name, not by counting. A delta of N proves N items
+            // appeared; it does not prove they are the N that were asked for,
+            // and it silently absorbs an unrelated viewpoint added meanwhile.
+            var present = new HashSet<string>(
+                doc.SavedViewpoints.RootItem.Children.Select(v => v.DisplayName ?? string.Empty),
+                StringComparer.Ordinal);
+            var confirmed = savedNames.Count(n => present.Contains(n));
             var after = doc.SavedViewpoints.RootItem.Children.Count;
-            return Ok("save_viewpoints", new Dictionary<string, object>
+
+            return Sealed("viewpoints/save", payload, new Dictionary<string, object>
             {
-                ["dry_run"] = false,
+                ["action"] = "save_viewpoints",
                 ["attempted"] = (double)saved,
                 ["viewpoints_before"] = (double)before,
                 ["viewpoints_after"] = (double)after,
-                ["verified_added"] = (double)(after - before)
-            });
+                ["verified_in_document"] = (double)confirmed
+            },
+            requested: items.Count, applied: saved, verified: confirmed,
+            verificationSource: VerificationSources.SavedViewpointReread,
+            warnings: confirmed < saved
+                ? new[] { (saved - confirmed) + " punto(s) de vista no se encontraron al releer." }
+                : null);
         }
 
         // ------------------------------------------------------ appearance
 
         public static Dictionary<string, object> ColorElements(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("appearance/color", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
             var pathIds = Json.StrArr(payload, "path_ids");
             var unique = pathIds.Distinct(StringComparer.Ordinal).Count();
@@ -1470,101 +1986,205 @@ namespace NavisCoord
                 throw new InvalidOperationException("Ningún elemento se pudo resolver a partir de 'path_ids'.");
             }
 
-            if (Json.Bool(payload, "dry_run", true))
-            {
-                return Ok("color", new Dictionary<string, object>
-                {
-                    ["dry_run"] = true,
-                    ["requested"] = (double)pathIds.Count,
-                    ["unique_requested"] = (double)unique,
-                    ["would_color"] = (double)items.Count
-                });
-            }
-
             var color = Color.FromByteRGB(
                 (byte)Math.Min(255, Math.Max(0, Json.Int(payload, "r", 255))),
                 (byte)Math.Min(255, Math.Max(0, Json.Int(payload, "g", 0))),
                 (byte)Math.Min(255, Math.Max(0, Json.Int(payload, "b", 0))));
 
+            // What was there before, captured BEFORE the override lands.
+            // Without this, "reset" can only mean "remove every permanent
+            // material", because nothing remembers which ones were ours.
+            var appearanceOperation = AppearanceLedger.NewOperationId();
+            var originals = new List<AppearanceLedger.Original>();
+            foreach (var item in items)
+            {
+                originals.Add(CaptureAppearance(doc, item));
+            }
+            var ledgerEntry = AppearanceLedger.Remember(
+                appearanceOperation, DocumentContext.Fingerprint(doc), originals);
+
             doc.Models.OverridePermanentColor(items, color);
 
             var transparency = Json.Num(payload, "transparency", -1.0);
-            if (transparency >= 0.0 && transparency <= 1.0)
+            var wantsTransparency = transparency >= 0.0 && transparency <= 1.0;
+            if (wantsTransparency)
             {
                 doc.Models.OverridePermanentTransparency(items, transparency);
             }
 
+            // Re-read, not recounted.
+            //
+            // `items.Count` is how many ModelItems RESOLVED — measured before
+            // the override and therefore evidence of nothing about it. The
+            // colour is read back off the geometry: `ModelGeometry` exposes
+            // `PermanentColor` and `PermanentTransparency` as ordinary
+            // getters, in 2024, 2025 and 2026 alike, so there is no excuse for
+            // reporting a resolution count as a verification.
+            var confirmed = CountWithAppearance(items, color, wantsTransparency ? transparency : -1.0);
+
             // Reported against the DISTINCT count. The same element appears in
             // many clashes, so measuring against the raw request makes routine
             // de-duplication look like a resolution failure.
-            return Ok("color", new Dictionary<string, object>
+            return Sealed("appearance/color", payload, new Dictionary<string, object>
             {
-                ["requested"] = (double)pathIds.Count,
+                ["action"] = "color",
+                ["appearance_operation_id"] = appearanceOperation,
+                ["restore"] = ledgerEntry.Describe(),
                 ["unique_requested"] = (double)unique,
                 ["resolved"] = (double)items.Count,
-                ["unresolved"] = (double)Math.Max(0, unique - items.Count)
-            });
+                ["unresolved"] = (double)Math.Max(0, unique - items.Count),
+                ["verified_in_document"] = (double)confirmed
+            },
+            requested: unique, applied: items.Count, verified: confirmed,
+            verificationSource: VerificationSources.AppearanceOverrideReread,
+            warnings: confirmed < items.Count
+                ? new[] { (items.Count - confirmed) + " elemento(s) resolvieron pero no " +
+                          "devuelven el override al releerlos." }
+                : null);
         }
 
         public static Dictionary<string, object> ResetAppearance(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("appearance/reset", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
             var pathIds = Json.StrArr(payload, "path_ids");
 
-            if (Json.Bool(payload, "dry_run", true))
+            var operationId = Json.Str(payload, "appearance_operation_id");
+            var fingerprint = DocumentContext.Fingerprint(doc);
+
+            // An empty call used to mean ResetAllPermanentMaterials(). That is
+            // not "undo what I did", it is "delete every permanent override in
+            // this model" — including a colour scheme somebody built for a
+            // client presentation. The two read identically from outside and
+            // only one of them is recoverable, so the empty call is now a
+            // refusal that says which arguments would work.
+            if (pathIds.Count == 0 && string.IsNullOrWhiteSpace(operationId))
             {
-                return Ok("reset_appearance", new Dictionary<string, object>
-                {
-                    ["dry_run"] = true,
-                    ["scope"] = pathIds.Count == 0 ? "todo el modelo" : "selección",
-                    ["would_reset"] = (double)pathIds.Distinct(StringComparer.Ordinal).Count()
-                });
+                return Refusal("appearance/reset", "missing_argument", fingerprint,
+                    "Indica 'appearance_operation_id' para deshacer un coloreado de " +
+                    "NavisCoord, o 'path_ids' para unos elementos concretos. Una llamada " +
+                    "vacía borraría TODAS las apariencias permanentes del modelo, " +
+                    "incluidas las que no puso NavisCoord.");
             }
 
-            if (pathIds.Count == 0)
+            // ------------------------------------------------ by operation
+            if (!string.IsNullOrWhiteSpace(operationId))
             {
-                doc.Models.ResetAllPermanentMaterials();
-                return Ok("reset_appearance", new Dictionary<string, object> { ["scope"] = "todo el modelo" });
+                var operation = AppearanceLedger.Find(operationId, fingerprint, out var refusalText);
+                if (operation == null)
+                {
+                    return Refusal("appearance/reset", "unknown_operation", fingerprint, refusalText);
+                }
+
+                var restored = 0;
+                foreach (var original in operation.Elements)
+                {
+                    var item = NavisContext.Resolve(doc, original.PathId);
+                    if (item == null) continue;
+                    var one = new ModelItemCollection { item };
+                    if (original.HadOverride)
+                    {
+                        // Put back exactly what was there — including the
+                        // transparency, which a plain reset would drop.
+                        doc.Models.OverridePermanentColor(
+                            one, Color.FromByteRGB((byte)original.R, (byte)original.G, (byte)original.B));
+                        doc.Models.OverridePermanentTransparency(one, original.Transparency);
+                    }
+                    else
+                    {
+                        // No override before: restore the ABSENCE of one. This
+                        // is the distinction a naive "set it back to the
+                        // default colour" loses, and it leaves a permanent
+                        // material nobody asked for.
+                        doc.Models.ResetPermanentMaterials(one);
+                    }
+                    if (!HasOverride(item) == !original.HadOverride) restored++;
+                }
+
+                return Sealed("appearance/reset", payload, new Dictionary<string, object>
+                {
+                    ["action"] = "reset_appearance",
+                    ["scope"] = "operación " + operationId,
+                    ["appearance_operation_id"] = operationId,
+                    ["elements"] = (double)operation.Elements.Count,
+                    ["verified_in_document"] = (double)restored
+                },
+                requested: operation.Elements.Count,
+                applied: operation.Elements.Count,
+                verified: restored,
+                verificationSource: VerificationSources.AppearanceOverrideReread,
+                warnings: restored < operation.Elements.Count
+                    ? new[] { (operation.Elements.Count - restored) + " elemento(s) no " +
+                              "volvieron a su apariencia original al releerlos." }
+                    : null);
             }
 
             var items = NavisContext.ResolveMany(doc, pathIds);
             doc.Models.ResetPermanentMaterials(items);
-            return Ok("reset_appearance", new Dictionary<string, object>
+
+            // Verified by re-reading each item's geometry: a reset item is one
+            // whose permanent colour and transparency match its original.
+            var cleared = items.Count(item => !HasOverride(item));
+            return Sealed("appearance/reset", payload, new Dictionary<string, object>
             {
+                ["action"] = "reset_appearance",
                 ["scope"] = "selección",
-                ["resolved"] = (double)items.Count
-            });
+                ["resolved"] = (double)items.Count,
+                ["verified_in_document"] = (double)cleared
+            },
+            requested: pathIds.Distinct(StringComparer.Ordinal).Count(),
+            applied: items.Count, verified: cleared,
+            verificationSource: VerificationSources.AppearanceOverrideReread,
+            warnings: cleared < items.Count
+                ? new[] { (items.Count - cleared) + " elemento(s) conservan el override." }
+                : null);
         }
 
         public static Dictionary<string, object> SelectItems(Dictionary<string, object> payload)
         {
+            // Same policy as the job path: which document, and is it the one the
+            // caller planned against. Protecting only job/submit left every direct
+            // call editing whatever happened to be open.
+            var refused = MutationPreflight("selection/set", payload);
+            if (refused != null) return refused;
+
             var doc = Router.RequireDocument();
             var pathIds = Json.StrArr(payload, "path_ids");
             var unique = pathIds.Distinct(StringComparer.Ordinal).Count();
             var items = NavisContext.ResolveMany(doc, pathIds);
 
-            if (Json.Bool(payload, "dry_run", true))
-            {
-                return Ok("select", new Dictionary<string, object>
-                {
-                    ["dry_run"] = true,
-                    ["requested"] = (double)pathIds.Count,
-                    ["unique_requested"] = (double)unique,
-                    ["would_select"] = (double)items.Count
-                });
-            }
-
             doc.CurrentSelection.Clear();
             doc.CurrentSelection.CopyFrom(items);
 
-            var selected = doc.CurrentSelection.SelectedItems.Count;
-            return Ok("select", new Dictionary<string, object>
+            // Re-read AND compared by identity. A matching count is not a
+            // matching selection: the same number of items can be the wrong
+            // items, which is exactly what a partially failed resolve leaves
+            // behind.
+            var live = doc.CurrentSelection.SelectedItems;
+            var selected = live.Count;
+            var wanted = new HashSet<string>(
+                items.Select(item => NavisContext.PathId(doc, item)), StringComparer.Ordinal);
+            var confirmed = live.Count(item => wanted.Contains(NavisContext.PathId(doc, item)));
+
+            return Sealed("selection/set", payload, new Dictionary<string, object>
             {
-                ["requested"] = (double)pathIds.Count,
+                ["action"] = "select",
                 ["unique_requested"] = (double)unique,
                 ["selected"] = (double)selected,
+                ["verified_in_document"] = (double)confirmed,
                 ["unresolved"] = (double)Math.Max(0, unique - selected)
-            });
+            },
+            requested: unique, applied: items.Count, verified: confirmed,
+            verificationSource: VerificationSources.CurrentSelectionReread,
+            warnings: confirmed < items.Count
+                ? new[] { "La selección viva no contiene " + (items.Count - confirmed) +
+                          " de los elementos resueltos." }
+                : null);
         }
 
         // --------------------------------------------------------- helpers
@@ -1573,20 +2193,6 @@ namespace NavisCoord
         {
             public ClashResult Result;
             public ClashTest Test;
-        }
-
-        private sealed class ResolvedResult
-        {
-            public DocumentClashTests Data;
-            public ClashResult Result;
-        }
-
-        private static ResolvedResult ResolveResult(Document doc, string guid)
-        {
-            if (!Guid.TryParse(guid, out var parsed)) return null;
-            var data = doc.GetClash().TestsData;
-            var result = data.ResolveGuid(parsed) as ClashResult;
-            return result == null ? null : new ResolvedResult { Data = data, Result = result };
         }
 
         /// <summary>
@@ -1640,20 +2246,332 @@ namespace NavisCoord
             _editStatusMethod.Invoke(data, new object[] { result, status, assignee });
         }
 
+        // `OwningTests` used to live here, reading `.Test.DisplayName` off the
+        // wrappers in a pre-mutation index. It is gone rather than kept for
+        // convenience: leaving it in place is leaving the loaded gun on the
+        // table for whoever adds the next handler. Its replacement takes a map
+        // of names and lives in ClashPlanning, where it is tested.
+
+        /// <summary>GUID → name of the test that owns it. Strings only.</summary>
+        /// <remarks>
+        /// The counterpart to <see cref="BuildResultIndex"/>, for everything
+        /// that has to survive a mutation. The index of live wrappers is fine
+        /// to read before the first edit and lethal afterwards; a map of names
+        /// is still true when the tree has been rebuilt underneath it, and it
+        /// is enough to find the handle again.
+        /// </remarks>
         private static Dictionary<string, string> BuildOwnerIndex(DocumentClash clash)
         {
-            var owners = new List<KeyValuePair<string, string>>();
+            var owners = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var saved in clash.TestsData.Tests)
             {
                 if (!(saved is ClashTest test)) continue;
                 var name = test.DisplayName ?? string.Empty;
                 foreach (var result in Router.EnumerateResults(test))
                 {
-                    owners.Add(new KeyValuePair<string, string>(result.Guid.ToString(), name));
+                    owners[result.Guid.ToString()] = name;
                 }
             }
-            return ClashPlanning.SnapshotOwners(owners);
+            return owners;
         }
+
+        /// <summary>The saved items a clash-test side points at, by identity.</summary>
+        internal static List<string> SourceGuids(Document doc, ClashSelection selection)
+        {
+            var guids = new List<string>();
+            if (selection == null) return guids;
+            SelectionSourceCollection sources;
+            try { sources = selection.Selection?.SelectionSources; }
+            catch (Exception) { return guids; }
+            if (sources == null) return guids;
+
+            foreach (var source in sources)
+            {
+                SavedItem item = null;
+                try { item = doc.SelectionSets.ResolveSelectionSource(source); }
+                catch (ArgumentException) { }
+                catch (InvalidOperationException) { }
+                if (item != null) guids.Add(item.Guid.ToString());
+            }
+            return guids;
+        }
+
+        /// <summary>
+        /// Every clash test reduced to identities and plain values.
+        /// </summary>
+        /// <remarks>
+        /// Taken before the first mutation and never re-read from the objects
+        /// it came from: the wrappers do not survive a rebuild, and the whole
+        /// point of a snapshot is to still be true afterwards.
+        /// </remarks>
+        internal static List<ConfigurePlanning.TestSnapshot> SnapshotTests(Document doc)
+        {
+            var snapshot = new List<ConfigurePlanning.TestSnapshot>();
+            foreach (var saved in doc.GetClash().TestsData.Tests)
+            {
+                if (!(saved is ClashTest test)) continue;
+                var entry = new ConfigurePlanning.TestSnapshot
+                {
+                    Guid = test.Guid.ToString(),
+                    Name = test.DisplayName ?? string.Empty,
+                    TestType = test.TestType.ToString(),
+                    Tolerance = test.Tolerance,
+                    ResultCount = Router.EnumerateResults(test).Count(),
+                    GroupCount = test.Children.OfType<ClashResultGroup>().Count(),
+                    Status = test.Status.ToString(),
+                    SourceGuidsA = SourceGuids(doc, test.SelectionA),
+                    SourceGuidsB = SourceGuids(doc, test.SelectionB)
+                };
+
+                // What each source looked like at this instant, so that "the
+                // GUID still resolves" can later be told apart from "the GUID
+                // still resolves to the same thing".
+                foreach (var guid in entry.AllSourceGuids.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    entry.SourceFingerprints[guid] = Fingerprint(ResolveGuid(doc, guid) as SelectionSet);
+                }
+                snapshot.Add(entry);
+            }
+            return snapshot;
+        }
+
+        /// <summary>
+        /// The migration capability this build ships with.
+        /// </summary>
+        /// <remarks>
+        /// A constant, and deliberately not a function. Anything that computed
+        /// this at run time would have to write to the document to find out,
+        /// and a capability check is not entitled to mutate a project — not on
+        /// a dry run, not on a read, not quietly on a real one. Reflection can
+        /// confirm that `ReplaceWithCopy` exists; it cannot confirm that the
+        /// copy keeps the GUID or that the clash tests stay bound to it, and
+        /// those are the only two questions that matter here.
+        ///
+        /// Raising this is a deliberate act that belongs with an integration
+        /// test running against a scratch document, never with a heuristic.
+        /// While it stays Unverified, a referenced source is preserved and the
+        /// step is reported blocked.
+        /// </remarks>
+        private const ConfigurePlanning.MigrationCapability Capability =
+            ConfigurePlanning.MigrationCapability.Unverified;
+
+        /// <summary>A named set inside a named folder, or null.</summary>
+        private static SelectionSet FindSetIn(Document doc, string folder, string name)
+        {
+            var group = doc.SelectionSets.RootItem.Children
+                .FirstOrDefault(s => string.Equals(s.DisplayName, folder, StringComparison.OrdinalIgnoreCase))
+                as GroupItem;
+            if (group == null) return null;
+            return group.Children
+                .OfType<SelectionSet>()
+                .FirstOrDefault(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>Whether a saved set already searches for what is wanted.</summary>
+        /// <remarks>
+        /// `ValueEquals` is the API's own comparison, which is the only one
+        /// worth trusting here — a hand-rolled diff of search conditions would
+        /// be a second opinion about a question Navisworks already answers. A
+        /// set holding an explicit item list has no search to compare, so it
+        /// never counts as matching: it has to be rebuilt to become one.
+        /// </remarks>
+        private static bool SameDefinition(SelectionSet set, Search wanted)
+        {
+            if (set == null || wanted == null) return false;
+            if (ExplicitItems(set) != null) return false;
+            try { return Search.ValueEquals(set.Search, wanted); }
+            catch (ArgumentException) { return false; }
+            catch (InvalidOperationException) { return false; }
+        }
+
+        /// <summary>
+        /// What a saved set selects, reduced to a string that survives a
+        /// mutation.
+        /// </summary>
+        /// <remarks>
+        /// `Search.ValueEquals` is the right comparison but it needs two live
+        /// Search objects, and holding one across a rebuild is exactly the
+        /// dangling-handle bug this file spent a while removing. A fingerprint
+        /// is the version that keeps working: taken before, taken again after,
+        /// compared as text.
+        ///
+        /// Built from what the API exposes — the conditions in order, the
+        /// search locations, the prune flag — so two sets fingerprint alike
+        /// only when they actually search alike. A set holding an explicit
+        /// item list has no search, and says so rather than pretending to be
+        /// an empty one; an empty search and no search are not the same thing.
+        /// </remarks>
+        private static string Fingerprint(SelectionSet set)
+        {
+            if (set == null) return string.Empty;
+            var explicitItems = ExplicitItems(set);
+            if (explicitItems != null) return "explicit:" + explicitItems.Count;
+            try
+            {
+                var search = set.Search;
+                if (search == null) return "search:none";
+                var conditions = string.Join("|",
+                    search.SearchConditions.Select(c => c?.ToString() ?? string.Empty));
+                return "search:" + search.Locations + ":" + search.PruneBelowMatch + ":" + conditions;
+            }
+            catch (ArgumentException) { return "search:unreadable"; }
+            catch (InvalidOperationException) { return "search:unreadable"; }
+        }
+
+        /// <summary>
+        /// What every GUID a test declares actually resolves to, right now.
+        /// </summary>
+        /// <remarks>
+        /// The counterpart to the snapshot: the snapshot says what the tests
+        /// CLAIM to point at, this says what is really there. Comparing the
+        /// two is the only way to tell a live link from a stale declaration —
+        /// `ResolveGuid` returning non-null proves a saved item with that GUID
+        /// exists, and nothing more.
+        /// </remarks>
+        private static Dictionary<string, ConfigurePlanning.SourceResolution> ResolveSources(
+            Document doc, IEnumerable<ConfigurePlanning.TestSnapshot> tests)
+        {
+            var map = new Dictionary<string, ConfigurePlanning.SourceResolution>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var guid in tests.SelectMany(t => t.AllSourceGuids))
+            {
+                if (map.ContainsKey(guid)) continue;
+                var item = ResolveGuid(doc, guid);
+                map[guid] = new ConfigurePlanning.SourceResolution
+                {
+                    Guid = guid,
+                    Resolves = item != null,
+                    Fingerprint = Fingerprint(item as SelectionSet)
+                };
+            }
+            return map;
+        }
+
+        /// <summary>One saved item, by identity, or null.</summary>
+        private static SavedItem ResolveGuid(Document doc, string guid)
+        {
+            if (!Guid.TryParse(guid, out var parsed)) return null;
+            try { return doc.SelectionSets.ResolveGuid(parsed); }
+            catch (ArgumentException) { return null; }
+            catch (InvalidOperationException) { return null; }
+        }
+
+        /// <summary>
+        /// Whether an item still carries a permanent appearance override.
+        /// </summary>
+        /// <remarks>
+        /// `ModelGeometry` exposes `PermanentColor` and
+        /// `PermanentTransparency` as plain getters in 2024, 2025 and 2026 —
+        /// each assembly was inspected — so appearance is verifiable and there
+        /// is no honest reason to report a resolution count instead. An item
+        /// with no geometry carries no override of its own; the override lands
+        /// on its descendants.
+        /// </remarks>
+        private static bool HasOverride(ModelItem item)
+        {
+            if (item == null || !item.HasGeometry) return false;
+            try
+            {
+                var geometry = item.Geometry;
+                if (geometry == null) return false;
+                return geometry.PermanentColor != geometry.OriginalColor ||
+                       Math.Abs(geometry.PermanentTransparency - geometry.OriginalTransparency) > 0.001;
+            }
+            catch (ArgumentException) { return false; }
+            catch (InvalidOperationException) { return false; }
+        }
+
+        /// <summary>How many items now read back the appearance that was set.</summary>
+        private static int CountWithAppearance(
+            IEnumerable<ModelItem> items, Color expected, double expectedTransparency)
+        {
+            var confirmed = 0;
+            foreach (var item in items ?? Enumerable.Empty<ModelItem>())
+            {
+                // An item without geometry cannot report a colour, and the
+                // override went to its descendants. Counting it as verified
+                // would be counting something nobody looked at.
+                if (item == null || !item.HasGeometry)
+                {
+                    if (item != null && item.Descendants.Any(d =>
+                            d.HasGeometry && Matches(d, expected, expectedTransparency)))
+                    {
+                        confirmed++;
+                    }
+                    continue;
+                }
+                if (Matches(item, expected, expectedTransparency)) confirmed++;
+            }
+            return confirmed;
+        }
+
+        private static bool Matches(ModelItem item, Color expected, double expectedTransparency)
+        {
+            try
+            {
+                var geometry = item.Geometry;
+                if (geometry == null) return false;
+                var colour = geometry.PermanentColor;
+                var sameColour = Math.Abs(colour.R - expected.R) < 0.01 &&
+                                 Math.Abs(colour.G - expected.G) < 0.01 &&
+                                 Math.Abs(colour.B - expected.B) < 0.01;
+                if (!sameColour) return false;
+                if (expectedTransparency < 0.0) return true;
+                return Math.Abs(geometry.PermanentTransparency - expectedTransparency) < 0.01;
+            }
+            catch (ArgumentException) { return false; }
+            catch (InvalidOperationException) { return false; }
+        }
+
+        /// <summary>One element's appearance right now, as plain values.</summary>
+        /// <remarks>
+        /// `HadOverride` is the field that matters. An element with no
+        /// override is not the same as one overridden to its original colour,
+        /// and a restore that cannot tell them apart leaves a permanent
+        /// material behind that the operator never set and cannot see.
+        /// </remarks>
+        private static AppearanceLedger.Original CaptureAppearance(Document doc, ModelItem item)
+        {
+            var original = new AppearanceLedger.Original
+            {
+                PathId = NavisContext.PathId(doc, item)
+            };
+            if (item == null || !item.HasGeometry) return original;
+            try
+            {
+                var geometry = item.Geometry;
+                if (geometry == null) return original;
+                var colour = geometry.PermanentColor;
+                original.HadOverride = HasOverride(item);
+                original.R = (int)Math.Round(colour.R * 255.0);
+                original.G = (int)Math.Round(colour.G * 255.0);
+                original.B = (int)Math.Round(colour.B * 255.0);
+                original.Transparency = geometry.PermanentTransparency;
+            }
+            catch (ArgumentException) { }
+            catch (InvalidOperationException) { }
+            return original;
+        }
+
+        /// <summary>Every saved item at or under this one, by identity.</summary>
+        private static IEnumerable<string> GuidsUnder(SavedItem item)
+        {
+            if (item == null) yield break;
+            yield return item.Guid.ToString();
+            if (item is GroupItem group)
+            {
+                foreach (var child in group.Children)
+                {
+                    foreach (var guid in GuidsUnder(child)) yield return guid;
+                }
+            }
+        }
+
+        /// <summary>One result, resolved fresh from the test that owns it.</summary>
+        private static ClashResult FindResult(ClashTest test, string guid)
+            => Router.EnumerateResults(test)
+                .FirstOrDefault(r => string.Equals(
+                    r.Guid.ToString(), guid, StringComparison.OrdinalIgnoreCase));
 
         private static Dictionary<string, ResultEntry> BuildResultIndex(DocumentClash clash)
         {

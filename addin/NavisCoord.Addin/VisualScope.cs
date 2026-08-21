@@ -54,6 +54,20 @@ namespace NavisCoord
         private GridsRenderMode _gridMode;
         private bool _gridTouched;
 
+        /// <summary>Exactly the items this scope overrode, for a selective reset.</summary>
+        /// <remarks>
+        /// The cleanup used to be <c>ResetAllTemporaryMaterials()</c>, which
+        /// clears the WHOLE document — including a highlight the operator set
+        /// by hand before asking for the image, and one another add-in is
+        /// relying on. `ResetTemporaryMaterials(IEnumerable)` exists in 2024,
+        /// 2025 and 2026 alike (each assembly was inspected), so there is no
+        /// reason to reach for the blunt one.
+        ///
+        /// The collection is filled BEFORE each override, not after, so a call
+        /// that throws halfway still leaves the items it had already touched
+        /// on the list to be undone.
+        /// </remarks>
+        private readonly ModelItemCollection _painted = new ModelItemCollection();
         private bool _materialsTouched;
         private Color _restoreBackground;
         private bool _backgroundTouched;
@@ -117,7 +131,9 @@ namespace NavisCoord
                 var roots = _doc.Models.CreateCollectionFromRootItems();
                 if (roots != null && roots.Count > 0)
                 {
-                    _materialsTouched = true;
+                    // Recorded first: if the override below throws, these are
+                    // still ours to undo.
+                    Remember(roots);
                     _doc.Models.OverrideTemporaryTransparency(roots, Clamp(contextTransparency, 0.0, 0.95));
                     _doc.Models.OverrideTemporaryColor(roots, contextColour);
                 }
@@ -133,7 +149,10 @@ namespace NavisCoord
                      })
             {
                 if (pair.Key == null || pair.Key.Count == 0) continue;
-                _materialsTouched = true;
+                // Marked before the first of the two calls. Colouring side A
+                // and then failing on side B must still clean side A, and a
+                // flag set only after both succeeded would leave it painted.
+                Remember(pair.Key);
                 _doc.Models.OverrideTemporaryTransparency(pair.Key, 0.0);
                 _doc.Models.OverrideTemporaryColor(pair.Key, pair.Value);
             }
@@ -481,6 +500,17 @@ namespace NavisCoord
 
         // ---------------------------------------------------------- restore
 
+        /// <summary>Adds items to the undo set. Always before overriding them.</summary>
+        private void Remember(ModelItemCollection items)
+        {
+            if (items == null || items.Count == 0) return;
+            _materialsTouched = true;
+            foreach (var item in items)
+            {
+                _painted.Add(item);
+            }
+        }
+
         public void Dispose()
         {
             if (_disposed) return;
@@ -488,7 +518,15 @@ namespace NavisCoord
 
             // Each step guarded on its own: one failure must not abandon the
             // rest, or a document keeps a fade because a camera restore threw.
-            if (_materialsTouched) Guard(() => _doc.Models.ResetAllTemporaryMaterials(), "materials_not_reset");
+            if (_materialsTouched)
+            {
+                // Selective. The whole-document reset that used to live here
+                // removed every temporary override in the model, ours and
+                // everybody else's, and an operator whose manual highlight
+                // vanished after asking for a picture has no way to connect
+                // the two events.
+                Guard(() => _doc.Models.ResetTemporaryMaterials(_painted), "materials_not_reset");
+            }
             if (_hidden.Count > 0) Guard(() => _doc.Models.SetHidden(_hidden, false), "hidden_not_restored");
             if (_backgroundTouched) Guard(() => _doc.SetPlainBackground(_restoreBackground), "background_not_restored");
             if (_gridTouched)

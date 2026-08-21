@@ -77,6 +77,22 @@ namespace NavisCoord
                     .Cast<object>()
                     .ToList(),
                 ["operations"] = operations,
+
+                // Derived from RouteContracts, never hand-maintained. The
+                // manifest's job is to tell the truth about what this build
+                // does, and a hand-written list tells the truth only until
+                // somebody adds a route.
+                ["contracts"] = RouteContracts.All.Select(c => (object)c.ToJson()).ToList(),
+                ["mutations"] = RouteContracts.Mutations.Cast<object>().ToList(),
+                ["job_routes"] = RouteContracts.JobRoutes.Cast<object>().ToList(),
+                ["envelope_required"] = RouteContracts.All
+                    .Where(c => c.RequiresEnvelope).Select(c => (object)c.Name).ToList(),
+                ["fingerprint_required"] = RouteContracts.All
+                    .Where(c => c.RequiresFingerprint).Select(c => (object)c.Name).ToList(),
+                ["dry_run_supported"] = RouteContracts.All
+                    .Where(c => c.SupportsDryRun).Select(c => (object)c.Name).ToList(),
+                ["profile_required"] = RouteContracts.All
+                    .Where(c => c.RequiresProfile).Select(c => (object)c.Name).ToList(),
                 ["save"] = saveCapability ?? new Dictionary<string, object>
                 {
                     ["capability"] = false,

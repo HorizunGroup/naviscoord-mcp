@@ -61,11 +61,38 @@ Qué se detecta:
 | Referencias | Un par de clash que apunta a una carpeta que `sets` no define |
 | Unidades | `tolerance_m: 10` — la tolerancia va en METROS; probablemente querías milímetros |
 | Pesos | Los de severidad deben sumar 1.00 |
-| Secciones | Una sección desconocida (`setss`) se avisa: se ignoraría en silencio |
+| Secciones | Una sección desconocida (`setss`) se **rechaza**: antes se ignoraba en silencio y el perfil «no hacía nada» durante una semana |
 
 Un perfil que no valida **no se carga**. Sigue vigente el anterior. Meter uno
 roto y reportar los problemas aparte es cómo una corrida acaba puntuada por
 criterios que nadie eligió.
+
+## El contrato: qué secciones existen
+
+La lista canónica de secciones y campos vive en
+`server/naviscoord/profiles/profile_contract.json`, y es un **contrato**, no
+documentación: las dos implementaciones de `ProfileRules` (Python y C#) se
+comprueban contra ese archivo en sus suites, y otra prueba escanea el código
+del motor y exige que cada acceso al perfil aparezca en el contrato. Consumir
+una propiedad nueva sin declararla rompe la suite; declarar una que nadie lee,
+también.
+
+Tres reglas que salen de ahí:
+
+- **Una clave desconocida en la raíz es un error** (`profile_unknown`), no un
+  aviso. Un typo (`severty`) parsea, valida y no cambia nada — la única forma
+  de que se note es negarse a cargarlo.
+- **Las claves que empiezan por `_` son comentario** en cualquier nivel y no
+  se validan.
+- **`extensions` es la única zona libre.** Datos propios del proyecto van ahí
+  y no se validan nunca; ninguna sección futura del formato podrá chocar con
+  ese nombre.
+
+Dos campos están **reservados**: se validan pero hoy ningún consumidor los lee
+(`noise_filter.max_penetration_m` y `clash_matrix.default_tolerance_m`). El
+contrato los marca con `reserved` y la razón; conectar o retirar cada uno es
+una decisión de producto pendiente, y la suite impide que la lista de
+reservados crezca sin explicación.
 
 ## Operadores de condición
 

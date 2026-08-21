@@ -8,10 +8,9 @@ untraceable issues are declared rather than quietly dropped.
 
 from __future__ import annotations
 
+import codecs
 import json
-import hashlib
-
-import pytest
+from pathlib import Path
 
 from naviscoord import samples as synth
 from naviscoord.analysis import analyze
@@ -109,13 +108,22 @@ def test_write_handoff_produces_every_artifact(profile, tmp_path):
     result, export = _analysed(synth.full_project_case(), profile)
     report = write_handoff(tmp_path, result, export, profile)
 
-    names = {p.name for p in tmp_path.iterdir()}
+    # The artifacts live inside one immutable generation, and `current.json`
+    # is the only file that ever moves. A consumer reading loose top-level
+    # files can read a mixture of two runs; one that follows the pointer
+    # cannot, which is the whole point of the change.
+    generation = Path(report["directory"])
+    names = {p.name for p in generation.iterdir()}
     assert "coordination_handoff.json" in names
     assert "revit_worklist.json" in names
     assert "fct_issues.csv" in names
+    assert "manifest.json" in names
     assert report["issues"] == len(result.issues)
 
-    payload = json.loads((tmp_path / "coordination_handoff.json").read_text(encoding="utf-8"))
+    current = json.loads((tmp_path / "current.json").read_text(encoding="utf-8"))
+    assert current["generation_id"] == report["generation_id"]
+
+    payload = json.loads((generation / "coordination_handoff.json").read_text(encoding="utf-8"))
     assert payload["source"]["tool"] == "naviscoord"
     assert payload["source"]["profile"] == profile.name
 
@@ -123,56 +131,6 @@ def test_write_handoff_produces_every_artifact(profile, tmp_path):
 def test_csv_is_written_with_bom_for_excel(profile, tmp_path):
     """Without the BOM, Power BI and Excel mangle every accented value."""
     result, export = _analysed(synth.noise_case(), profile)
-    write_handoff(tmp_path, result, export, profile)
-    assert (tmp_path / "fct_issues.csv").read_bytes().startswith(b"\xef\xbb\xbf")
-
-
-def test_handoff_manifest_authenticates_one_complete_generation(profile, tmp_path):
-    result, export = _analysed(synth.full_project_case(), profile)
     report = write_handoff(tmp_path, result, export, profile)
-
-    manifest = json.loads((tmp_path / "handoff_manifest.json").read_text("utf-8"))
-    assert report["manifest"] == str(tmp_path / "handoff_manifest.json")
-    assert manifest["schema"] == "naviscoord.handoff-manifest/1"
-    assert manifest["artifacts"]
-    for name, evidence in manifest["artifacts"].items():
-        data = (tmp_path / name).read_bytes()
-        assert len(data) == evidence["bytes"]
-        assert hashlib.sha256(data).hexdigest() == evidence["sha256"]
-
-
-def test_handoff_publish_failure_restores_the_entire_previous_bundle(
-    profile, tmp_path, monkeypatch
-):
-    from naviscoord import interop
-
-    result, export = _analysed(synth.full_project_case(), profile)
-    write_handoff(tmp_path, result, export, profile)
-    before = {
-        path.name: path.read_bytes()
-        for path in tmp_path.iterdir()
-        if path.is_file() and not path.name.startswith(".naviscoord-handoff")
-    }
-
-    real_replace = interop._replace_file
-    calls = 0
-
-    def fail_during_publication(source, destination):
-        nonlocal calls
-        calls += 1
-        if calls == 3:
-            raise OSError("fallo inyectado a mitad del paquete")
-        real_replace(source, destination)
-
-    monkeypatch.setattr(interop, "_replace_file", fail_during_publication)
-    with pytest.raises(OSError, match="fallo inyectado"):
-        write_handoff(tmp_path, result, export, profile)
-
-    after = {
-        path.name: path.read_bytes()
-        for path in tmp_path.iterdir()
-        if path.is_file() and not path.name.startswith(".naviscoord-handoff")
-    }
-    assert after == before
-    assert not list(tmp_path.glob("*.stage"))
-    assert not list(tmp_path.glob("*.backup"))
+    csv_path = Path(report["directory"]) / "fct_issues.csv"
+    assert csv_path.read_bytes().startswith(codecs.BOM_UTF8)

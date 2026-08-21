@@ -176,6 +176,29 @@ state to the intended model.
 See the complete [security model](docs/SECURITY-MODEL.md) and report
 vulnerabilities through [GitHub private advisories](SECURITY.md), not issues.
 
+## Privacy Policy
+
+NavisCoord runs on your machine. HorizunGroup operates no service for it and
+receives no data from it: no account, no licence check, no telemetry, no upload
+of models, clashes or reports.
+
+Two flows do leave the process, and both are yours to control:
+
+- **Your AI client.** NavisCoord is an MCP server, so the summaries its tools
+  return — issue descriptions, element IDs, model file names, coordinates,
+  report text — go to the MCP client you run it from, and through it to that
+  client's model provider under their privacy policy. The raw clash export is
+  never returned; large results are written to a file and answered with a path.
+- **Your package index.** Launched as a plugin, NavisCoord provisions a
+  plugin-local virtual environment and downloads its locked dependencies from
+  PyPI. No model data is involved, and installing the server yourself skips it.
+
+Files it writes — reports, handoffs, exports and session files — stay on your
+disk, unencrypted, until you delete them.
+
+The full policy, including what counts as personal data inside a model and how
+long anything is kept, is in [Privacy policy](docs/PRIVACY.md).
+
 ## Compatibility
 
 | Component | Supported |
@@ -183,7 +206,7 @@ vulnerabilities through [GitHub private advisories](SECURITY.md), not issues.
 | Operating system | Windows |
 | Navisworks | Autodesk Navisworks Manage 2024, 2025, 2026 |
 | Python | 3.10–3.14 |
-| MCP Python SDK | 1.9.x and 2.x |
+| MCP Python SDK | 1.14+ (1.x) and 2.x |
 | Add-in runtime | .NET Framework 4.8, x64 |
 | MCP clients | Claude Code, Codex, and clients that support local stdio servers |
 
@@ -261,6 +284,8 @@ Manual MCP configuration starts from [`.mcp.json.example`](.mcp.json.example).
 | [Jobs](docs/JOBS.md) | Long operations, progress and cancellation |
 | [Saving](docs/SAVING.md) | `save`, `save_as` and ACC documents |
 | [Testing](docs/TESTING.md) | Automated and live evidence |
+| [Privacy policy](docs/PRIVACY.md) | What leaves the machine, and what never does |
+| [Directory publishing](docs/PUBLISHING.md) | Submitting to the plugin, MCP and connector directories |
 | [Product benchmark](docs/BENCHMARK.md) | Positioning, gaps and public comparison |
 | [Launch playbook](docs/LAUNCH-PLAYBOOK.md) | Demo script, distribution sequence and honest metrics |
 

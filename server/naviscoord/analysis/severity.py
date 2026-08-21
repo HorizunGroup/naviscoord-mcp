@@ -86,6 +86,33 @@ class SeverityScorer:
         total = max(0.0, min(100.0, total))
         why = self._explain(cluster, components, immovable, movable, congestion)
 
+        # Depth can carry an issue on its own.
+        #
+        # Six of the components reward repetition and company — cluster size,
+        # congestion — so a lone crossing has to win on the other four, and it
+        # cannot: measured on a real model, twenty-six issues sat in the bottom
+        # band with over 150 mm of penetration into structure, one of them at
+        # 194 mm. A partition nineteen centimetres inside a beam is not a minor
+        # item because it only happens once; it is one decision that has to be
+        # taken before that beam is poured.
+        #
+        # So the floor is absolute and it only applies against a side that
+        # cannot move. Against something reroutable, depth is a nuisance; into
+        # structure, it is a request to the engineer.
+        deep = float(self.profile.severity_param("deep_interference_m", 0.15))
+        if deep > 0.0 and cluster.max_penetration >= deep:
+            if self._effective_movability(immovable) <= 0.2:
+                bands = self.profile.section("severity").get("priority_bands") or {}
+                minimum = float(bands.get("high", 71.0))
+                if total < minimum:
+                    total = minimum
+                    why.append(
+                        f"Entra {cluster.max_penetration * 1000:.0f} mm en "
+                        f"{self.profile.label(immovable.discipline).lower()}, que no se "
+                        "mueve. Aunque ocurra una sola vez, esa profundidad ya no se "
+                        "resuelve en obra: necesita decisión antes de vaciar."
+                    )
+
         return SeverityVerdict(
             score=total,
             breakdown=breakdown,

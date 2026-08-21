@@ -144,18 +144,14 @@ namespace NavisCoord
                     " bytes y el máximo es " + MaxProfileBytes.ToString(CultureInfo.InvariantCulture) + ".");
             }
 
-            if (!Json.IsWellFormedObject(canonical))
-            {
-                return Error("profile_unreadable",
-                    "El perfil no es un objeto JSON completo, usa números inválidos o supera " +
-                    Json.MaxDepth + " niveles de anidamiento.");
-            }
-
             // A mutation already running was planned against the profile in
             // force when it was submitted, and it will verify its work when it
             // finishes. Swapping the criteria underneath it would produce a
             // job that applied one set of rules and checked another.
-            var busy = JobManager.BlockingMutation();
+            // Pending counts, not only running. Swapping the profile while a
+            // job sat queued was allowed, and that job would then have been
+            // judged against criteria it never agreed to.
+            var busy = JobManager.ActiveOrPending();
             if (busy != null)
             {
                 return Error("profile_locked",
@@ -163,19 +159,56 @@ namespace NavisCoord
                     "con el perfil vigente. Espera a que termine o cancélalo antes de cambiarlo.");
             }
 
-            Dictionary<string, object> content;
-            try
+            // A profile pushed by the MCP server must declare what it thinks
+            // it sent. Accepting a blank checksum means accepting "trust me",
+            // which is the one thing a checksum exists to replace — and it is
+            // also how a body corrupted in transit installs cleanly.
+            if (string.IsNullOrWhiteSpace(declared))
             {
-                content = Json.ParseObject(canonical);
+                return Error("profile_checksum_mismatch",
+                    "Un perfil enviado por MCP debe declarar su checksum. No se instaló nada.");
             }
-            catch (Exception ex)
+
+            // Strict, and no repair. The permissive reader would take a
+            // profile whose last brace was lost in transit and hand back a
+            // complete-looking dictionary; its number scanner would take
+            // `1..2` as a tolerance. Neither is something to install.
+            if (!JsonStrict.TryParseObject(canonical, out var content, out var badJson))
             {
-                return Error("profile_unreadable", "El perfil no es JSON legible: " + ex.Message);
+                // The syntax family keeps the contract's own name, which the
+                // Python client already knows; depth and size keep their codes
+                // because the status mapper answers them differently (413).
+                var syntax = badJson.Code == JsonStrict.InvalidJson ||
+                             badJson.Code == JsonStrict.NotAnObject ||
+                             badJson.Code == JsonStrict.TrailingContent ||
+                             badJson.Code == JsonStrict.DuplicateKey;
+                var unreadable = Error(syntax ? "profile_unreadable" : badJson.Code,
+                    "El perfil no es JSON estricto: " + badJson.Detail +
+                    " (posición " + badJson.Position + "). Sigue vigente el anterior.");
+                unreadable["json_error"] = badJson.Code;
+                unreadable["active"] = Describe();
+                return unreadable;
             }
             if (content.Count == 0)
             {
                 return Error("profile_unreadable",
                     "El perfil llegó vacío o no es un objeto JSON.");
+            }
+
+            // Semantics before the schema reports success. A profile can
+            // satisfy every shape rule and still be impossible:
+            // `cluster_size_saturation: 1` is the right type in the right
+            // range and makes the engine divide by log(1).
+            var semantic = ProfileRules.Validate(content);
+            if (semantic.Count > 0)
+            {
+                var impossible = Error("profile_invalid",
+                    "El perfil es JSON válido pero matemáticamente imposible; sigue " +
+                    "vigente el anterior.");
+                impossible["problems"] = semantic.Select(p => (object)p.ToString()).ToList();
+                impossible["semantic_problems"] = semantic.Select(p => (object)p.ToJson()).ToList();
+                impossible["active"] = Describe();
+                return impossible;
             }
 
             var validation = ProfileSchema.Validate(content);
@@ -204,9 +237,15 @@ namespace NavisCoord
                     actual + ". El perfil NO se instaló.");
             }
 
+            // Deep-copied before publishing, and never handed out again by
+            // reference. Configure used to write `dry_run` straight into the
+            // profile's own `sets` dictionary, so after one run the active
+            // profile no longer matched the checksum it was published under —
+            // the very number that says which criteria produced a result.
+            var frozen = DeepCopy(content);
             var installed = new ActiveProfile
             {
-                Content = content,
+                Content = frozen,
                 Canonical = canonical,
                 Checksum = actual,
                 Name = validation.Name,
@@ -237,10 +276,69 @@ namespace NavisCoord
             return result;
         }
 
+        /// <summary>A structural deep copy: no shared mutable state.</summary>
+        /// <remarks>
+        /// The published profile has to still describe itself later. A shallow
+        /// copy shares every nested dictionary, so a handler that adds one
+        /// derived flag to `profile["sets"]` edits the published object — and
+        /// then `checksum(active.Content)` no longer equals `active.Checksum`,
+        /// which is the number a result cites to say which criteria produced
+        /// it.
+        /// </remarks>
+        internal static Dictionary<string, object> DeepCopy(Dictionary<string, object> source)
+        {
+            var copy = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (var pair in source ?? new Dictionary<string, object>())
+            {
+                copy[pair.Key] = CopyValue(pair.Value);
+            }
+            return copy;
+        }
+
+        private static object CopyValue(object value)
+        {
+            if (value is Dictionary<string, object> map) return DeepCopy(map);
+            if (value is List<object> list) return list.Select(CopyValue).ToList();
+            // Strings, doubles and bools are immutable already.
+            return value;
+        }
+
+        /// <summary>
+        /// Whether the active profile still describes itself.
+        /// </summary>
+        /// <remarks>
+        /// The invariant a profile checksum exists for: whatever is in
+        /// `Content` must canonicalise back to `Checksum`. Held before a
+        /// workflow, after it, and after an exception — a handler that writes
+        /// into the profile it was handed breaks it, and the breakage is
+        /// otherwise invisible until somebody compares two reports.
+        /// </remarks>
+        public static bool VerifyActiveIntegrity(out string detail)
+        {
+            var active = Active();
+            if (active?.Content == null)
+            {
+                detail = "no hay perfil activo";
+                return true;
+            }
+            var recomputed = ProfileSchema.ChecksumOf(ProfileSchema.Canonical(active.Content));
+            if (string.Equals(recomputed, active.Checksum, StringComparison.OrdinalIgnoreCase))
+            {
+                detail = string.Empty;
+                return true;
+            }
+            detail = "el perfil activo declara " + active.Checksum + " y su contenido da " +
+                     recomputed + ": algo escribió dentro del perfil publicado";
+            return false;
+        }
+
         /// <summary>Drops the pushed profile; the on-disk default applies again.</summary>
         public static Dictionary<string, object> Reset()
         {
-            var busy = JobManager.BlockingMutation();
+            // Pending counts, not only running. Swapping the profile while a
+            // job sat queued was allowed, and that job would then have been
+            // judged against criteria it never agreed to.
+            var busy = JobManager.ActiveOrPending();
             if (busy != null)
             {
                 return Error("profile_locked",
@@ -282,29 +380,6 @@ namespace NavisCoord
             return LoadDefault();
         }
 
-        /// <summary>Deep immutable snapshot for a queued job.</summary>
-        public static ActiveProfile SnapshotActive()
-        {
-            var active = Active();
-            if (active == null) return null;
-            return new ActiveProfile
-            {
-                Content = active.Content == null
-                    ? null
-                    : Json.ParseObject(Json.Write(active.Content)),
-                Canonical = active.Canonical,
-                Checksum = active.Checksum,
-                Name = active.Name,
-                Schema = active.Schema,
-                Source = active.Source,
-                Path = active.Path,
-                LoadedUtc = active.LoadedUtc,
-                Warnings = active.Warnings == null
-                    ? new List<string>()
-                    : active.Warnings.ToList()
-            };
-        }
-
         /// <summary>True when the caller pushed a profile for this session.</summary>
         public static bool HasExplicit
         {
@@ -334,24 +409,52 @@ namespace NavisCoord
                 }
             }
 
-            Dictionary<string, object> content;
-            try
+            string text;
+            try { text = File.ReadAllText(path); }
+            catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
+
+            if (!JsonStrict.TryParseObject(text, out var content, out var badJson))
             {
-                var source = File.ReadAllText(path);
-                if (!Json.IsWellFormedObject(source)) return null;
-                content = Json.ParseObject(source);
-            }
-            catch
-            {
+                // Named, not silently skipped: an operator who edited the
+                // default and broke it needs to know that is why nothing runs.
+                Logger?.Invoke("El perfil por defecto de " + Path.GetFileName(path) +
+                               " no es JSON estricto (" + badJson.Code + ", posición " +
+                               badJson.Position + "). No se activó.");
                 return null;
             }
             if (content.Count == 0) return null;
 
+            // The on-disk default gets the same semantic pass. A default that
+            // divides by zero is not a safer default for having come from
+            // disk.
+            var defaultSemantics = ProfileRules.Validate(content);
+            if (defaultSemantics.Count > 0)
+            {
+                Logger?.Invoke("El perfil por defecto de " + Path.GetFileName(path) +
+                               " es matemáticamente imposible (" + defaultSemantics.Count +
+                               " problema(s), p. ej. " + defaultSemantics[0] + "). No se activó.");
+                return null;
+            }
+
             var validation = ProfileSchema.Validate(content);
-            if (!validation.Ok) return null;
+            if (!validation.Ok)
+            {
+                // The validation used to be computed and then ignored, so a
+                // default that failed its own schema became the active profile
+                // and every workflow ran against criteria the add-in had
+                // already judged invalid. Only the identity and the problem
+                // count are logged; the body carries a project's naming
+                // conventions.
+                Logger?.Invoke("El perfil por defecto de " + Path.GetFileName(path) +
+                               " no pasó la validación (" + validation.Errors.Count +
+                               " problema(s)). No se activó.");
+                return null;
+            }
+
             var resolved = new ActiveProfile
             {
-                Content = content,
+                Content = DeepCopy(content),
                 Canonical = ProfileSchema.Canonical(content),
                 Checksum = validation.Checksum,
                 Name = validation.Name,

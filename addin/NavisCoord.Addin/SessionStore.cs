@@ -200,11 +200,25 @@ namespace NavisCoord
             if (!string.IsNullOrEmpty(directory)) EnsureSecureDirectory(directory);
 
             var temp = path + ".tmp-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            var published = false;
             try
             {
+                // Exclusive create, then lock down, then VERIFY, and only then
+                // write the token. The old order applied the DACL and carried
+                // on whether or not it worked — so on a volume that cannot
+                // express one, a bearer token that drives Navisworks was
+                // written world-readable and the failure was a log line.
                 using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 {
                     ApplyFileAcl(temp);
+                    var before = VerifyAcl(temp);
+                    if (!before.Secure)
+                    {
+                        throw new SecurityNotEnforceable("acl_not_enforceable",
+                            "No se pudo proteger el archivo temporal de sesión (" + before.State +
+                            "): " + string.Join("; ", before.Problems));
+                    }
+
                     var bytes = new UTF8Encoding(false).GetBytes(content);
                     stream.Write(bytes, 0, bytes.Length);
                     stream.Flush(true);
@@ -220,10 +234,31 @@ namespace NavisCoord
                 {
                     File.Move(temp, path);
                 }
+                published = true;
+
+                // Verified again after publishing, because Replace keeps the
+                // DESTINATION's ACL: a pre-existing file with a loose DACL
+                // would silently relax what the temp file had just proven.
+                var after = VerifyAcl(path);
+                if (!after.Secure)
+                {
+                    throw new SecurityNotEnforceable("acl_not_enforceable",
+                        "El archivo de sesión publicado no quedó protegido (" + after.State +
+                        "): " + string.Join("; ", after.Problems));
+                }
+            }
+            catch (SecurityNotEnforceable)
+            {
+                // Nothing half-published survives. An insecure session file is
+                // worse than none: a client would find it, read the token and
+                // believe it had a private channel.
+                Discard(temp);
+                if (published) Discard(path);
+                throw;
             }
             finally
             {
-                try { if (File.Exists(temp)) File.Delete(temp); } catch { /* best effort */ }
+                Discard(temp);
             }
         }
 
@@ -359,19 +394,26 @@ namespace NavisCoord
                     }
                 }
                 info.SetAccessControl(security);
-                RequireSecure(path);
             }
             catch (Exception ex)
             {
-                // The directory will contain a bearer token that can drive a
-                // live model. Publishing it on a filesystem whose DACL could
-                // not be set or verified is never an acceptable fallback.
-                throw new UnauthorizedAccessException(
-                    "No se pudo asegurar el directorio de sesiones '" + path +
-                    "'. El puente no publicará ningún token: " + ex.Message, ex);
+                // Fatal, not reported. A filesystem that cannot express a DACL
+                // — a redirected home directory, a container mount — cannot
+                // hold this credential, and starting anyway means handing it
+                // to every account on the machine while a log line explains
+                // that we noticed.
+                throw new SecurityNotEnforceable("acl_not_enforceable",
+                    "El volumen de " + path + " no permite proteger la credencial de sesión: " +
+                    ex.Message + ". El puente no se inicia.", ex);
             }
         }
 
+        /// <summary>Locks a file down, or refuses to continue.</summary>
+        /// <remarks>
+        /// It used to catch and log. For a file that holds a token capable of
+        /// rebuilding somebody's clash tests, "we could not protect it, here is
+        /// a log line" is a decision to publish it anyway.
+        /// </remarks>
         private static void ApplyFileAcl(string path)
         {
             try
@@ -383,25 +425,68 @@ namespace NavisCoord
                 {
                     security.AddAccessRule(rule);
                 }
+                foreach (FileSystemAccessRule existing in security
+                             .GetAccessRules(true, false, typeof(SecurityIdentifier))
+                             .Cast<FileSystemAccessRule>()
+                             .ToList())
+                {
+                    if (!IsTrusted(existing.IdentityReference as SecurityIdentifier))
+                    {
+                        security.RemoveAccessRuleSpecific(existing);
+                    }
+                }
                 info.SetAccessControl(security);
-                RequireSecure(path);
             }
             catch (Exception ex)
             {
-                throw new UnauthorizedAccessException(
-                    "No se pudo asegurar el archivo que contendría el token '" + path +
-                    "'. Se abortó su publicación: " + ex.Message, ex);
+                throw new SecurityNotEnforceable("acl_not_enforceable",
+                    "No se pudieron endurecer los permisos de " + Path.GetFileName(path) +
+                    ": " + ex.Message + ". El volumen no permite proteger la credencial.", ex);
             }
         }
 
-        private static void RequireSecure(string path)
+        /// <summary>Deletes a file, reporting nothing. Cleanup only.</summary>
+        private static void Discard(string path)
         {
-            var audit = Audit(path);
-            if (audit.TryGetValue("secure", out var raw) && raw is bool secure && secure) return;
-            var findings = audit.TryGetValue("findings", out var found) && found is List<object> list
-                ? string.Join("; ", list.Select(Convert.ToString))
-                : "no se pudo verificar la DACL";
-            throw new UnauthorizedAccessException(findings);
+            try { if (File.Exists(path)) File.Delete(path); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        /// <summary>
+        /// Reads an ACL back and judges it.
+        /// </summary>
+        /// <remarks>
+        /// Reading it back is the point. <c>SetAccessControl</c> not throwing
+        /// says the call was accepted, not that the entries landed — on a
+        /// redirected home directory or a container mount they may not — and
+        /// the only way to know is to ask the filesystem what it now holds.
+        ///
+        /// An ACL that cannot be read comes back indeterminate, never secure.
+        /// </remarks>
+        internal static AclVerdict VerifyAcl(string path)
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                var security = info.GetAccessControl();
+                var rules = security.GetAccessRules(true, true, typeof(SecurityIdentifier))
+                    .Cast<FileSystemAccessRule>()
+                    .Where(r => r.AccessControlType == AccessControlType.Allow)
+                    .ToList();
+                return AclPolicy.Judge(
+                    path,
+                    readable: true,
+                    isProtected: security.AreAccessRulesProtected,
+                    allowedSids: rules.Select(r => r.IdentityReference.Value),
+                    ownSids: TrustedSids().Select(sid => sid.Value));
+            }
+            catch (Exception ex)
+            {
+                var verdict = AclPolicy.Judge(path, readable: false, isProtected: false, null, null);
+                verdict.Problems.Add(ex.GetType().Name + ": " + ex.Message);
+                return verdict;
+            }
         }
 
         private static IEnumerable<FileSystemAccessRule> TrustedRules(bool inheritable)

@@ -25,6 +25,7 @@ from naviscoord.imaging import (
     COLOUR_MOVABLE,
     Capture,
     ImageOptions,
+    PixelMetrics,
     Verdict,
     analyse_pixels,
     annotate,
@@ -479,6 +480,42 @@ class TestVerdict:
         assert verdict.reasons == ["image_blank"]
 
 
+class TestBlankIsAboutSubjectNotColourCount:
+    """The cleanest shot had the fewest colours, and was discarded for it.
+
+    Blankness was judged by counting colour buckets. Isolation exists to
+    strip a render down to two painted elements against the sky, so the
+    clearer the picture the fewer colours it holds — and the underside view
+    of a pipe hanging below a slab, which is the only view that shows that
+    clash at all, came back as three buckets and was rejected as a photograph
+    of nothing.
+    """
+
+    def test_a_flat_picture_with_the_subject_in_it_is_not_blank(self) -> None:
+        flat = PixelMetrics(
+            sampled=540_000, distinct_colours=3, dominant_fraction=0.62,
+            side_a_pixels=330_000, side_b_pixels=2_700,
+        )
+        assert flat.blank is False
+
+    def test_a_flat_picture_without_the_subject_still_is(self) -> None:
+        empty = PixelMetrics(
+            sampled=540_000, distinct_colours=3, dominant_fraction=0.62,
+            side_a_pixels=0, side_b_pixels=0,
+        )
+        assert empty.blank is True
+
+    def test_one_flat_surface_is_blank_when_nothing_is_painted(self) -> None:
+        inside_geometry = PixelMetrics(
+            sampled=540_000, distinct_colours=40, dominant_fraction=0.999,
+            side_a_pixels=0, side_b_pixels=0,
+        )
+        assert inside_geometry.blank is True
+
+    def test_nothing_sampled_is_still_blank(self) -> None:
+        assert PixelMetrics(sampled=0).blank is True
+
+
 class TestLadder:
     def test_occlusion_hides_the_geometry_in_the_way(self) -> None:
         options = ImageOptions()
@@ -486,6 +523,41 @@ class TestLadder:
         assert following is not None
         assert following.hide_unrelated_geometry is True
         assert following.camera_mode == "closeup", "el encuadre era correcto: no se toca"
+
+    def test_when_isolation_was_not_enough_the_shot_pulls_back(self) -> None:
+        """Isolation keeps both sides, so the survivor in the way is the other side.
+
+        A pipe photographed at its intersection with a slab is enclosed by
+        concrete on every face, and the occluder cannot be hidden because it
+        is half the subject. Pulling back catches the length of pipe that
+        emerges above and below. Without this rung the ladder stopped at two
+        attempts with nothing left to try.
+        """
+        isolated = ImageOptions(hide_unrelated_geometry=True)
+        following = next_attempt(
+            isolated, Verdict(ok=False, reasons=["side_b_not_visible"]))
+        assert following is not None
+        assert following.camera_mode == "context"
+        assert following.hide_unrelated_geometry is True
+
+    def test_the_last_rung_goes_under_the_obstruction(self) -> None:
+        """Widening cannot beat a slab; going below it can.
+
+        `plan` is deliberately skipped on this path: it looks straight down,
+        which for a service hanging below a slab is the one view guaranteed
+        to fail, and the attempt budget is small enough that spending a
+        render there costs the rung that works.
+        """
+        isolated = ImageOptions(hide_unrelated_geometry=True, camera_mode="context")
+        following = next_attempt(
+            isolated, Verdict(ok=False, reasons=["side_b_not_visible"]))
+        assert following is not None
+        assert following.camera_mode == "underside"
+
+    def test_pulling_back_runs_out_too(self) -> None:
+        exhausted = ImageOptions(hide_unrelated_geometry=True, camera_mode="underside")
+        assert next_attempt(
+            exhausted, Verdict(ok=False, reasons=["side_b_not_visible"])) is None
 
     def test_misframing_widens_the_shot(self) -> None:
         following = next_attempt(
@@ -496,7 +568,7 @@ class TestLadder:
 
     def test_the_ladder_ends_instead_of_looping(self) -> None:
         """An identical retry costs a Navisworks render and fails identically."""
-        options = ImageOptions(camera_mode="plan", margin_percent=150.0)
+        options = ImageOptions(camera_mode="underside", margin_percent=150.0)
         assert next_attempt(options, Verdict(ok=False, reasons=["side_a_out_of_frame"])) is None
 
     def test_an_unreadable_image_is_not_retried(self) -> None:
@@ -579,12 +651,19 @@ class TestCapture:
         assert shot.rejected, "hubo imagen, y no se publica"
         assert shot.png is not None, "se conserva la mejor para poder inspeccionarla"
         assert "side_b_not_visible" in shot.verdict.reasons
-        # Two, not the three attempts allowed: the ladder stops when it runs
-        # out of genuinely different things to try, not when it runs out of
-        # budget. Isolation was the cure for occlusion and it did not work, so
-        # a third identical render would only cost another Navisworks frame.
-        assert len(bridge.calls) == 2
-        assert bridge.calls[1]["hide_unrelated_geometry"] is True
+        # Four rungs, each a genuinely different thing to try — the ladder
+        # stops when it runs out of ideas, not when it runs out of budget.
+        # Isolation used to be treated as the only cure for occlusion and the
+        # ladder ended after it. It is not: isolation keeps BOTH sides, so an
+        # element buried inside the other stays hidden, and the two remaining
+        # cures are to pull back until the part that emerges is in shot, and
+        # failing that to photograph it from the other side of whatever lies
+        # in between.
+        assert len(bridge.calls) == 4
+        assert [call["camera_mode"] for call in bridge.calls] == [
+            "closeup", "closeup", "context", "underside"
+        ]
+        assert all(call["hide_unrelated_geometry"] for call in bridge.calls[1:])
 
     def test_keep_rejected_publishes_the_best_attempt(self) -> None:
         bridge = FakeBridge([{"png": render(side_b=None)}])

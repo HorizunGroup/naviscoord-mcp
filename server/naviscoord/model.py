@@ -35,7 +35,14 @@ def _level_from_sides(a: "ElementRef", b: "ElementRef") -> str:
     plan, and it reads like a bug.
     """
     for side in (a, b):
-        value = side.prop("Layer", "Capa", "Nivel", "Level")
+        # `Reference Level` is where Revit puts the storey for anything hosted
+        # on one, which is most of MEP. The add-in already reads it when it
+        # fills the clash's own `level`, so this line changes nothing on a
+        # normal export — it is here for the case where that lookup came back
+        # empty and the property survived in `props` anyway. Measured on the
+        # export that prompted it: recovered zero, which is the honest note to
+        # leave rather than a comment claiming a fix it did not make.
+        value = side.prop("Layer", "Capa", "Nivel", "Level", "Reference Level")
         cleaned = clean_level(value)
         # A layer that is not a storey is worse than no storey at all: it
         # would split the plan into meaningless zones.
@@ -294,6 +301,17 @@ class Issue:
     centroid: Point
     bbox_min: Point
     bbox_max: Point
+    #: The cluster this issue was built from, carried on the issue instead of
+    #: implied by its place in a list.
+    #:
+    #: Root causes are detected against clusters and can only name them by
+    #: position, while issues are ranked by severity and take their public ids
+    #: from that ranking. Holding the cluster number here means the two are
+    #: matched by looking something up, rather than by both lists happening to
+    #: be in the same order at the same moment — which they only were for the
+    #: few lines between building the issues and sorting them, and which
+    #: nothing enforced.
+    cluster_id: int = -1
     severity: float = 0.0
     priority: str = "low"
     level: str = ""

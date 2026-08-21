@@ -71,74 +71,6 @@ namespace NavisCoord
                string.Equals(expected.Trim(), actual, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Fail-closed identity guard shared by every HTTP mutation.</summary>
-    internal static class MutationTargeting
-    {
-        public static Dictionary<string, object> Validate(
-            IDictionary<string, object> payload,
-            string actualFingerprint,
-            string actualSessionId,
-            string operation)
-        {
-            var expectedFingerprint = Json.Str(payload, "expected_document_fingerprint");
-            var expectedSession = Json.Str(payload, "session_id");
-            var expectedTarget = Json.Str(payload, "target_id");
-
-            if (string.IsNullOrWhiteSpace(expectedFingerprint) ||
-                string.IsNullOrWhiteSpace(expectedSession) ||
-                string.IsNullOrWhiteSpace(expectedTarget))
-            {
-                return Failure(operation, "mutation_target_required",
-                    "Toda mutación debe declarar expected_document_fingerprint, session_id y target_id.",
-                    actualFingerprint);
-            }
-            if (!string.Equals(expectedSession, actualSessionId, StringComparison.Ordinal) ||
-                !string.Equals(expectedTarget, actualSessionId, StringComparison.Ordinal))
-            {
-                return Failure(operation, "session_changed",
-                    "La mutación fue dirigida a otra instancia de Navisworks. No se tocó el documento.",
-                    actualFingerprint);
-            }
-            if (!DocumentFingerprint.Matches(expectedFingerprint, actualFingerprint))
-            {
-                return Failure(operation, "document_changed",
-                    "El documento activo ya no coincide con la huella esperada. No se tocó nada.",
-                    actualFingerprint);
-            }
-            return null;
-        }
-
-        public static Dictionary<string, object> ValidateSession(
-            IDictionary<string, object> payload, string actualSessionId, string operation)
-        {
-            var expectedSession = Json.Str(payload, "session_id");
-            var expectedTarget = Json.Str(payload, "target_id");
-            if (!string.Equals(expectedSession, actualSessionId, StringComparison.Ordinal) ||
-                !string.Equals(expectedTarget, actualSessionId, StringComparison.Ordinal))
-            {
-                return Failure(operation, "session_changed",
-                    "La petición no está dirigida a esta instancia de Navisworks.", string.Empty);
-            }
-            return null;
-        }
-
-        private static Dictionary<string, object> Failure(
-            string operation, string code, string detail, string actualFingerprint)
-            => new Dictionary<string, object>
-            {
-                ["operation"] = operation ?? string.Empty,
-                ["status"] = "failed",
-                ["error"] = code,
-                ["detail"] = detail,
-                ["document_fingerprint_before"] = actualFingerprint ?? string.Empty,
-                ["document_fingerprint_after"] = actualFingerprint ?? string.Empty,
-                ["requested"] = 0.0,
-                ["applied"] = 0.0,
-                ["verified"] = 0.0,
-                ["failed"] = 0.0
-            };
-    }
-
     /// <summary>
     /// The one response shape every mutation returns.
     /// </summary>
@@ -161,12 +93,33 @@ namespace NavisCoord
         public string Operation = string.Empty;
         public string FingerprintBefore = string.Empty;
         public string FingerprintAfter = string.Empty;
+        public string SessionId = string.Empty;
+        public string ProfileChecksum = string.Empty;
         public int Requested;
         public int Applied;
         public int Verified;
-        public int Failed = 0;
+        public int Failed;
+        /// <summary>Units deliberately left alone, and correctly so.</summary>
+        /// <remarks>
+        /// Distinct from failed. A clash test kept because rebuilding it would
+        /// orphan its results was not a failure of the run; reporting it as
+        /// one would push an operator to "fix" the very thing that protected
+        /// their work. It is still not completeness, which is why it blocks
+        /// <c>completed</c> the same way a failure does.
+        /// </remarks>
+        public int Preserved;
+        /// <summary>Units that could not proceed safely and were refused.</summary>
+        public int Blocked;
         public bool DryRun;
-        public string VerificationSource = "document_reread";
+        /// <summary>How this operation proved what it did. Defaults to none.</summary>
+        /// <remarks>
+        /// The default used to be "document_reread", which meant a handler
+        /// that never set it inherited a claim to have re-read the document.
+        /// That is the generic filler the contract exists to forbid: forgetting
+        /// to verify now costs the route its `completed`, which is the correct
+        /// answer to "did you check?".
+        /// </remarks>
+        public string VerificationSource = VerificationSources.None;
         public readonly List<object> Warnings = new List<object>();
         public readonly List<object> Errors = new List<object>();
         public readonly Dictionary<string, object> Detail = new Dictionary<string, object>();
@@ -214,7 +167,10 @@ namespace NavisCoord
             if (Errors.Count > 0 && Verified == 0) return "failed";
             if (Applied == 0 && Requested == 0) return "completed";
             if (Verified == 0 && Applied > 0) return "failed";
-            if (Verified < Applied || Failed > 0 || Applied < Requested) return "partial";
+            if (Verified < Applied || Failed > 0 || Blocked > 0 || Applied < Requested) return "partial";
+            // A source that proves nothing cannot support completeness, even
+            // when every count lines up.
+            if (!VerificationSources.ProvesVerification(VerificationSource)) return "partial";
             return "completed";
         }
 
@@ -234,6 +190,10 @@ namespace NavisCoord
                 ["applied"] = (double)Applied,
                 ["verified"] = (double)Verified,
                 ["failed"] = (double)Failed,
+                ["preserved"] = (double)Preserved,
+                ["blocked"] = (double)Blocked,
+                ["session_id"] = SessionId,
+                ["profile_checksum"] = ProfileChecksum,
                 ["status"] = Status(),
                 ["verification_source"] = DryRun ? "not_applicable" : VerificationSource,
                 ["warnings"] = Warnings,
@@ -245,6 +205,239 @@ namespace NavisCoord
             }
             return payload;
         }
+    }
+
+    /// <summary>
+    /// The closed set of ways a mutation is allowed to say it checked.
+    /// </summary>
+    /// <remarks>
+    /// `verification_source` used to be free text, which meant a handler could
+    /// satisfy the contract by typing something. The words that showed up in
+    /// practice — "handler_returned", "items_resolved", "attempted" — all name
+    /// something that happened BEFORE or DURING the mutation, and none of them
+    /// is evidence about the document afterwards. Resolving a ModelItem proves
+    /// the item exists; it does not prove the colour landed on it.
+    ///
+    /// Every name here is a re-read that happens after the write, and the
+    /// route that claims one has to actually perform it. `None` is the honest
+    /// answer when the API exposes no getter, and it can never accompany
+    /// `completed`.
+    /// </remarks>
+    internal static class VerificationSources
+    {
+        /// <summary>Saved items re-enumerated from the document.</summary>
+        public const string DocumentReread = "document_reread";
+
+        /// <summary>Saved items re-resolved by GUID, not by name.</summary>
+        public const string SavedItemReread = "saved_item_reread";
+
+        /// <summary>Clash tests re-read for their Complete/Old/Partial state.</summary>
+        public const string ClashTestStatusReread = "clash_test_status_reread";
+
+        /// <summary>Individual clash results re-read for their status.</summary>
+        public const string ResultStatusReread = "result_status_reread";
+
+        /// <summary>Group children re-enumerated and matched by GUID.</summary>
+        public const string GroupMembershipReread = "group_membership_reread";
+
+        /// <summary>A clash test's SelectionSources re-resolved.</summary>
+        public const string SelectionSourceReread = "selection_source_reread";
+
+        /// <summary>The live selection re-read and compared by identity.</summary>
+        public const string CurrentSelectionReread = "current_selection_reread";
+
+        /// <summary>ModelGeometry.PermanentColor / PermanentTransparency re-read.</summary>
+        public const string AppearanceOverrideReread = "appearance_override_reread";
+
+        /// <summary>Saved viewpoints re-enumerated from the document.</summary>
+        public const string SavedViewpointReread = "saved_viewpoint_reread";
+
+        /// <summary>The file on disk plus the document's own state.</summary>
+        public const string FilesystemAndDocumentReread = "filesystem_and_document_reread";
+
+        /// <summary>The document is gone, so it is re-checked for absence.</summary>
+        public const string DocumentClosedReread = "document_closed_reread";
+
+        /// <summary>The process is ending; nothing survives to be re-read.</summary>
+        public const string ProcessExit = "process_exit";
+
+        /// <summary>
+        /// The API exposes no way to read the effect back.
+        /// </summary>
+        /// <remarks>
+        /// Permitted, and it costs the route its `completed`. Saying "I cannot
+        /// check this" is a fact the caller can act on; inventing a source is
+        /// not.
+        /// </remarks>
+        public const string None = "none";
+
+        /// <summary>A rehearsal changed nothing, so there is nothing to re-read.</summary>
+        public const string NotApplicable = "not_applicable";
+
+        private static readonly HashSet<string> Known = new HashSet<string>(StringComparer.Ordinal)
+        {
+            DocumentReread, SavedItemReread, ClashTestStatusReread, ResultStatusReread,
+            GroupMembershipReread, SelectionSourceReread, CurrentSelectionReread,
+            AppearanceOverrideReread, SavedViewpointReread, FilesystemAndDocumentReread,
+            DocumentClosedReread, ProcessExit, None, NotApplicable
+        };
+
+        public static bool IsKnown(string source)
+            => Known.Contains(source ?? string.Empty);
+
+        /// <summary>Whether this source can support a claim of completeness.</summary>
+        public static bool ProvesVerification(string source)
+            => IsKnown(source) && source != None && source != NotApplicable;
+
+        public static IEnumerable<string> All
+            => Known.OrderBy(s => s, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Whether a handler's reply is a mutation envelope that can be believed.
+    /// </summary>
+    /// <remarks>
+    /// The rule this replaces was: no <c>status</c> and no <c>error</c> means
+    /// completed. Every route that never adopted the envelope — the search
+    /// sets, the matrix, the grouping, the colouring, the viewpoints, the
+    /// saves — therefore reported success by saying nothing at all, and a
+    /// handler that half-failed reported success by saying nothing about it.
+    /// Silence is now a protocol failure, which is the only reading that does
+    /// not reward a handler for omitting the hard part.
+    /// </remarks>
+    internal static class EnvelopeContract
+    {
+        public const string InvalidMutationResult = "invalid_mutation_result";
+
+        public const string Planned = "planned";
+        public const string Completed = "completed";
+        public const string Partial = "partial";
+        public const string Failed = "failed";
+        public const string Cancelled = "cancelled";
+
+        private static readonly HashSet<string> Known = new HashSet<string>(StringComparer.Ordinal)
+        {
+            Planned, Completed, Partial, Failed, Cancelled
+        };
+
+        /// <summary>What is wrong with this envelope. Empty means nothing.</summary>
+        public static List<string> Problems(string route, Dictionary<string, object> result)
+        {
+            var problems = new List<string>();
+            var contract = RouteContracts.For(route);
+
+            if (result == null)
+            {
+                problems.Add("la ruta no devolvió nada");
+                return problems;
+            }
+
+            // A read-only route owes no envelope; it answers with whatever
+            // shape its data has.
+            if (contract == null)
+            {
+                problems.Add("la ruta '" + route + "' no tiene contrato declarado");
+                return problems;
+            }
+            if (!contract.RequiresEnvelope) return problems;
+
+            var status = Json.Str(result, "status");
+            if (string.IsNullOrEmpty(status))
+            {
+                problems.Add("una mutación debe declarar 'status'; esta no declaró ninguno");
+                return problems;
+            }
+            if (!Known.Contains(status))
+            {
+                problems.Add("'status' desconocido: '" + status + "'");
+                return problems;
+            }
+
+            var dryRun = Json.Bool(result, "dry_run");
+            if (dryRun && status != Planned)
+            {
+                problems.Add("un dry_run solo puede declarar 'planned', no '" + status + "'");
+            }
+            if (!dryRun && status == Planned)
+            {
+                problems.Add("'planned' es exclusivo del dry_run");
+            }
+            if (dryRun && Json.Str(result, "verification_source") != VerificationSources.NotApplicable)
+            {
+                problems.Add("un dry_run no verifica nada: su fuente es '" +
+                             VerificationSources.NotApplicable + "'");
+            }
+
+            foreach (var field in new[] { "requested", "applied", "verified", "failed" })
+            {
+                if (!result.ContainsKey(field))
+                {
+                    problems.Add("falta el contador '" + field + "'");
+                }
+                else if (Json.Num(result, field, -1) < 0)
+                {
+                    problems.Add("'" + field + "' no puede ser negativo");
+                }
+            }
+            if (problems.Count > 0) return problems;
+
+            var requested = (int)Json.Num(result, "requested");
+            var applied = (int)Json.Num(result, "applied");
+            var verified = (int)Json.Num(result, "verified");
+
+            if (applied > requested)
+            {
+                problems.Add("applied (" + applied + ") no puede superar requested (" + requested + ")");
+            }
+            if (verified > applied)
+            {
+                problems.Add("verified (" + verified + ") no puede superar applied (" + applied + ")");
+            }
+
+            var source = Json.Str(result, "verification_source");
+            if (!VerificationSources.IsKnown(source))
+            {
+                // Free text used to be accepted here, and the words that
+                // turned up all named something from before the write:
+                // "items_resolved", "attempted", "handler_returned". None of
+                // them is evidence about the document afterwards.
+                problems.Add("'verification_source' no está en el conjunto permitido: '" +
+                             source + "'");
+            }
+
+            if (status == Completed)
+            {
+                if (dryRun) problems.Add("un dry_run nunca es completed");
+                if (!VerificationSources.ProvesVerification(source))
+                {
+                    problems.Add("completed exige una fuente de relectura real; '" + source +
+                                 "' no demuestra nada sobre el documento posterior");
+                }
+                if (verified < requested)
+                {
+                    problems.Add("completed exige verified (" + verified + ") = requested (" +
+                                 requested + ")");
+                }
+                if (Json.Num(result, "failed") > 0)
+                {
+                    problems.Add("completed no admite unidades fallidas");
+                }
+                if (Json.Num(result, "blocked") > 0)
+                {
+                    problems.Add("completed no admite unidades bloqueadas");
+                }
+                if (!string.IsNullOrEmpty(Json.Str(result, "document_fingerprint_before")) &&
+                    string.IsNullOrEmpty(Json.Str(result, "document_fingerprint_after")))
+                {
+                    problems.Add("completed exige la huella del documento después");
+                }
+            }
+
+            return problems;
+        }
+
+        public static bool IsValid(string route, Dictionary<string, object> result)
+            => Problems(route, result).Count == 0;
     }
 
     /// <summary>
@@ -339,126 +532,6 @@ namespace NavisCoord
             // key contains the separator itself.
             return raw.Length + ":" + raw + "|" + op.Length + ":" + op +
                    "|" + fp.Length + ":" + fp;
-        }
-    }
-
-    /// <summary>
-    /// Converts the remaining legacy write-handler counters into the one
-    /// public mutation envelope. It never invents verification: operations
-    /// that cannot re-read their effect stay failed/partial instead of being
-    /// called completed merely because the API call returned.
-    /// </summary>
-    internal static class LegacyMutationEnvelope
-    {
-        public static Dictionary<string, object> Wrap(
-            string route,
-            IDictionary<string, object> request,
-            Dictionary<string, object> raw,
-            string fingerprintBefore,
-            string fingerprintAfter)
-        {
-            if (raw != null && raw.ContainsKey("status")) return raw;
-            raw = raw ?? new Dictionary<string, object>();
-            var result = new MutationResult(route)
-            {
-                DryRun = Json.Bool(raw, "dry_run", Json.Bool(request, "dry_run", false)),
-                FingerprintBefore = fingerprintBefore ?? string.Empty,
-                FingerprintAfter = fingerprintAfter ?? fingerprintBefore ?? string.Empty
-            };
-            foreach (var pair in raw) result.Detail[pair.Key] = pair.Value;
-            if (raw.ContainsKey("error") ||
-                (raw.TryGetValue("ok", out var ok) && ok is bool accepted && !accepted))
-            {
-                result.Fail(Json.Str(raw, "message", Json.Str(raw, "error", "La operación fue rechazada.")));
-            }
-
-            switch ((route ?? string.Empty).ToLowerInvariant())
-            {
-                case "sets/build":
-                    result.Requested = Count(raw, result.DryRun ? "would_create" : "planned");
-                    result.Applied = Count(raw, "verified_in_document");
-                    result.Verified = result.Applied;
-                    break;
-                case "sets/build_search":
-                    result.Requested = Count(request, "folders");
-                    result.Applied = CountAccepted(raw, "publications");
-                    result.Verified = CountVerified(raw, "verified_in_document");
-                    break;
-                case "clash/matrix":
-                    result.Requested = Count(raw, result.DryRun ? "would_create" : "planned");
-                    result.Applied = (int)Json.Num(raw, "created", 0);
-                    result.Verified = Count(raw, "verified_in_document");
-                    break;
-                case "clash/group":
-                    result.Requested = Sum(raw, result.DryRun ? "would_create" : "groups", "requested");
-                    result.Applied = Sum(raw, "groups", "moved");
-                    result.Verified = Math.Min(result.Applied, Sum(raw, "groups", "verified_children"));
-                    break;
-                case "clash/status":
-                    result.Requested = Count(request, "clash_guids");
-                    result.Applied = (int)Json.Num(raw, "attempted", 0);
-                    result.Verified = (int)Json.Num(raw, "verified_in_document", 0);
-                    result.Failed = (int)Json.Num(raw, "mismatch", 0);
-                    break;
-                case "clash/apply_rules":
-                    result.Requested = (int)Json.Num(raw, "matched", 0);
-                    result.Applied = (int)Json.Num(raw, "edited", 0);
-                    result.Verified = (int)Json.Num(raw, "verified_edited", 0);
-                    break;
-                case "viewpoints/save":
-                    result.Requested = Count(request, "viewpoints");
-                    result.Applied = (int)Json.Num(raw, "attempted", 0);
-                    result.Verified = (int)Json.Num(raw, "verified_added", 0);
-                    break;
-                case "appearance/color":
-                    result.Requested = (int)Json.Num(raw, "unique_requested", Count(request, "path_ids"));
-                    result.Applied = (int)Json.Num(raw, "resolved", 0);
-                    // Navisworks exposes no reliable read-back for permanent
-                    // override colour here. Do not call an unverified call complete.
-                    result.Verified = 0;
-                    break;
-                case "appearance/reset":
-                    result.Requested = Math.Max(1, Count(request, "path_ids"));
-                    result.Applied = result.DryRun ? 0 : result.Requested;
-                    result.Verified = 0;
-                    break;
-                case "selection/set":
-                    result.Requested = (int)Json.Num(raw, "unique_requested", Count(request, "path_ids"));
-                    result.Applied = (int)Json.Num(raw, "selected", 0);
-                    result.Verified = result.Applied;
-                    break;
-                default:
-                    result.Requested = 1;
-                    result.Applied = result.DryRun ? 0 : 1;
-                    result.Verified = 0;
-                    break;
-            }
-            return result.ToJson();
-        }
-
-        private static int Count(IDictionary<string, object> source, string key)
-        {
-            if (source == null || !source.TryGetValue(key, out var value) || value == null) return 0;
-            if (value is List<object> list) return list.Count;
-            if (value is Dictionary<string, object> dictionary) return dictionary.Count;
-            return 0;
-        }
-
-        private static int CountAccepted(IDictionary<string, object> source, string key)
-            => Items(source, key).Count(row => Json.Bool(row, "accepted", false));
-
-        private static int CountVerified(IDictionary<string, object> source, string key)
-            => Items(source, key).Count(row => Json.Bool(row, "verified", false));
-
-        private static int Sum(IDictionary<string, object> source, string key, string field)
-            => Items(source, key).Sum(row => (int)Json.Num(row, field, 0));
-
-        private static IEnumerable<Dictionary<string, object>> Items(
-            IDictionary<string, object> source, string key)
-        {
-            if (source != null && source.TryGetValue(key, out var value) && value is List<object> list)
-                return list.OfType<Dictionary<string, object>>();
-            return Enumerable.Empty<Dictionary<string, object>>();
         }
     }
 }

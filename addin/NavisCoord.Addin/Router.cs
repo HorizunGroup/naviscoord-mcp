@@ -28,16 +28,6 @@ namespace NavisCoord
         /// </remarks>
         private readonly Dictionary<string, Func<Dictionary<string, object>, JobManager.Job, Dictionary<string, object>>> _jobRoutes;
 
-        private static readonly HashSet<string> MutationRoutes = new HashSet<string>(
-            StringComparer.OrdinalIgnoreCase)
-        {
-            "sets/build", "sets/build_search", "clash/matrix", "clash/run",
-            "clash/group", "clash/status", "clash/apply_rules",
-            "viewpoints/save", "appearance/color", "appearance/reset", "selection/set",
-            "workflow/configure", "workflow/run", "workflow/group_levels", "workflow/rules",
-            "document/save", "document/save_as"
-        };
-
         public Router()
         {
             _routes = new Dictionary<string, Func<Dictionary<string, object>, Dictionary<string, object>>>(
@@ -86,44 +76,33 @@ namespace NavisCoord
                 ["workflow/rules"] = WorkflowHandlers.Rules,
                 ["document/save"] = SaveHandlers.Save,
                 ["document/save_as"] = SaveHandlers.SaveAs,
-                ["clash/run"] = (p, _) => WriteHandlers.RunTests(p)
+                ["clash/run"] = (p, _) => WriteHandlers.RunTests(p),
+                ["clash/group"] = (p, _) => WriteHandlers.ApplyGroups(p),
+                ["clash/apply_rules"] = (p, _) => WriteHandlers.ApplyIgnoreRules(p),
+                ["sets/build"] = (p, _) => WriteHandlers.BuildSearchSets(p),
+                ["sets/build_search"] = (p, _) => WriteHandlers.BuildCriteriaSets(p),
+                ["clash/matrix"] = (p, _) => WriteHandlers.BuildClashMatrix(p)
             };
         }
 
         /// <summary>
-        /// Job routes that check <c>CancelRequested</c> between units and can
-        /// therefore be stopped once started.
+        /// Whether a started job on this route can still be stopped.
         /// </summary>
         /// <remarks>
-        /// The list is short because only one mutating step is written as a
-        /// loop over independent units; everything else is a single
-        /// Navisworks call that either happens or does not. Keeping the set
-        /// here — beside the job routes — is what lets <c>job/cancel</c>
-        /// answer "cannot" instead of promising a stop nothing will deliver,
-        /// and it must grow only when a handler genuinely starts checking the
-        /// flag.
+        /// Read from <see cref="RouteContracts"/> rather than from a set kept
+        /// here. There used to be one list in this file, another in
+        /// <see cref="Capabilities"/> and a third assembled in the bridge, and
+        /// nothing kept them in step — a route added to one was advertised by
+        /// the others as something it was not.
         /// </remarks>
-        private static readonly HashSet<string> CancellableRoutes = new HashSet<string>(
-            StringComparer.OrdinalIgnoreCase)
-        {
-            "workflow/audit_models",
-            "workflow/group_levels"
-        };
+        public static bool IsCancellable(string route) => RouteContracts.IsCancellable(route);
+
+        /// <summary>The cancellable routes, for capability negotiation.</summary>
+        public static IEnumerable<string> Cancellable => RouteContracts.Cancellable;
 
         public IEnumerable<string> Routes => _routes.Keys;
 
         public bool CanRunAsJob(string route) => _jobRoutes.ContainsKey(route ?? string.Empty);
-
-        public static bool IsMutation(string route)
-            => MutationRoutes.Contains(route ?? string.Empty);
-
-        /// <summary>Whether a started job on this route can still be stopped.</summary>
-        public static bool IsCancellable(string route)
-            => CancellableRoutes.Contains(route ?? string.Empty);
-
-        /// <summary>The cancellable routes, for capability negotiation.</summary>
-        public static IEnumerable<string> Cancellable
-            => CancellableRoutes.OrderBy(r => r, StringComparer.OrdinalIgnoreCase);
 
         public Func<Dictionary<string, object>, JobManager.Job, Dictionary<string, object>> JobHandler(string route)
             => _jobRoutes.TryGetValue(route ?? string.Empty, out var handler) ? handler : null;
@@ -144,13 +123,7 @@ namespace NavisCoord
                     ["available"] = _routes.Keys.OrderBy(k => k).ToList()
                 };
             }
-            payload = payload ?? new Dictionary<string, object>();
-            if (!IsMutation(route)) return handler(payload);
-
-            var before = DocumentContext.Fingerprint(Application.ActiveDocument);
-            var raw = handler(payload);
-            var after = DocumentContext.Fingerprint(Application.ActiveDocument);
-            return LegacyMutationEnvelope.Wrap(route, payload, raw, before, after);
+            return handler(payload ?? new Dictionary<string, object>());
         }
 
         /// <summary>Everything the caller needs to negotiate before calling.</summary>
@@ -303,13 +276,11 @@ namespace NavisCoord
                 catch (Exception ex)
                 {
                     categories["(lectura interrumpida)"] = 0;
-                    // Keep one row per model. A separate error row broke the
-                    // cardinality and shifted every later model index.
-                    categories["(error: " + ex.GetType().Name + ")"] = 0;
+                    models.Add(new Dictionary<string, object> { ["read_error"] = ex.Message });
                 }
 
                 var box = NavisContext.SafeBoundingBox(model.RootItem);
-                var row = new Dictionary<string, object>
+                models.Add(new Dictionary<string, object>
                 {
                     ["index"] = (double)i,
                     ["source_file"] = System.IO.Path.GetFileName(
@@ -324,12 +295,7 @@ namespace NavisCoord
                         .OrderByDescending(kv => kv.Value)
                         .Take(25)
                         .ToDictionary(kv => kv.Key, kv => (object)(double)kv.Value)
-                };
-                if (categories.Keys.Any(k => k.StartsWith("(error: ", StringComparison.Ordinal)))
-                {
-                    row["read_error"] = "La lectura del árbol se interrumpió; consulta top_categories para el tipo.";
-                }
-                models.Add(row);
+                });
             }
 
             return new Dictionary<string, object>
@@ -390,8 +356,7 @@ namespace NavisCoord
             var doc = RequireDocument();
             var scale = NavisContext.MetreScale(doc);
             NavisContext.ResetCaches();
-            try
-            {
+
             var wanted = new List<string>(NavisContext.BaseProperties);
             wanted.AddRange(Json.StrArr(payload, "properties"));
 
@@ -429,7 +394,17 @@ namespace NavisCoord
                     ["type"] = test.TestType.ToString(),
                     ["tolerance_m"] = test.Tolerance * scale,
                     ["status"] = test.Status.ToString(),
-                    ["exported"] = (double)exported
+                    ["exported"] = (double)exported,
+                    // What the coordinator DECLARED each side to be. This is
+                    // the only authoritative statement of intent in the whole
+                    // export: a test named "STR-WAL VS ARCH-GB-WALL" is a
+                    // person asserting that side A is structure and side B is
+                    // architecture. Without it the engine falls back to Revit
+                    // categories, where a structural wall and an
+                    // architectural wall are both `Walls` — indistinguishable,
+                    // and therefore silently collapsed into one discipline.
+                    ["selection_a"] = SelectionNames(doc, test.SelectionA),
+                    ["selection_b"] = SelectionNames(doc, test.SelectionB)
                 });
 
                 if (truncated) break;
@@ -449,14 +424,41 @@ namespace NavisCoord
                 ["clashes"] = clashes,
                 ["truncated"] = truncated
             };
-            }
-            finally
+        }
+
+        /// <summary>
+        /// Names of the saved search/selection sets making up one side of a test.
+        /// </summary>
+        /// <remarks>
+        /// A side is a <c>SelectionSourceCollection</c>, not a set: it can
+        /// hold several sets, or a whole folder, or nothing at all when the
+        /// test was built against an ad-hoc selection. Every one of those is
+        /// legitimate, so an unresolvable side yields an empty list rather
+        /// than an error — the engine then falls back to parsing the test
+        /// name, and only then to categories.
+        ///
+        /// Wrapped in try/catch per source because <c>ResolveSelectionSource</c>
+        /// throws on a source whose set was deleted after the test was built,
+        /// and one stale side must not cost us the other.
+        /// </remarks>
+        private static List<string> SelectionNames(Document doc, ClashSelection selection)
+        {
+            var names = new List<string>();
+            if (selection == null) return names;
+
+            SelectionSourceCollection sources;
+            try { sources = selection.Selection?.SelectionSources; }
+            catch { return names; }
+            if (sources == null) return names;
+
+            foreach (var source in sources)
             {
-                // ModelItem wrappers hold native tree handles. Keeping them
-                // after an export retains the whole model graph and risks
-                // stale wrappers after the next document change.
-                NavisContext.ResetCaches();
+                string name = null;
+                try { name = doc.SelectionSets.ResolveSelectionSource(source)?.DisplayName; }
+                catch { }
+                if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name)) names.Add(name);
             }
+            return names;
         }
 
         private static List<object> DescribeModels(Document doc)

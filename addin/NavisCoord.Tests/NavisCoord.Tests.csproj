@@ -38,11 +38,20 @@
     <Compile Include="LogicTests.cs" />
     <Compile Include="Stubs.cs" />
     <Compile Include="..\NavisCoord.Addin\Json.cs" Link="Json.cs" />
+    <Compile Include="..\NavisCoord.Addin\JsonStrict.cs" Link="JsonStrict.cs" />
+    <Compile Include="..\NavisCoord.Addin\HttpStatus.cs" Link="HttpStatus.cs" />
+    <Compile Include="..\NavisCoord.Addin\SessionSecurity.cs" Link="SessionSecurity.cs" />
+    <Compile Include="..\NavisCoord.Addin\AppearanceLedger.cs" Link="AppearanceLedger.cs" />
+    <Compile Include="..\NavisCoord.Addin\ProfileRules.cs" Link="ProfileRules.cs" />
+    <Compile Include="..\NavisCoord.Addin\SaveVerification.cs" Link="SaveVerification.cs" />
     <Compile Include="..\NavisCoord.Addin\RulePrecedence.cs" Link="RulePrecedence.cs" />
     <Compile Include="..\NavisCoord.Addin\ClashFraming.cs" Link="ClashFraming.cs" />
-    <Compile Include="..\NavisCoord.Addin\CoordinationLogic.cs" Link="CoordinationLogic.cs" />
     <Compile Include="..\NavisCoord.Addin\ClashPlanning.cs" Link="ClashPlanning.cs" />
-    <Compile Include="..\NavisCoord.Addin\SelectionSetPlanning.cs" Link="SelectionSetPlanning.cs" />
+    <Compile Include="..\NavisCoord.Addin\ConfigurePlanning.cs" Link="ConfigurePlanning.cs" />
+    <Compile Include="..\NavisCoord.Addin\RunVerification.cs" Link="RunVerification.cs" />
+    <Compile Include="..\NavisCoord.Addin\RouteContracts.cs" Link="RouteContracts.cs" />
+    <Compile Include="..\NavisCoord.Addin\JobAdmission.cs" Link="JobAdmission.cs" />
+    <Compile Include="..\NavisCoord.Addin\CoordinationLogic.cs" Link="CoordinationLogic.cs" />
     <Compile Include="..\NavisCoord.Addin\MutationContract.cs" Link="MutationContract.cs" />
     <Compile Include="..\NavisCoord.Addin\JobManager.cs" Link="JobManager.cs" />
     <Compile Include="..\NavisCoord.Addin\PathPolicy.cs" Link="PathPolicy.cs" />
@@ -67,13 +76,19 @@
     <Compile Include="..\NavisCoord.Addin\WorkflowText.cs" Link="WorkflowText.cs" />
     <Compile Include="DispatcherTests.cs" />
     <Compile Include="FramingTests.cs" />
+    <Compile Include="PlanningTests.cs" />
+    <Compile Include="ConfigureTests.cs" />
+    <Compile Include="RunVerificationTests.cs" />
+    <Compile Include="AdmissionTests.cs" />
+    <Compile Include="EvidenceTests.cs" />
+    <Compile Include="JsonCorpusTests.cs" />
+    <Compile Include="BoundaryTests.cs" />
+    <Compile Include="AppearanceTests.cs" />
+    <Compile Include="ProfileSemanticsTests.cs" />
+    <Compile Include="ProfileContractTests.cs" />
+    <Compile Include="SaveVerificationTests.cs" />
     <Compile Include="VocabularyTests.cs" />
     <Compile Include="WorkflowTextTests.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies"
-                      Version="1.0.3" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>

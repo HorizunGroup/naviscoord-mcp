@@ -36,6 +36,12 @@ def session_file() -> Path:
     return legacy_session_file()
 
 
+# Statuses that mean the addin understood the request and refused it. None of
+# them can be changed by asking again, and for a mutation a blind replay is how
+# the same work lands twice.
+_NEVER_RETRY = frozenset({400, 403, 404, 409, 413, 422})
+
+
 class BridgeError(RuntimeError):
     """Raised with a message meant to be shown to a human, not parsed."""
 
@@ -46,11 +52,18 @@ class BridgeError(RuntimeError):
         hint: str = "",
         detail: Any = None,
         code: str = "",
+        status: int = 0,
         candidates: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(message)
         self.hint = hint
         self.detail = detail
+        # The HTTP status, kept rather than collapsed. Every failure used to
+        # arrive as the same generic BridgeError, so a caller could not tell a
+        # malformed payload (400) from a busy host (503) from a semantic
+        # conflict (409) — and therefore could not tell what was worth
+        # retrying.
+        self.status = status
         # Carried so wrapping a TargetError does not flatten it. Without
         # these, the same condition reached the caller in two different
         # shapes depending on where it was raised — `{"error": code,
@@ -62,6 +75,8 @@ class BridgeError(RuntimeError):
 
     def to_json(self) -> dict[str, Any]:
         payload: dict[str, Any] = {"error": self.code or str(self)}
+        if self.status:
+            payload["http_status"] = self.status
         if self.code:
             payload["detail"] = str(self)
         elif self.detail is not None:
@@ -119,6 +134,12 @@ class Bridge:
         # mutation unambiguous when several instances are open.
         self.target_id = target_id
         self._capabilities: dict[str, Any] | None = None
+        # The session the cached capabilities describe. A manifest belongs to
+        # ONE addin build; keeping it across a restart is how a caller is told
+        # a route exists on an addin that no longer has it.
+        self._capabilities_session: str = ""
+        self._retry_key: str = ""
+        self._retry_fingerprint: str = ""
 
     @property
     def session(self) -> SessionInfo:
@@ -161,6 +182,22 @@ class Bridge:
     def invalidate(self) -> None:
         self._session = None
         self._capabilities = None
+        self._capabilities_session = ""
+
+    def snapshot(self, *, for_mutation: bool = False) -> SessionInfo:
+        """The one session a call will use, resolved now.
+
+        Every field a request needs comes from this single object: endpoint,
+        token, target_id, session_id and document fingerprint. The bug this
+        replaces was subtle and expensive — ``resolve()`` returned the NEW
+        session while ``self._session`` still cached the old one, and ``call()``
+        used the cached one. So a fingerprint could be read from one instance
+        and the request sent to another, and the provenance on the report named
+        an instance that never saw the work.
+        """
+        if self._session is None:
+            self._session = self.resolve(for_mutation=for_mutation)
+        return self._session
 
     # -------------------------------------------------------- capabilities
 
@@ -170,8 +207,23 @@ class Bridge:
         Cached per session: the answer cannot change without the addin being
         reinstalled, which mints a new session anyway.
         """
-        if self._capabilities is None or refresh:
+        # Which session the cached manifest belongs to. Resolution can fail
+        # here — there may be no Navisworks at all — and that is not a reason
+        # to refuse: the call below will raise its own, better error. What
+        # matters is that a manifest cached under session A is never served for
+        # session B.
+        try:
+            current = self.snapshot().session_id
+        except BridgeError:
+            current = self._capabilities_session
+
+        # An empty marker means the manifest was injected rather than fetched
+        # (the test doubles do this), so there is no session it can be stale
+        # against. Once a real fetch records one, a change invalidates it.
+        stale = bool(self._capabilities_session) and current != self._capabilities_session
+        if self._capabilities is None or refresh or stale:
             self._capabilities = self.call("capabilities")
+            self._capabilities_session = current
         return self._capabilities
 
     def require(self, route: str, *, since: str = "0.1.2") -> None:
@@ -207,7 +259,14 @@ class Bridge:
                 detail={"available": offered},
             )
 
-    def call(self, route: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def call(
+        self,
+        route: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        session: SessionInfo | None = None,
+        mutating: bool | None = None,
+    ) -> dict[str, Any]:
         """One request, with a single silent retry across a Navisworks swap.
 
         Closing 2024 and opening 2026 mints a new token, often on the same
@@ -219,71 +278,107 @@ class Bridge:
         once with the fresh session. Unchanged, the error stands: retrying
         against the same dead endpoint would only mask a real outage.
         """
+        body_payload = payload or {}
+        if mutating is None:
+            # A payload that carries a fingerprint or an idempotency key is a
+            # mutation by construction; the caller can still say so explicitly.
+            mutating = bool(
+                body_payload.get("expected_document_fingerprint")
+                or body_payload.get("idempotency_key")
+            )
+        self._retry_key = str(body_payload.get("idempotency_key") or "")
+        self._retry_fingerprint = str(body_payload.get("expected_document_fingerprint") or "")
+
         refreshed = False
         while True:
-            session = self.session
-            outbound = dict(payload or {})
-            # The token authenticates the caller; these fields bind the
-            # request to the exact registry entry it selected.  The add-in
-            # rejects mutations if either identity changed before execution.
-            outbound.setdefault("session_id", session.session_id)
-            outbound.setdefault("target_id", session.target_id)
-            body = json.dumps(outbound).encode("utf-8")
+            # ONE snapshot per attempt, used for the endpoint, the token and
+            # the attribution. A retry takes a whole new snapshot rather than
+            # mixing a fresh endpoint with a stale fingerprint.
+            current = session if session is not None else self.snapshot()
+            body = json.dumps(payload or {}).encode("utf-8")
             request = urllib.request.Request(
-                f"{session.base_url}/{route.lstrip('/')}",
+                f"{current.base_url}/{route.lstrip('/')}",
                 data=body,
                 method="POST",
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
-                    "X-NavisCoord-Token": session.token,
+                    "X-NavisCoord-Token": current.token,
                 },
             )
 
             try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    result = json.loads(response.read().decode("utf-8"))
-                    if isinstance(result, dict):
-                        answered_by = str(result.get("session_id") or "")
-                        if answered_by and answered_by != session.session_id:
-                            self.invalidate()
-                            raise BridgeError(
-                                "El puerto respondió desde otra sesión de Navisworks.",
-                                hint="El PID o el puerto se reutilizó; vuelve a seleccionar el target.",
-                                detail={"expected": session.session_id, "actual": answered_by},
-                            )
-                    return result
+                return self._transport(request)
             except urllib.error.HTTPError as exc:
                 detail = _safe_json(exc)
+                code = ""
+                message = ""
+                if isinstance(detail, dict):
+                    code = str(detail.get("error") or "")
+                    message = str(detail.get("detail") or code or "")
+
+                if exc.code in _NEVER_RETRY:
+                    # A refusal the addin meant. Retrying cannot change a
+                    # malformed payload, a semantic conflict or an invalid
+                    # profile, and retrying a 409 on a mutation is how the same
+                    # work is applied twice.
+                    raise BridgeError(
+                        message or f"El complemento respondió {exc.code}.",
+                        hint=str(detail.get("hint") or "") if isinstance(detail, dict) else "",
+                        code=code,
+                        status=exc.code,
+                        candidates=detail.get("candidates") if isinstance(detail, dict) else None,
+                        detail=detail,
+                    ) from exc
+
                 if exc.code == 401:
                     self.invalidate()
-                    if not refreshed and self._session_changed(session):
+                    # Only when the registry really moved. An unchanged token
+                    # that was rejected is a genuine authentication failure, and
+                    # replaying against the same endpoint just doubles it.
+                    if not refreshed and not mutating and self._session_changed(current):
                         refreshed = True
+                        session = None
+                        continue
+                    if not refreshed and mutating and self._may_retry_mutation(current):
+                        refreshed = True
+                        session = None
                         continue
                     raise BridgeError(
                         "El token de sesión fue rechazado.",
                         hint="Navisworks se reinició y generó uno nuevo. Reintenta.",
+                        code=code or "unauthorized",
+                        status=exc.code,
                         detail=detail,
                     ) from exc
                 if exc.code == 503:
                     raise BridgeError(
-                        "Navisworks está ocupado y la cola del puente está llena.",
+                        message or "Navisworks está ocupado y la cola del puente está llena.",
                         hint="Ejecuta una sola operación a la vez; reintenta en unos segundos.",
+                        code=code or "unavailable",
+                        status=exc.code,
                         detail=detail,
                     ) from exc
                 # Surface the addin's own message. "responded 500" tells
                 # nobody anything; the sentence the addin wrote is the point.
-                message = ""
-                if isinstance(detail, dict):
-                    message = str(detail.get("detail") or detail.get("error") or "")
                 raise BridgeError(
                     message or f"El complemento respondió {exc.code}.",
                     hint="Revisa el estado con navis_health.",
+                    code=code,
+                    status=exc.code,
                     detail=detail,
                 ) from exc
             except urllib.error.URLError as exc:
                 self.invalidate()
-                if not refreshed and self._session_changed(session):
+                # The connection failed, so the request may or may not have
+                # reached the addin. For a read that is harmless. For a mutation
+                # it is not, and only an idempotency key makes the replay safe.
+                if not refreshed and not mutating and self._session_changed(current):
                     refreshed = True
+                    session = None
+                    continue
+                if not refreshed and mutating and self._may_retry_mutation(current):
+                    refreshed = True
+                    session = None
                     continue
                 raise BridgeError(
                     "No hay respuesta del complemento en Navisworks.",
@@ -294,6 +389,17 @@ class Bridge:
                     detail=str(exc.reason),
                 ) from exc
 
+    def _transport(self, request: "urllib.request.Request") -> dict[str, Any]:
+        """The one place a request actually leaves the process.
+
+        Separated so the retry POLICY above can be exercised without a socket.
+        The policy is the part that decides whether the same mutation is sent
+        twice, and a rule that can only be tested against a live Navisworks is
+        a rule that is never tested.
+        """
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+
     def _session_changed(self, stale: SessionInfo) -> bool:
         """True when the registry now describes a different bridge."""
         try:
@@ -301,6 +407,30 @@ class Bridge:
         except BridgeError:
             return False
         return fresh.token != stale.token or fresh.port != stale.port
+
+    def _may_retry_mutation(self, stale: SessionInfo) -> bool:
+        """Whether replaying a mutation is safe, not merely convenient.
+
+        Three conditions, all of them:
+
+        * the request carried an ``idempotency_key``, so a request that DID
+          reach the addin is recognised and replayed instead of applied twice;
+        * the registry really moved, rather than the endpoint being down;
+        * and the new session is the SAME target and document. Sending a
+          mutation to whichever instance happens to be newest is how somebody's
+          other model gets edited.
+        """
+        if not self._retry_key:
+            return False
+        try:
+            fresh = self.resolve()
+        except BridgeError:
+            return False
+        if fresh.token == stale.token and fresh.port == stale.port:
+            return False
+        if fresh.target_id != stale.target_id:
+            return False
+        return not self._retry_fingerprint or fresh.document_fingerprint == self._retry_fingerprint
 
     # ------------------------------------------------------------- routes
 
@@ -491,30 +621,23 @@ class Bridge:
         payload.update(options or {})
         return self.call("clash/image", payload)
 
-    def build_sets(
-        self, disciplines: list[dict[str, Any]], prefix: str, dry_run: bool,
-        fingerprint: str = "", idempotency_key: str = "",
-    ) -> dict[str, Any]:
+    def build_sets(self, disciplines: list[dict[str, Any]], prefix: str, dry_run: bool) -> dict[str, Any]:
         return self.call(
             "sets/build",
-            _guarded(
-                {"disciplines": disciplines, "prefix": prefix, "dry_run": dry_run},
-                fingerprint, idempotency_key,
-            ),
+            {"disciplines": disciplines, "prefix": prefix, "dry_run": dry_run},
         )
 
     def build_matrix(
-        self, pairs: list[dict[str, Any]], prefix: str, dry_run: bool,
-        replace_existing: bool = False, fingerprint: str = "", idempotency_key: str = "",
+        self, pairs: list[dict[str, Any]], prefix: str, dry_run: bool, replace_existing: bool = False
     ) -> dict[str, Any]:
         return self.call(
             "clash/matrix",
-            _guarded({
+            {
                 "pairs": pairs,
                 "prefix": prefix,
                 "dry_run": dry_run,
                 "replace_existing": replace_existing,
-            }, fingerprint, idempotency_key),
+            },
         )
 
     def list_sets(self) -> dict[str, Any]:
@@ -539,14 +662,8 @@ class Bridge:
             return self.submit_job(route, payload)
         return self.call(route, payload)
 
-    def run_tests(
-        self, tests: list[str] | None = None, *, fingerprint: str = "",
-        idempotency_key: str = "",
-    ) -> dict[str, Any]:
-        return self.call(
-            "clash/run",
-            _guarded({"tests": tests or [], "dry_run": False}, fingerprint, idempotency_key),
-        )
+    def run_tests(self, tests: list[str] | None = None) -> dict[str, Any]:
+        return self.call("clash/run", {"tests": tests or []})
 
     def apply_groups(
         self,
@@ -589,35 +706,31 @@ class Bridge:
             _guarded({"viewpoints": viewpoints, "dry_run": dry_run}, fingerprint, idempotency_key),
         )
 
-    def color(
-        self, path_ids: list[str], rgb: tuple[int, int, int],
-        transparency: float = -1.0, *, fingerprint: str = "",
-        idempotency_key: str = "",
-    ) -> dict[str, Any]:
+    def color(self, path_ids: list[str], rgb: tuple[int, int, int], transparency: float = -1.0) -> dict[str, Any]:
         r, g, b = rgb
         return self.call(
             "appearance/color",
-            _guarded(
-                {"path_ids": path_ids, "r": r, "g": g, "b": b,
-                 "transparency": transparency, "dry_run": False},
-                fingerprint, idempotency_key,
-            ),
+            {"path_ids": path_ids, "r": r, "g": g, "b": b, "transparency": transparency},
         )
 
-    def reset_appearance(
-        self, path_ids: list[str] | None = None, *, fingerprint: str = "",
-        idempotency_key: str = "",
+    def reset_appearance(self, path_ids: list[str] | None = None) -> dict[str, Any]:
+        return self.call("appearance/reset", {"path_ids": path_ids or []})
+
+    def select(
+        self,
+        path_ids: list[str],
+        *,
+        expected_document_fingerprint: str = "",
     ) -> dict[str, Any]:
-        return self.call(
-            "appearance/reset",
-            _guarded({"path_ids": path_ids or [], "dry_run": False}, fingerprint, idempotency_key),
-        )
+        """Selects elements — a mutation, so it carries the fingerprint.
 
-    def select(self, path_ids: list[str], *, fingerprint: str = "") -> dict[str, Any]:
-        return self.call(
-            "selection/set",
-            _guarded({"path_ids": path_ids, "dry_run": False}, fingerprint, ""),
-        )
+        The selection dies with the session, which is why it looked harmless
+        and travelled without a guard. It is still a change applied to whatever
+        document happens to be open, and the path ids come from an analysis of
+        a document that may not be that one.
+        """
+        payload = _guarded({"path_ids": path_ids}, expected_document_fingerprint, "")
+        return self.call("selection/set", payload, mutating=bool(expected_document_fingerprint))
 
 
 def _guarded(payload: dict[str, Any], fingerprint: str, idempotency_key: str) -> dict[str, Any]:

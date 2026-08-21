@@ -35,6 +35,7 @@ namespace NavisCoord.Tests
             _check = check;
 
             BoxArithmetic();
+            ClashVolumeFromGeometry();
             TinyClash();
             HugeElements();
             BothSidesVisible();
@@ -110,6 +111,66 @@ namespace NavisCoord.Tests
         }
 
         // ------------------------------------------------------- the two bugs
+
+        /// <summary>
+        /// Where the interference is, taken from geometry rather than asked for.
+        /// </summary>
+        /// <remarks>
+        /// The numbers are a real clash off a live model: a 54 mm copper pipe
+        /// crossing a cast-in-place slab on level 8. Navisworks reported the
+        /// result's bounding box as 8.5 x 11 m and it was trusted ahead of the
+        /// arithmetic. Everything downstream then behaved correctly on a lie —
+        /// the neighbourhood clamp faithfully framed an eleven-metre clash,
+        /// the camera pulled back to 35 m, and the pipe came back at 0.02% of
+        /// the picture, which the verifier rejected as unreadable.
+        /// </remarks>
+        private static void ClashVolumeFromGeometry()
+        {
+            _section("marcos: volumen del choque");
+
+            var slab = new Box3(new Vec3(19.1595, -11.6914, 24.6380),
+                                new Vec3(43.4528, 1.0702, 24.8158));
+            var pipe = new Box3(new Vec3(34.1009, -9.2260, 23.3505),
+                                new Vec3(34.1549, -9.1721, 25.6032));
+            var reported = new Box3(new Vec3(33.2788, -11.6914, 24.4158),
+                                    new Vec3(41.7672, -0.6154, 25.2158));
+
+            _check(reported.LongestSide > 11.0,
+                $"lo que reporta Navisworks mide {reported.LongestSide:0.##} m: el fallo existía");
+            _check(!ClashFraming.IsPlausibleClashVolume(reported, slab, pipe),
+                "una interferencia no puede ser más grande que el menor de los dos elementos");
+
+            var volume = ClashFraming.ClashVolume(slab, pipe, reported, 0.0);
+            _check(!volume.IsEmpty, "hay solape, así que hay volumen");
+            _check(volume.LongestSide < 0.2,
+                $"el volumen real es la intersección ({volume.LongestSide * 1000:0} mm), no lo reportado");
+
+            // And the frame that follows from it has to put the pipe on screen.
+            var framed = ClashFraming.Frame(new ClashFraming.Request
+            {
+                ClashBox = ClashFraming.ClashVolume(slab, pipe, reported, 0.8),
+                BoxA = slab,
+                BoxB = pipe,
+                Mode = ClashFraming.ModeCloseup
+            });
+            _check(framed.ExtentWidth < 6.0,
+                $"encuadre de {framed.ExtentWidth:0.##} m, no una foto aérea de 35");
+
+            var onScreen = ClashFraming.Project(framed, pipe);
+            _check(onScreen.ScreenFraction > 0.004,
+                $"el tubo ocupa {onScreen.ScreenFraction:P2} de la pantalla, por encima del umbral de lectura");
+
+            // A clearance test has no intersection: the reported box is all
+            // there is, and a plausible one is still accepted.
+            var apart = new Box3(new Vec3(0, 0, 0), new Vec3(0.3, 0.3, 0.3));
+            var nearby = new Box3(new Vec3(0.5, 0, 0), new Vec3(0.8, 0.3, 0.3));
+            var gap = new Box3(new Vec3(0.28, 0.1, 0.1), new Vec3(0.52, 0.2, 0.2));
+            var clearance = ClashFraming.ClashVolume(apart, nearby, gap, 0.0);
+            _check(!clearance.IsEmpty, "sin solape, un volumen creíble sigue sirviendo");
+
+            _check(ClashFraming.ClashVolume(apart, nearby, reported, 0.0).IsEmpty,
+                "sin solape y con una caja imposible, mejor nada que un encuadre mentiroso");
+        }
 
         private static void TinyClash()
         {
@@ -429,12 +490,52 @@ namespace NavisCoord.Tests
 
             _eq(ClashFraming.ModeContext, ClashFraming.Widen(ClashFraming.ModeCloseup), "primer plano abre a contexto");
             _eq(ClashFraming.ModePlan, ClashFraming.Widen(ClashFraming.ModeContext), "contexto abre a planta");
-            _eq(null, ClashFraming.Widen(ClashFraming.ModePlan), "planta es el último escalón");
+            // Every rung up to here moves the camera FURTHER from the clash,
+            // which cannot help when the obstruction is a slab lying between
+            // the lens and a pipe hanging under it: a wider view of the top of
+            // a slab is still the top of a slab. The last rung goes underneath
+            // instead, and it is last because it only pays off on horizontal
+            // obstructions.
+            _eq(ClashFraming.ModeUnderside, ClashFraming.Widen(ClashFraming.ModePlan), "planta abre a contrapicado");
+            _eq(null, ClashFraming.Widen(ClashFraming.ModeUnderside), "contrapicado es el último escalón");
 
             _eq(ClashFraming.ModeCloseup, ClashFraming.Normalise(""), "sin modo, primer plano");
             _eq(ClashFraming.ModeCloseup, ClashFraming.Normalise("basura"), "un modo inventado cae en primer plano");
             _eq(ClashFraming.ModePlan, ClashFraming.Normalise("PLANTA"), "se aceptan los nombres en español");
             _eq(ClashFraming.ModeContext, ClashFraming.Normalise("  Contexto "), "y con espacios");
+            _eq(ClashFraming.ModeUnderside, ClashFraming.Normalise("ABAJO"), "contrapicado también en español");
+
+            UndersideLooksUp();
+        }
+
+        /// <summary>
+        /// The camera has to end up below the clash, looking up.
+        /// </summary>
+        private static void UndersideLooksUp()
+        {
+            var slab = new Box3(new Vec3(-12, -6, 0.0), new Vec3(12, 6, 0.18));
+            var pipe = new Box3(new Vec3(-0.03, -0.03, -1.3), new Vec3(0.03, 0.03, 0.95));
+            var clash = slab.Intersection(pipe);
+
+            foreach (var mode in new[] { ClashFraming.ModeCloseup, ClashFraming.ModeUnderside })
+            {
+                var frame = ClashFraming.Frame(new ClashFraming.Request
+                {
+                    ClashBox = clash, BoxA = slab, BoxB = pipe, Mode = mode
+                });
+                var above = frame.Position.Z > frame.Target.Z;
+                if (mode == ClashFraming.ModeCloseup)
+                {
+                    _check(above, "el encuadre normal mira desde arriba, como siempre");
+                }
+                else
+                {
+                    _check(!above,
+                        $"contrapicado pone la cámara debajo (z cámara {frame.Position.Z:0.##}, "
+                        + $"z objetivo {frame.Target.Z:0.##})");
+                    _check(frame.Direction.Z > 0, "y mirando hacia arriba");
+                }
+            }
         }
 
         /// <summary>

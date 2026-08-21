@@ -1,15 +1,23 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "horizun-navis",
-  "description": "Complementos de coordinación BIM de HorizunGroup",
-  "owner": {"name": "HorizunGroup"},
+  "description": "BIM coordination plugins by HorizunGroup",
+  "owner": {
+    "name": "HorizunGroup"
+  },
   "plugins": [
     {
       "name": "naviscoord-mcp",
-      "description": "Coordinación inteligente de Autodesk Navisworks: decisiones priorizadas, causas raíz, plan de trabajo e informes.",
-      "author": {"name": "HorizunGroup"},
+      "description": "Coordination intelligence for Autodesk Navisworks: prioritized decisions, root causes, work plans and reports.",
+      "author": {
+        "name": "HorizunGroup"
+      },
       "category": "development",
-      "source": {"source": "url", "url": "https://github.com/HorizunGroup/naviscoord-mcp.git", "ref": "v0.4.0"},
+      "source": {
+        "source": "url",
+        "url": "https://github.com/HorizunGroup/naviscoord-mcp.git",
+        "ref": "v0.4.1"
+      },
       "homepage": "https://github.com/HorizunGroup/naviscoord-mcp"
     }
   ]

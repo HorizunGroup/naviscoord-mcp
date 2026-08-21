@@ -18,7 +18,6 @@ namespace NavisCoord
     /// </remarks>
     internal static class Json
     {
-        public const int MaxDepth = 128;
         // ------------------------------------------------------------ write
 
         public static string Write(object value)
@@ -126,11 +125,26 @@ namespace NavisCoord
 
         // ------------------------------------------------------------- read
 
+        /// <summary>
+        /// The tolerant reader. Legacy files only — never a trust boundary.
+        /// </summary>
+        /// <remarks>
+        /// It repairs: given a truncated object it returns a complete-looking
+        /// dictionary, and its number scanner accepts <c>1..2</c> and
+        /// <c>+1</c>. That was fine when its only job was turning a junk body
+        /// into "no arguments", and it is not fine anywhere a document decides
+        /// what the add-in does.
+        ///
+        /// Anything crossing a boundary — an HTTP body, a profile, a session
+        /// record — goes through <see cref="JsonStrict.TryParseObject"/>.
+        /// What is left here reads files this add-in wrote itself in older
+        /// versions, where refusing would lose data that is not suspect.
+        /// </remarks>
         public static Dictionary<string, object> ParseObject(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return new Dictionary<string, object>();
             var index = 0;
-            var value = ParseValue(text, ref index, 0);
+            var value = ParseValue(text, ref index);
             return value as Dictionary<string, object> ?? new Dictionary<string, object>();
         }
 
@@ -153,166 +167,17 @@ namespace NavisCoord
         /// answer 400.
         /// </remarks>
         public static bool IsWellFormedObject(string text)
+            => JsonStrict.IsStrictObject(text);
+
+        private static object ParseValue(string s, ref int i)
         {
-            if (string.IsNullOrWhiteSpace(text)) return false;
-            var i = 0;
-            SkipWhitespace(text, ref i);
-            if (i >= text.Length || text[i] != '{') return false;
-            if (!ScanValue(text, ref i, 0)) return false;
-            SkipWhitespace(text, ref i);
-            return i >= text.Length;   // trailing junk is not well-formed either
-        }
-
-        private static bool ScanValue(string s, ref int i, int depth)
-        {
-            if (depth > MaxDepth) return false;
-            SkipWhitespace(s, ref i);
-            if (i >= s.Length) return false;
-            switch (s[i])
-            {
-                case '{': return ScanMap(s, ref i, depth + 1);
-                case '[': return ScanList(s, ref i, depth + 1);
-                case '"': return ScanString(s, ref i);
-                case 't': return ScanLiteral(s, ref i, "true");
-                case 'f': return ScanLiteral(s, ref i, "false");
-                case 'n': return ScanLiteral(s, ref i, "null");
-                default: return ScanNumber(s, ref i);
-            }
-        }
-
-        private static bool ScanMap(string s, ref int i, int depth)
-        {
-            i++; // '{'
-            SkipWhitespace(s, ref i);
-            if (i < s.Length && s[i] == '}') { i++; return true; }
-            while (true)
-            {
-                SkipWhitespace(s, ref i);
-                if (i >= s.Length || s[i] != '"') return false;
-                if (!ScanString(s, ref i)) return false;
-                SkipWhitespace(s, ref i);
-                if (i >= s.Length || s[i] != ':') return false;
-                i++;
-                if (!ScanValue(s, ref i, depth)) return false;
-                SkipWhitespace(s, ref i);
-                if (i >= s.Length) return false;
-                if (s[i] == ',') { i++; continue; }
-                if (s[i] == '}') { i++; return true; }
-                return false;
-            }
-        }
-
-        private static bool ScanList(string s, ref int i, int depth)
-        {
-            i++; // '['
-            SkipWhitespace(s, ref i);
-            if (i < s.Length && s[i] == ']') { i++; return true; }
-            while (true)
-            {
-                if (!ScanValue(s, ref i, depth)) return false;
-                SkipWhitespace(s, ref i);
-                if (i >= s.Length) return false;
-                if (s[i] == ',') { i++; continue; }
-                if (s[i] == ']') { i++; return true; }
-                return false;
-            }
-        }
-
-        private static bool ScanString(string s, ref int i)
-        {
-            if (i >= s.Length || s[i] != '"') return false;
-            i++;
-            while (i < s.Length)
-            {
-                var c = s[i];
-                if (c == '\\')
-                {
-                    i++;
-                    if (i >= s.Length) return false;
-                    if (s[i] == 'u')
-                    {
-                        if (i + 4 >= s.Length) return false;
-                        for (var k = 1; k <= 4; k++)
-                        {
-                            if (!Uri.IsHexDigit(s[i + k])) return false;
-                        }
-                        i += 4;
-                    }
-                    else if ("\"\\/bfnrt".IndexOf(s[i]) < 0)
-                    {
-                        return false;
-                    }
-                    i++;
-                    continue;
-                }
-                if (c == '"') { i++; return true; }
-                if (c < ' ') return false;   // a raw control character is not legal in a string
-                i++;
-            }
-            return false;   // ran off the end: the string was never closed
-        }
-
-        private static bool ScanLiteral(string s, ref int i, string literal)
-        {
-            if (i + literal.Length > s.Length) return false;
-            if (string.CompareOrdinal(s, i, literal, 0, literal.Length) != 0) return false;
-            i += literal.Length;
-            return true;
-        }
-
-        private static bool ScanNumber(string s, ref int i)
-        {
-            var start = i;
-            if (i < s.Length && s[i] == '-') i++;
-            if (i >= s.Length) return false;
-
-            if (s[i] == '0')
-            {
-                i++;
-                // Leading zeroes are not JSON numbers.
-                if (i < s.Length && char.IsDigit(s[i])) return false;
-            }
-            else if (s[i] >= '1' && s[i] <= '9')
-            {
-                while (i < s.Length && char.IsDigit(s[i])) i++;
-            }
-            else
-            {
-                return false;
-            }
-
-            if (i < s.Length && s[i] == '.')
-            {
-                i++;
-                var fraction = i;
-                while (i < s.Length && char.IsDigit(s[i])) i++;
-                if (i == fraction) return false;
-            }
-
-            if (i < s.Length && (s[i] == 'e' || s[i] == 'E'))
-            {
-                i++;
-                if (i < s.Length && (s[i] == '+' || s[i] == '-')) i++;
-                var exponent = i;
-                while (i < s.Length && char.IsDigit(s[i])) i++;
-                if (i == exponent) return false;
-            }
-
-            var token = s.Substring(start, i - start);
-            return double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) &&
-                   IsFinite(value);
-        }
-
-        private static object ParseValue(string s, ref int i, int depth)
-        {
-            if (depth > MaxDepth) return null;
             SkipWhitespace(s, ref i);
             if (i >= s.Length) return null;
 
             switch (s[i])
             {
-                case '{': return ParseMap(s, ref i, depth + 1);
-                case '[': return ParseList(s, ref i, depth + 1);
+                case '{': return ParseMap(s, ref i);
+                case '[': return ParseList(s, ref i);
                 case '"': return ParseString(s, ref i);
                 case 't': i += 4; return true;
                 case 'f': i += 5; return false;
@@ -321,7 +186,7 @@ namespace NavisCoord
             }
         }
 
-        private static Dictionary<string, object> ParseMap(string s, ref int i, int depth)
+        private static Dictionary<string, object> ParseMap(string s, ref int i)
         {
             var map = new Dictionary<string, object>(StringComparer.Ordinal);
             i++; // '{'
@@ -334,7 +199,7 @@ namespace NavisCoord
                 var key = ParseString(s, ref i);
                 SkipWhitespace(s, ref i);
                 if (i < s.Length && s[i] == ':') i++;
-                map[key] = ParseValue(s, ref i, depth);
+                map[key] = ParseValue(s, ref i);
                 SkipWhitespace(s, ref i);
                 if (i < s.Length && s[i] == ',') { i++; continue; }
                 if (i < s.Length && s[i] == '}') { i++; break; }
@@ -343,7 +208,7 @@ namespace NavisCoord
             return map;
         }
 
-        private static List<object> ParseList(string s, ref int i, int depth)
+        private static List<object> ParseList(string s, ref int i)
         {
             var list = new List<object>();
             i++; // '['
@@ -352,7 +217,7 @@ namespace NavisCoord
 
             while (i < s.Length)
             {
-                list.Add(ParseValue(s, ref i, depth));
+                list.Add(ParseValue(s, ref i));
                 SkipWhitespace(s, ref i);
                 if (i < s.Length && s[i] == ',') { i++; continue; }
                 if (i < s.Length && s[i] == ']') { i++; break; }
@@ -429,6 +294,13 @@ namespace NavisCoord
 
         public static bool Bool(IDictionary<string, object> map, string key, bool fallback = false)
             => map != null && map.TryGetValue(key, out var v) && v is bool b ? b : fallback;
+
+        /// <summary>A nested object, or an empty one. Never null.</summary>
+        public static Dictionary<string, object> Obj(IDictionary<string, object> map, string key)
+            => map != null && map.TryGetValue(key, out var value) &&
+               value is Dictionary<string, object> nested
+                ? nested
+                : new Dictionary<string, object>();
 
         public static List<object> Arr(IDictionary<string, object> map, string key)
             => map != null && map.TryGetValue(key, out var v) && v is List<object> list

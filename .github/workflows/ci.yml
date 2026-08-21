@@ -22,6 +22,12 @@ name: CI
 # the push of the tag itself, was the single event the workflow did not listen
 # for. The rule was therefore never executed where it means the most, and a tag
 # could publish a ref nobody had checked.
+# Ningún job publica nada: leer el repositorio es todo lo que necesitan, y es
+# todo lo que el token puede hacer. Un permiso que no existe no se puede
+# filtrar por un action comprometido.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -31,9 +37,6 @@ on:
   # path that did not exist when a tag's CI needed to be inspected after the
   # fact.
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   engine:
@@ -70,6 +73,35 @@ jobs:
       - name: Pruebas
         run: cd server && python -m pytest tests -q
 
+  engine-minimums:
+    # pyproject declara mcp>=1.14, reportlab>=4.0.4, pillow>=10.0. Nada de eso es
+    # verdad si nadie lo ejecuta: la matriz normal resuelve las versiones MAS
+    # NUEVAS dentro del rango, así que el mínimo declarado puede llevar roto
+    # meses sin que ningún job lo note. Este job instala exactamente los
+    # suelos y corre la misma suite.
+    name: motor con los mínimos declarados
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # El Python más viejo soportado con las dependencias más viejas
+          # soportadas: la esquina donde una API "nueva" usada por descuido
+          # revienta primero.
+          python-version: "3.10"
+      - name: Instalar los suelos exactos
+        run: |
+          cd server
+          pip install -e ".[dev]"
+          pip install "mcp==1.14.*" "reportlab==4.0.4" "pillow==10.0.*"
+      - name: Versiones resueltas
+        run: pip show mcp reportlab pillow | grep -E "^(Name|Version)"
+      - name: Pruebas
+        run: cd server && python -m pytest tests -q
+
   windows-engine:
     # The path policy rejects UNC paths, device namespaces, reserved DOS
     # names and NTFS alternate data streams — every one of which is a Windows
@@ -95,21 +127,6 @@ jobs:
       - name: Pruebas
         run: cd server; python -m pytest tests -q
 
-  minimum-dependencies:
-    name: mínimos declarados (Python 3.10)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.10"
-      - name: Instalar exactamente los mínimos soportados
-        run: |
-          pip install -e server --no-deps
-          pip install pytest==9.0.2 "mcp==1.14.0" "reportlab==4.0.4" "pillow==10.0.0"
-      - name: Pruebas
-        run: cd server && python -m pytest tests -q
-
   addin-logic:
     name: lógica del add-in (sin licencia)
     runs-on: windows-latest
@@ -120,6 +137,26 @@ jobs:
           dotnet-version: "8.0.x"
       - name: Pruebas C#
         run: dotnet run --project addin/NavisCoord.Tests
+
+      - name: Autopruebas de los scripts de release
+        # Aqui y no en el job de higiene: estos scripts codifican semantica de
+        # rutas de WINDOWS -unidades, UNC, flujos alternativos NTFS, reparse
+        # points-. Ejercitarlos en un runner Linux probaria otra cosa y daria
+        # un verde que no significa nada. Son logica pura sobre rutas: no
+        # necesitan Navisworks ni tocan nada del sistema.
+        shell: pwsh
+        run: |
+          $bad = 0
+          foreach ($script in @('NavisworksSafety', 'RestoreSafety', 'FindNavisworks', 'Build-Release', 'Smoke-AddinSwap')) {
+            & "./scripts/$script.ps1" -SelfTest
+            if ($LASTEXITCODE -ne 0) { $bad = 1 }
+          }
+          # El ciclo completo contra raices temporales: llama al nucleo
+          # transaccional, no al entrypoint, asi que corre sin Navisworks y
+          # sin desactivar la compuerta.
+          & ./scripts/Test-SmokeRestore.ps1
+          if ($LASTEXITCODE -ne 0) { $bad = 1 }
+          exit $bad
 
   packaging:
     name: wheel, sdist e instalación limpia
@@ -137,7 +174,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Herramienta de build
-        run: pip install build==1.5.0
+        # setuptools va explícito: desde 3.12 el intérprete ya no lo trae,
+        # y `verify_sdist --strict` reconstruye SIN red, así que no puede
+        # bajarlo como backend aislado. Sin él el paso no falla por lo que
+        # mide, sino por lo que le falta a la máquina.
+        run: pip install build setuptools
 
       - name: Construir y verificar artefactos
         # Reads both archives back and asserts LICENSE, NOTICE, the default
@@ -145,12 +186,17 @@ jobs:
         # files and trusts the result is how the problem returns.
         run: python scripts/build_artifacts.py
 
-      - name: El sdist reconstruye el wheel sin el repositorio
-        run: |
-          mkdir /tmp/from-sdist
-          tar -xzf server/dist/naviscoord-*.tar.gz -C /tmp/from-sdist
-          python -m pip wheel --no-deps --wheel-dir /tmp/rebuilt /tmp/from-sdist/naviscoord-*
-          test -n "$(find /tmp/rebuilt -name 'naviscoord-*.whl' -print -quit)"
+      - name: El sdist se basta a si mismo
+        # Reconstruye el wheel DESDE el sdist extraido y compara. Un sdist al
+        # que le falte pyproject.toml, el perfil o el README se descarga bien
+        # y falla al construir, meses despues y en la maquina de otro.
+        run: python scripts/verify_sdist.py --strict
+
+      - name: Dos construcciones del mismo arbol dan los mismos bytes
+        # Reproducibilidad medida, no afirmada. setuptools honra
+        # SOURCE_DATE_EPOCH en el wheel pero no en el sdist, asi que esto es
+        # lo unico que dice si normalize_sdist sigue funcionando.
+        run: python scripts/build_artifacts.py --reproducible
 
       - name: Instalar DESDE EL WHEEL, no editable
         # An editable install hides every packaging defect: the profile used
@@ -264,6 +310,9 @@ jobs:
 
       - name: Validador real de plugins
         run: |
+          # Fijado por versión exacta: un `install -g` sin versión valida cada
+          # run con una herramienta distinta, y un cambio del validador se
+          # confunde con un cambio del plugin.
           npm install -g @anthropic-ai/claude-code@2.1.237
           claude plugin validate . --strict
 
@@ -367,6 +416,20 @@ jobs:
             echo "::error::archivos >2 MB versionados:"; echo "$big"; exit 1
           fi
 
+      - name: Ningún efímero de un run anterior está versionado
+        # Los archivos que los checks crean al vuelo (el driver del modo
+        # degradado, marcadores de sandbox, stagings) mueren con su run. Si
+        # uno aparece rastreado es que alguien hizo `git add .` después de una
+        # verificación fallida — y varios llevan dentro rutas de la máquina.
+        shell: bash
+        run: |
+          set -uo pipefail
+          hits=$(git ls-files | grep -E             '(^|/)degraded_driver\.py$|(^|/)degraded\.jsonl$|\.staging-|\.naviscoord-(sandbox|selftest|repro|build-workspace)$'             || true)
+          if [ -n "$hits" ]; then
+            echo "::error::efímeros versionados:"; echo "$hits"; exit 1
+          fi
+          echo "ningún efímero rastreado"
+
       - name: Los scripts de Python compilan
         # `install.ps1` y los .ps1 de release ya se parseaban; los .py de
         # scripts/ no. Dos de ellos no los ejecuta nada en CI —
@@ -394,17 +457,6 @@ jobs:
           }
           exit $bad
 
-      - name: Actions fijadas por SHA y sin estado efímero versionado
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -RInE 'uses: [^#[:space:]]+@v[0-9]+' .github/workflows; then
-            echo "::error::una action sigue fijada solo por major tag"; exit 1
-          fi
-          if git ls-files --error-unmatch .claude/scheduled_tasks.lock >/dev/null 2>&1; then
-            echo "::error::scheduled_tasks.lock es estado local y no debe versionarse"; exit 1
-          fi
-
       - name: El guard de artefactos detecta lo que dice detectar
         # The add-in is built outside CI, against a licensed Autodesk API, so
         # the guard that keeps the builder's filesystem out of the published
@@ -414,10 +466,6 @@ jobs:
         # catches survived three releases.
         shell: pwsh
         run: ./scripts/Assert-PublicArtifacts.ps1 -SelfTest
-
-      - name: Restauración del smoke en sandbox
-        shell: pwsh
-        run: ./scripts/Smoke-AddinSwap.ps1 -SelfTest
 
   launcher:
     name: launcher en modo degradado
@@ -476,9 +524,103 @@ jobs:
           assert lines[2]["result"]["isError"] is True
           payload = json.loads(lines[2]["result"]["content"][0]["text"])
           assert "simulado" in payload["detail"]
-          assert "pip install" in payload["arreglo"]
+          # No se busca "pip install": el launcher dejó de aconsejarlo a
+          # propósito, porque instalar los rangos públicos es justo lo que
+          # el lock existe para evitar. Lo que tiene que seguir siendo
+          # cierto es que el mensaje diga cómo crear el entorno y dónde
+          # está el lock del que sale.
+          assert "-m venv" in payload["arreglo"], payload["arreglo"]
+          assert payload["lock"] in payload["arreglo"], "el arreglo no dice dónde está el lock"
           print("modo degradado: ok")
           PY
+
+  release-evidence:
+    # Solo en tags. Produce la evidencia que acompaña a una release —
+    # checksums, SBOM y procedencia — construida desde el SHA exacto que el
+    # tag nombra (actions/checkout trae github.sha, no la punta de una rama).
+    # NO publica nada: sube los archivos como artifacts del run para que la
+    # persona que hace la release los adjunte tras revisarlos. Crear la
+    # release sigue siendo un acto humano y deliberado.
+    name: evidencia de release (solo tags)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [engine, packaging, manifests, public-hygiene]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: El tag apunta a este SHA
+        # La regla F1 entera: lo que se empaqueta es lo que el tag nombra.
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          resolved=$(git rev-parse "refs/tags/${tag}^{commit}")
+          echo "tag=${tag} resuelve=${resolved} sha del run=${GITHUB_SHA}"
+          test "$resolved" = "$GITHUB_SHA"
+
+      - name: Construir los artefactos de Python desde el SHA del tag
+        run: |
+          pip install build cyclonedx-bom==7.3.1
+          python scripts/build_artifacts.py
+
+      - name: SBOM (CycloneDX) del paquete construido
+        run: |
+          python -m venv /tmp/sbom-env
+          /tmp/sbom-env/bin/pip install --quiet server/dist/*.whl
+          cyclonedx-py environment /tmp/sbom-env             --output-format JSON --output-file server/dist/sbom.cdx.json
+          python - <<'PY'
+          import json
+          doc = json.load(open("server/dist/sbom.cdx.json"))
+          names = {c.get("name") for c in doc.get("components", [])}
+          assert "naviscoord" in names, "el SBOM no contiene el propio paquete"
+          print(f"SBOM: {len(names)} componentes")
+          PY
+
+      - name: Checksums y procedencia
+        run: |
+          cd server/dist
+          python - <<'PY'
+          import json, os, time
+          json.dump({
+              "schema": "naviscoord.provenance/1",
+              "tag": os.environ["GITHUB_REF"].removeprefix("refs/tags/"),
+              "commit": os.environ["GITHUB_SHA"],
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "workflow_run": os.environ["GITHUB_RUN_ID"],
+              "runner": os.environ["RUNNER_OS"],
+              "built_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+          }, open("provenance.json", "w"), indent=2)
+          PY
+          # Nombres explícitos, no `*`: así SHA256SUMS nunca puede terminar
+          # intentando incluirse a sí mismo, y un archivo inesperado en dist
+          # rompe aquí en vez de firmarse sin querer.
+          sha256sum *.whl *.tar.gz sbom.cdx.json provenance.json > SHA256SUMS
+          cat SHA256SUMS provenance.json
+
+      - name: Los artefactos no nombran la máquina que los construyó
+        shell: pwsh
+        run: |
+          # El guard de PowerShell mira DLL; a los archivos de Python los
+          # revisa build_artifacts.py en la construcción. Aquí, la última
+          # línea de defensa: ninguna ruta del runner en los textos.
+          $bad = Select-String -Path server/dist/SHA256SUMS, server/dist/provenance.json `
+            -Pattern '/home/runner|/opt/hostedtoolcache|C:\a\' -SimpleMatch:$false
+          if ($bad) { Write-Error "ruta del runner en la evidencia: $bad"; exit 1 }
+          Write-Output "evidencia limpia"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-evidence
+          path: |
+            server/dist/*.whl
+            server/dist/*.tar.gz
+            server/dist/SHA256SUMS
+            server/dist/sbom.cdx.json
+            server/dist/provenance.json
 
   # ---------------------------------------------------------------- ci-ok
   #
@@ -501,8 +643,8 @@ jobs:
     if: always()
     needs:
       - engine
+      - engine-minimums
       - windows-engine
-      - minimum-dependencies
       - addin-logic
       - packaging
       - manifests

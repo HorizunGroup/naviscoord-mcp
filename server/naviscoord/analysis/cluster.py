@@ -135,8 +135,15 @@ def build_clusters(clashes: list[Clash], profile: Profile) -> list[ClashCluster]
     for group in groups:
         if len(group) > 1:
             # Already one problem by identity: an element pair cannot be two
-            # separate issues just because the contact is spread out.
-            clusters.append(ClashCluster(clashes=group, kind="pair"))
+            # separate issues just because the contact is spread out — but
+            # "spread out" has a limit. A long duct clipping the same wall 40 m
+            # apart went straight into a 40 m cluster whose centroid sat in
+            # open air, because this branch appended without ever measuring.
+            identity = ClashCluster(clashes=group, kind="pair")
+            if identity.span > max_span:
+                clusters.extend(_split_oversized(identity, max_span))
+            else:
+                clusters.append(identity)
             continue
         clash = group[0]
         key = clash.discipline_pair if split_by_pair else None
@@ -157,6 +164,16 @@ def build_clusters(clashes: list[Clash], profile: Profile) -> list[ClashCluster]
     return clusters
 
 
+# How many times the density stage halves epsilon before handing over to the
+# geometric cut. Four was the old figure and it is kept: past that, epsilon is
+# smaller than the spacing of any real clash set and the extra passes only cost
+# time. What changed is that running out no longer means giving up.
+_SPLIT_ATTEMPTS = 4
+
+# Below this, epsilon stops being a radius and starts being float noise.
+_MIN_EPS = 1e-4
+
+
 def _collapse_by_pair(clashes: list[Clash]) -> list[list[Clash]]:
     grouped: dict[tuple[str, str], list[Clash]] = defaultdict(list)
     for clash in clashes:
@@ -165,38 +182,102 @@ def _collapse_by_pair(clashes: list[Clash]) -> list[list[Clash]]:
 
 
 def _split_oversized(cluster: ClashCluster, max_span: float) -> list[ClashCluster]:
-    """Re-cluster a sprawling group and guarantee the configured maximum.
+    """Break a sprawling group up until every part fits. Guaranteed.
 
-    A DBSCAN chain may remain connected however small the radius is.  The old
-    early return for a single part therefore returned the very oversized
-    cluster this function was called to split.  After bounded re-clustering,
-    a deterministic longest-axis partition provides the hard guarantee.
+    The previous version asked DBSCAN for a tighter re-clustering and returned
+    early when it produced a single part — ``or len(parts) == 1`` — without
+    checking whether that part was still too long. A chain of near-touching
+    points is one connected component at *any* epsilon above the spacing, so
+    the early return fired every time: 21 clashes 0.35 m apart stayed a single
+    7 m cluster under a 6 m maximum.
+
+    So the split now has two stages and a proof of termination:
+
+    1. **Density.** Halve epsilon a bounded number of times. This is the stage
+       that finds real structure — two congested zones joined by a thin thread
+       separate here, and they separate along the gap rather than along an
+       arbitrary plane.
+
+    2. **Geometry.** When density cannot help — and for a uniform chain it
+       never can — cut recursively through the longest axis. Each cut strictly
+       reduces the size of the set, and a set of one has span zero, so the
+       recursion cannot fail to end.
+
+    The one case that is not a defect: a group whose points are all identical
+    has span zero and never reaches here, and a single clash spans zero however
+    large its geometry — ``span`` measures separation between clash points, not
+    the size of the elements.
     """
+    if cluster.span <= max_span or len(cluster.clashes) <= 1:
+        return [_as_cluster(cluster.clashes)]
+
+    # ---------------------------------------------------------- by density
     eps = max_span / 3.0
-    for _ in range(8):
+    for _ in range(_SPLIT_ATTEMPTS):
         parts = _dbscan(cluster.clashes, eps, 1)
-        if len(parts) > 1 and all(ClashCluster(clashes=p).span <= max_span for p in parts):
-            return [ClashCluster(clashes=p, kind="cluster" if len(p) > 1 else "pair") for p in parts]
+        if len(parts) > 1 and max(len(p) for p in parts) > 1:
+            # Structure, not dust.
+            #
+            # The second condition is what stops this stage from answering
+            # every question with singletons. Halving epsilon past the spacing
+            # of a uniform chain shatters it completely — 21 clashes 0.35 m
+            # apart go from one part to twenty-one in a single step — and
+            # twenty-one "problems" 0.35 m apart is a worse report than the 7 m
+            # cluster it replaced. When density finds only dust, the geometric
+            # cut below produces two halves of 3.5 m, which is what a
+            # coordinator can actually stand in front of.
+            found: list[ClashCluster] = []
+            for part in parts:
+                found.extend(_split_oversized(_as_cluster(part), max_span))
+            return found
         eps /= 2.0
+        if eps <= _MIN_EPS:
+            break
 
-    remaining = sorted(cluster.clashes, key=lambda clash: (clash.point, clash.guid))
-    result: list[ClashCluster] = []
-    while remaining:
-        seed = remaining.pop(0)
-        part = [seed]
-        index = 0
-        while index < len(remaining):
-            candidate = remaining[index]
-            proposed = ClashCluster(clashes=part + [candidate])
-            if proposed.span <= max_span:
-                part.append(candidate)
-                remaining.pop(index)
-            else:
-                index += 1
-        result.append(ClashCluster(clashes=part, kind="cluster" if len(part) > 1 else "pair"))
+    # --------------------------------------------------------- by geometry
+    return _hard_split(cluster.clashes, max_span)
 
-    assert all(part.span <= max_span for part in result)
-    return result
+
+def _hard_split(clashes: list[Clash], max_span: float) -> list[ClashCluster]:
+    """Cut through the longest axis until every part fits.
+
+    Deterministic by construction: the axis is chosen by extent with a fixed
+    tie-break, the ordering is by coordinate then GUID, and the cut point is
+    the median index. Nothing here reads the order the caller happened to
+    supply, so shuffling the input cannot change the partition.
+    """
+    if len(clashes) <= 1:
+        return [_as_cluster(clashes)]
+
+    cluster = _as_cluster(clashes)
+    if cluster.span <= max_span:
+        return [cluster]
+
+    lo, hi = cluster.bounds
+    extents = [hi[i] - lo[i] for i in range(3)]
+    # `max` with an explicit key rather than `.index(max(...))`: ties then
+    # resolve to the lowest axis every time instead of to whichever equal
+    # value the list happened to reach first.
+    axis = max(range(3), key=lambda i: (extents[i], -i))
+
+    # Coordinate first, GUID second. The GUID is what makes two clashes at
+    # exactly the same coordinate order stably rather than by arrival.
+    ordered = sorted(clashes, key=lambda c: (c.point[axis], c.guid))
+    cut = len(ordered) // 2
+
+    left, right = ordered[:cut], ordered[cut:]
+    if not left or not right:
+        # Unreachable for len >= 2, but a split that produced an empty side
+        # would recurse forever, so it is refused rather than trusted.
+        return [_as_cluster([c]) for c in ordered]
+
+    return _hard_split(left, max_span) + _hard_split(right, max_span)
+
+
+def _as_cluster(clashes: list[Clash]) -> ClashCluster:
+    return ClashCluster(
+        clashes=list(clashes), kind="cluster" if len(clashes) > 1 else "pair"
+    )
 
 
 # --------------------------------------------------------------- DBSCAN

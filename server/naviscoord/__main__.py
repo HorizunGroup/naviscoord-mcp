@@ -66,7 +66,7 @@ def _render(result, profile: Profile, limit: int) -> str:
             add("")
             add(f"  [{cause.confidence:.0%} confianza] {cause.title}")
             add(f"    {cause.detail}")
-            add(f"    Afecta {len(cause.affected_clusters)} problemas / {cause.clash_count} cruces")
+            add(f"    Afecta {cause.affected_count} problemas / {cause.clash_count} cruces")
             add(f"    → {cause.suggested_action}")
         add("")
 

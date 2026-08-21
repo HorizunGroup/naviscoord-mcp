@@ -1,0 +1,159 @@
+{
+  "schema": "naviscoord.runtime-lock/1",
+  "generated_utc": "2026-08-20T02:23:20Z",
+  "python_requires": ">=3.10",
+  "_note": "Versiones exactas que el launcher aprovisiona. Los rangos p\u00fablicos viven en server/pyproject.toml y son otra cosa. Regenerar solo con scripts/refresh_runtime_lock.py; las pruebas lo leen como fixture.",
+  "_hashes": "Vac\u00edos en esta generaci\u00f3n: obtenerlos exige consultar el \u00edndice, que es una operaci\u00f3n de red deliberada y separada. install_arguments omite --require-hashes mientras falten, y verify() lo reporta.",
+  "packages": [
+    {
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "hashes": []
+    },
+    {
+      "name": "anyio",
+      "version": "4.14.1",
+      "hashes": []
+    },
+    {
+      "name": "attrs",
+      "version": "26.1.0",
+      "hashes": []
+    },
+    {
+      "name": "certifi",
+      "version": "2026.2.25",
+      "hashes": []
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.4.6",
+      "hashes": []
+    },
+    {
+      "name": "click",
+      "version": "8.3.1",
+      "hashes": []
+    },
+    {
+      "name": "colorama",
+      "version": "0.4.6",
+      "hashes": []
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0",
+      "hashes": []
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9",
+      "hashes": []
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1",
+      "hashes": []
+    },
+    {
+      "name": "httpx-sse",
+      "version": "0.4.3",
+      "hashes": []
+    },
+    {
+      "name": "idna",
+      "version": "3.11",
+      "hashes": []
+    },
+    {
+      "name": "jsonschema",
+      "version": "4.26.0",
+      "hashes": []
+    },
+    {
+      "name": "jsonschema-specifications",
+      "version": "2025.9.1",
+      "hashes": []
+    },
+    {
+      "name": "mcp",
+      "version": "1.28.1",
+      "hashes": []
+    },
+    {
+      "name": "pillow",
+      "version": "12.3.0",
+      "hashes": []
+    },
+    {
+      "name": "pydantic",
+      "version": "2.13.4",
+      "hashes": []
+    },
+    {
+      "name": "pydantic-settings",
+      "version": "2.14.2",
+      "hashes": []
+    },
+    {
+      "name": "pyjwt",
+      "version": "2.13.0",
+      "hashes": []
+    },
+    {
+      "name": "python-dotenv",
+      "version": "1.2.2",
+      "hashes": []
+    },
+    {
+      "name": "python-multipart",
+      "version": "0.0.32",
+      "hashes": []
+    },
+    {
+      "name": "pywin32",
+      "version": "312",
+      "hashes": []
+    },
+    {
+      "name": "referencing",
+      "version": "0.37.0",
+      "hashes": []
+    },
+    {
+      "name": "reportlab",
+      "version": "5.0.0",
+      "hashes": []
+    },
+    {
+      "name": "rpds-py",
+      "version": "2026.6.3",
+      "hashes": []
+    },
+    {
+      "name": "sse-starlette",
+      "version": "3.4.5",
+      "hashes": []
+    },
+    {
+      "name": "starlette",
+      "version": "1.3.1",
+      "hashes": []
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "hashes": []
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.15.0",
+      "hashes": []
+    },
+    {
+      "name": "uvicorn",
+      "version": "0.49.0",
+      "hashes": []
+    }
+  ]
+}

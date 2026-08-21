@@ -66,7 +66,7 @@
         "Sprinklers", "Fire Protection", "Fire Alarm Devices",
         "Rociadores", "Dispositivos de alarma de incendios", "Protección contra incendios"
       ],
-      "file_patterns": ["rci", "fire", "fp", "incendio", "sprink"]
+      "file_patterns": ["rci", "fire", "fp", "frsp", "incendio", "sprink", "rociador"]
     },
     "ELE": {
       "label": "Eléctrica",
@@ -249,12 +249,21 @@
   "noise_filter": {
     "_comment": "Lo que se descarta antes de agrupar. Cada descarte queda contado y auditable: nada desaparece en silencio.",
     "min_penetration_m": 0.002,
-    "drop_same_element": true,
     "drop_same_system_fittings": true,
     "drop_statuses": ["Approved", "Resolved"],
     "insulation_categories": ["Duct Insulations", "Pipe Insulations", "Duct Linings"],
     "insulation_penetration_tolerance_m": 0.03,
-    "pass_through_categories": ["Shafts", "Openings", "Generic Models", "Sleeves", "Pasamuros"],
+    "pass_through_categories": ["Shafts", "Openings", "Sleeves", "Pasamuros"],
+    "_comment_ambiguous_pass_through": "Categorias que no acreditan nada por si solas. 'Generic Models' es el cajon de sastre de Revit: cabe un pasamuros y cabe un panel de fachada. Contarla como prueba de pasamuros vacio un test entero de 700 cruces como 'pasa por un pasamuros por diseno', y le dio a la causa raiz mas grande su evidencia de que el proyecto si modela pasos. Los 255 'pasos' eran fachada: 246 se llamaban 'Grey RAL 9006'. Siguen siendo elegibles, pero tienen que ganarselo por el nombre.",
+    "ambiguous_pass_through_categories": ["Generic Models", "Modelos genericos", "Modelo generico"],
+    "designed_adjacency": {
+      "_comment": "Dos anfitriones de ESPECIALIDADES DISTINTAS que se tocan. El tabique de drywall muere contra el muro de concreto y la ventana se apoya en su vano: en el modelo se solapan el espesor de un acabado y en obra no se hace nada. El corte es por PROFUNDIDAD, no por el par de categorias, porque es lo unico que separa la convencion del defecto: en el modelo de referencia el test tabique-contra-muro tenia mediana 12.4 mm (una placa de yeso) y maximo 51, mientras los mismos tabiques contra vigas llegaban a 247 mm — eso ya es un tabique atravesando estructura y se queda. 25 mm = doble placa, un espesor de acabado. Subelo en obra de acabados gruesos.",
+      "max_contact_m": 0.025,
+      "categories": ["Walls", "Floors", "Ceilings", "Roofs", "Doors", "Windows", "Curtain Panels", "Curtain Wall Mullions", "Muros", "Losas", "Cielos", "Puertas", "Ventanas"],
+      "_comment_ambiguas": "El cajon de sastre no dice que es un elemento, pero su nombre si. En el modelo de referencia 605 persianas de ventana (WIN_BLIND_7'8\"_BLACKOUT) estaban bajo Generic Models rozando su propio muro de concreto 6 mm de mediana: sobrevivian a todas las reglas y eran el 45% de los cruces conservados y el 69% del trabajo asignado a arquitectura. Se les deja identificarse por el nombre, con la red de que igual tienen que ser dos anfitriones de especialidades distintas tocandose por menos de 25 mm.",
+      "ambiguous_categories": ["Generic Models", "Modelos genericos", "Modelo generico"],
+      "name_keywords": ["blind", "persiana", "shade", "louver", "louvre", "parasol", "screen", "curtain", "cortina", "panel de fachada", "cladding"]
+    },
     "pass_through_keywords": ["sleeve", "pasamuro", "pasatubo", "opening", "shaft", "ducto tecnico", "buiton"],
 
     "flush_mounted": {
@@ -300,6 +309,8 @@
       "clearance": 0.06
     },
     "penetration_ratio_cap": 1.0,
+    "_comment_profundo": "Profundidad a partir de la cual una interferencia contra un lado inmovil no puede quedar por debajo de la banda ALTO, se repita o no. Seis de los componentes premian la repeticion y la compania, asi que un cruce solitario no podia subir: contra un modelo real quedaban 26 problemas en la banda baja con mas de 150 mm dentro de estructura, uno de ellos con 194. Un tabique 19 cm dentro de una viga no es menor por ocurrir una sola vez.",
+    "deep_interference_m": 0.15,
     "cluster_size_saturation": 25,
     "congestion_radius_m": 2.5,
     "congestion_saturation": 4,
@@ -329,6 +340,8 @@
     },
     "repeated_typology": {
       "_comment": "El mismo cruce repitiéndose piso por piso se corrige una vez en el tipo, no N veces en el modelo.",
+      "_comment_familias": "Cuantas familias distintas admite antes de dejar de llamarlo un detalle tipo y pasar a llamarlo franja conflictiva. Un repetido limpio corre dos, una por lado. Es una guarda, no un arreglo: contra un modelo real las 28 causas dieron entre una y tres familias, asi que el detector tenia razon. Existe para que la afirmacion sea comprobable en vez de creida, y distinct_families viaja en la evidencia.",
+      "max_families": 4,
       "min_levels": 3,
       "xy_tolerance_m": 0.5
     },

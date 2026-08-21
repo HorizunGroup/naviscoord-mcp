@@ -42,6 +42,8 @@ except ImportError:  # pragma: no cover - exercised by whichever mcp is present
     # whichever they already have.
     from mcp.server.fastmcp import FastMCP as _Server
 
+from mcp.types import ToolAnnotations
+
 from . import __version__
 from .analysis import analyze, hotspots
 from .bridge import BridgeError, CapabilityError
@@ -49,8 +51,16 @@ from .interop import write_handoff
 from .model import ClashExport
 from .paths import PathPolicyError
 from .paths import policy as output_policy
-from .profile import MAX_PROFILE_BYTES, Profile, canonical_text
+from .profile import ProfileRejected, MAX_PROFILE_BYTES, Profile, canonical_text
+from .profilesync import SyncVerdict, ensure_profile_in_sync
+from .arguments import (
+    CLASH_STATUSES,
+    PRIORITIES,
+    ArgumentError,
+    Arguments,
+)
 from .sessions import TargetError
+from .setmap import map_sets, plan_pairs
 from .sessions import summary as session_summary
 from .state import SessionState, StateError
 
@@ -94,6 +104,62 @@ def _protocol_server(server: Any) -> Any:
     return server
 
 
+# ---------------------------------------------------------------- anotaciones
+#
+# Cada tool declara su `title` y su hint de la especificación MCP. No es
+# metadato decorativo: el cliente decide con ellos qué ejecuta sin preguntar y
+# qué exige confirmación del usuario, y el directorio de Anthropic rechaza el
+# servidor cuyas tools no los traigan. Un hint optimista es peor que ninguno,
+# porque un `readOnlyHint` sobre una tool que escribe es una escritura que
+# nadie confirmó.
+#
+# La regla, escrita para que la próxima tool no se anote a ojo:
+#
+#   · read-only   — no toca el documento, ni el disco, ni el estado de sesión.
+#   · additive    — crea algo nuevo o cambia configuración de la sesión, pero
+#                   nunca reemplaza ni borra lo que ya existía.
+#   · destructive — puede reemplazar, borrar o sobrescribir: resultados de
+#                   clash, apariencia del modelo, un archivo con `overwrite`,
+#                   o la sesión de Navisworks entera.
+#
+# `idempotentHint` solo donde el complemento lo garantiza de verdad: las tools
+# que aceptan `idempotency_key` y las que fijan un valor de sesión. Repetir un
+# render o una corrida de clash no es idempotente y no se declara como tal.
+#
+# `openWorldHint=False` en todas: el dominio de estas tools es el documento
+# abierto en ESTA máquina. Nada de lo que hacen sale a internet.
+#
+# El título viaja dentro de ToolAnnotations y no en el parámetro `title=` de
+# `mcp.tool()`, que solo existe en las versiones nuevas de la librería: el
+# rango soportado arranca en mcp 1.14 (ver pyproject) y allí ese kwarg
+# todavía no está — pasarlo rompería la instalación más vieja que decimos
+# soportar.
+
+
+def _read_only(title: str) -> ToolAnnotations:
+    return ToolAnnotations(title=title, readOnlyHint=True, openWorldHint=False)
+
+
+def _additive(title: str, *, idempotent: bool = False) -> ToolAnnotations:
+    return ToolAnnotations(
+        title=title,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=idempotent,
+        openWorldHint=False,
+    )
+
+
+def _destructive(title: str, *, idempotent: bool = False) -> ToolAnnotations:
+    return ToolAnnotations(
+        title=title,
+        readOnlyHint=False,
+        destructiveHint=True,
+        idempotentHint=idempotent,
+        openWorldHint=False,
+    )
+
+
 mcp = _server_with_version()
 
 # When this process imported its code. Anything on disk newer than this is a
@@ -131,6 +197,11 @@ def _guard(fn):
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
+        except ArgumentError as exc:
+            # Structured, per parameter, and raised before anything was
+            # called: nothing reached the bridge and nothing touched the
+            # in-memory state, which is what the caller most needs to know.
+            return exc.to_json()
         except CapabilityError as exc:
             # Before BridgeError, which it subclasses. The fix is different
             # from every other failure — update the addin, not retry — and a
@@ -153,7 +224,7 @@ def _guard(fn):
 # ---------------------------------------------------------------- session
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Estado del puente y del documento"))
 @_guard
 def navis_health() -> dict[str, Any]:
     """Estado del puente y del documento abierto en Navisworks.
@@ -215,7 +286,7 @@ def _staleness() -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=_additive("Cargar un perfil de proyecto", idempotent=True))
 @_guard
 def navis_load_profile(path: str = "") -> dict[str, Any]:
     """Carga un perfil de proyecto (pesos, tolerancias, reglas de disciplina).
@@ -237,7 +308,20 @@ def navis_load_profile(path: str = "") -> dict[str, Any]:
     resultado calculado con el anterior no está «algo desactualizado» —
     responde a otra pregunta.
     """
-    profile = Profile.load(path or None)
+    try:
+        profile = Profile.load(path or None)
+    except ProfileRejected as refused:
+        # The refusal now happens while reading rather than after: a truncated
+        # file, a NaN, a duplicated key or an oversized body never becomes a
+        # Profile object at all. Reported in the same shape as a validation
+        # failure so callers keep one way to read "not installed".
+        return {
+            "ok": False,
+            "installed": False,
+            "error": refused.code,
+            "problems": [refused.detail],
+            "path": path or "",
+        }
     problems = profile.validate()
     schema = str(profile.raw.get("$schema") or profile.raw.get("schema") or "")
     notes: list[str] = []
@@ -355,7 +439,7 @@ def _load_note(changed: bool, addin: dict[str, Any]) -> str:
     return "Perfil recargado sin cambios de criterio, y sincronizado con el complemento."
 
 
-@mcp.tool()
+@mcp.tool(annotations=_additive("Restablecer el perfil por defecto", idempotent=True))
 @_guard
 def navis_reset_profile() -> dict[str, Any]:
     """Devuelve el complemento a su perfil por defecto (el del disco).
@@ -377,7 +461,7 @@ def navis_reset_profile() -> dict[str, Any]:
 # --------------------------------------------------------------- targeting
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Instancias de Navisworks activas"))
 @_guard
 def navis_sessions() -> dict[str, Any]:
     """Instancias de Navisworks activas, con su documento y su target_id.
@@ -391,7 +475,7 @@ def navis_sessions() -> dict[str, Any]:
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_additive("Fijar la instancia destino", idempotent=True))
 @_guard
 def navis_target(target_id: str) -> dict[str, Any]:
     """Fija a qué instancia de Navisworks van las llamadas siguientes.
@@ -412,7 +496,7 @@ def navis_target(target_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Instancia seleccionada ahora"))
 @_guard
 def navis_current_target() -> dict[str, Any]:
     """Qué instancia y qué documento están seleccionados ahora mismo."""
@@ -430,7 +514,7 @@ def navis_current_target() -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Capacidades del complemento"))
 @_guard
 def navis_capabilities(refresh: bool = False) -> dict[str, Any]:
     """Qué sabe hacer el complemento instalado, antes de pedírselo.
@@ -456,7 +540,7 @@ def navis_capabilities(refresh: bool = False) -> dict[str, Any]:
 # ------------------------------------------------------------ preparation
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Censo de la federación"))
 @_guard
 def navis_model_census() -> dict[str, Any]:
     """Inventario de la federación: archivos, tamaños e histograma de categorías.
@@ -468,7 +552,7 @@ def navis_model_census() -> dict[str, Any]:
     return STATE.bridge.census()
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Propuesta de disciplinas"))
 @_guard
 def navis_propose_disciplines() -> dict[str, Any]:
     """Propone el mapeo archivo → disciplina, para revisión humana.
@@ -519,7 +603,7 @@ def navis_propose_disciplines() -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=_additive("Fijar el mapeo de disciplinas", idempotent=True))
 @_guard
 def navis_set_disciplines(mapping: dict[str, str]) -> dict[str, Any]:
     """Fija el mapeo archivo → disciplina, sobrescribiendo la heurística.
@@ -609,7 +693,7 @@ def _envelope(
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Conjuntos de búsqueda del documento"))
 @_guard
 def navis_list_search_sets() -> dict[str, Any]:
     """Lista los conjuntos de selección del documento. No modifica nada.
@@ -629,12 +713,8 @@ def navis_list_search_sets() -> dict[str, Any]:
     sets: list[dict[str, Any]] = []
     for entry in raw.get("sets") or []:
         is_group = bool(entry.get("is_group"))
-        declared_kind = str(entry.get("kind") or "")
         count = entry.get("item_count")
-        explicit = declared_kind == "explicit" or (
-            not declared_kind and not is_group and isinstance(count, (int, float))
-            and not isinstance(count, bool) and int(count) > 0
-        )
+        explicit = not is_group and isinstance(count, (int, float)) and count > 0
         sets.append(
             {
                 "name": entry.get("name") or "",
@@ -663,7 +743,7 @@ def navis_list_search_sets() -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Crear carpetas de search sets", idempotent=True))
 @_guard
 def navis_build_search_sets(
     folders: list[dict[str, Any]],
@@ -696,7 +776,6 @@ def navis_build_search_sets(
             "detail": "Se requiere 'folders' con al menos una carpeta de disciplina.",
         }
 
-    STATE.bridge.require("sets/build_search")
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
     payload = {
         "folders": folders,
@@ -728,32 +807,12 @@ def navis_build_search_sets(
     ]
 
     verified_rows = raw.get("verified_in_document") or []
-    expected_by_folder = {
-        str(row.get("folder") or ""): {
-            str(item.get("name") or "")
-            for item in (row.get("sets") or [])
-            if isinstance(item, dict) and item.get("name")
-        }
-        for row in planned if isinstance(row, dict)
-    }
-    actual_by_folder = {
-        str(row.get("folder") or ""): {
-            str(name) for name in (row.get("children") or []) if name
-        }
-        for row in verified_rows if isinstance(row, dict) and row.get("exists")
-    }
     verified = sum(
-        len(expected & actual_by_folder.get(folder, set()))
-        for folder, expected in expected_by_folder.items()
+        len(row.get("children") or []) for row in verified_rows if row.get("exists")
     )
     present = {row.get("folder") for row in verified_rows if row.get("exists")}
     missing = [
         row.get("folder") for row in verified_rows if not row.get("exists")
-    ]
-    missing_sets = [
-        f"{folder}/{name}"
-        for folder, expected in expected_by_folder.items()
-        for name in sorted(expected - actual_by_folder.get(folder, set()))
     ]
 
     created = sorted(present - before)
@@ -763,13 +822,12 @@ def navis_build_search_sets(
         raw,
         dry_run=dry_run,
         requested=requested,
-        applied=0 if dry_run else int(raw.get("applied", verified)),
+        applied=0 if dry_run else requested,
         verified=verified,
-        failed=len(errors) + len(missing) + len(missing_sets),
+        failed=len(errors) + len(missing),
         fingerprint=fingerprint,
         idempotency_key=idempotency_key,
-        errors=(errors + [f"{f}: no quedó en el documento" for f in missing]
-                + [f"{name}: el set solicitado no quedó en el documento" for name in missing_sets]),
+        errors=errors + [f"{f}: no quedó en el documento" for f in missing],
         created=created if not dry_run else [],
         updated=touched if (not dry_run and replace_existing) else [],
         unchanged=touched if (not dry_run and not replace_existing) else [],
@@ -782,7 +840,7 @@ def navis_build_search_sets(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Aplicar reglas de triaje a los cruces", idempotent=True))
 @_guard
 def navis_apply_clash_rules(
     pairs: list[dict[str, Any]],
@@ -821,7 +879,6 @@ def navis_apply_clash_rules(
             "detail": f"Los pares nombran conjuntos ausentes de sets_index: {', '.join(unknown)}.",
         }
 
-    STATE.bridge.require("clash/apply_rules")
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
     payload = {
         "pairs": pairs,
@@ -883,7 +940,7 @@ def navis_apply_clash_rules(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Paso 4 — aplicar las reglas del perfil", idempotent=True))
 @_guard
 def navis_run_rules_workflow(
     run_async: bool = True,
@@ -926,13 +983,10 @@ def navis_run_rules_workflow(
     return out
 
 
-@mcp.tool()
+@mcp.tool(annotations=_additive("Crear conjuntos por disciplina"))
 @_guard
 def navis_build_sets(
-    dry_run: bool = True,
-    prefix: str = "NC",
-    expected_document_fingerprint: str = "",
-    idempotency_key: str = "",
+    dry_run: bool = True, prefix: str = "NC", expected_document_fingerprint: str = ""
 ) -> dict[str, Any]:
     """Crea un conjunto de selección explícito por disciplina.
 
@@ -957,52 +1011,78 @@ def navis_build_sets(
                 "source_files": sources,
             }
         )
-    payload = STATE.bridge.build_sets(
-        disciplines, prefix, dry_run, fingerprint=fingerprint,
-        idempotency_key=idempotency_key,
-    )
+    payload = STATE.bridge.build_sets(disciplines, prefix, dry_run)
     payload.setdefault("document_fingerprint_before", fingerprint)
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Generar la matriz de clash"))
 @_guard
 def navis_build_clash_matrix(
-    dry_run: bool = True, prefix: str = "NC", replace_existing: bool = False,
-    expected_document_fingerprint: str = "", idempotency_key: str = "",
+    dry_run: bool = True,
+    prefix: str = "NC",
+    replace_existing: bool = False,
+    expected_document_fingerprint: str = "",
 ) -> dict[str, Any]:
     """Genera la suite completa de tests disciplina contra disciplina.
 
     Cada par recibe el tipo (Hard / HardConservative / Clearance) y la
     tolerancia que dicta el perfil — estructura contra instalaciones a 1 mm,
-    holguras de mantenimiento a 50 mm. Requiere navis_build_sets antes.
+    holguras de mantenimiento a 50 mm.
+
+    Usa los conjuntos de selección que YA tiene el documento, emparejando el
+    nombre de cada uno con una especialidad. Un equipo que coordina ya los
+    tiene hechos, y construir otros paralelos obliga a recorrer el modelo
+    entero — que es lento y no hace falta. Si existe un conjunto `<prefijo> -
+    <CÓDIGO>` se usa ese y se ignoran los del proyecto para esa especialidad.
+
+    Los pares que no se pueden armar salen en `skipped` con el motivo: que no
+    se comparara estructura contra sanitaria y que no haya sanitaria en el
+    modelo son cosas distintas.
     """
     pairs = STATE.profile.section("clash_matrix").get("pairs", [])
     if not pairs:
         return {"error": "El perfil no define clash_matrix.pairs."}
+
+    # The guard first, before anything reaches the bridge. Reading the sets
+    # is harmless in itself, but doing it ahead of the target check means an
+    # ambiguous session has already been touched by the time the refusal
+    # arrives — and "it only read" is the argument that erodes the rule.
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
-    payload = STATE.bridge.build_matrix(
-        pairs, prefix, dry_run, replace_existing,
-        fingerprint=fingerprint, idempotency_key=idempotency_key,
-    )
+
+    names = [
+        str(entry.get("name", ""))
+        for entry in (STATE.bridge.list_sets().get("sets") or [])
+        if isinstance(entry, dict) and not entry.get("is_group")
+    ]
+    mapping = map_sets(names, STATE.profile, prefix)
+    buildable, skipped = plan_pairs(pairs, mapping)
+    if not buildable:
+        return {
+            "error": "Ningún par se puede armar con los conjuntos del documento.",
+            "sets_seen": names,
+            "set_mapping": mapping.to_json(),
+            "skipped": skipped,
+        }
+
+    payload = STATE.bridge.build_matrix(buildable, prefix, dry_run, replace_existing)
     payload.setdefault("document_fingerprint_before", fingerprint)
+    payload["set_mapping"] = mapping.to_json()
+    payload["skipped_pairs"] = skipped
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Tests de clash del documento"))
 @_guard
 def navis_list_tests() -> dict[str, Any]:
     """Lista los tests de clash del documento con su estado y conteo."""
     return STATE.bridge.list_tests()
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Correr tests de clash"))
 @_guard
 def navis_run_tests(
-    tests: list[str] | None = None,
-    dry_run: bool = True,
-    expected_document_fingerprint: str = "",
-    idempotency_key: str = "",
+    tests: list[str] | None = None, expected_document_fingerprint: str = ""
 ) -> dict[str, Any]:
     """Corre los tests indicados, o todos si no se especifica ninguno.
 
@@ -1014,22 +1094,7 @@ def navis_run_tests(
     dry_run: no hay ensayo posible de una corrida de clash.
     """
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
-    if dry_run:
-        available = STATE.bridge.list_tests().get("tests") or []
-        wanted = {name.lower() for name in (tests or [])}
-        selected = [
-            row.get("name") for row in available
-            if not wanted or str(row.get("name") or "").lower() in wanted
-        ]
-        return {
-            "operation": "clash/run", "status": "planned", "dry_run": True,
-            "document_fingerprint_before": fingerprint,
-            "requested": len(selected), "applied": 0, "verified": 0,
-            "tests": selected,
-        }
-    payload = STATE.bridge.run_tests(
-        tests, fingerprint=fingerprint, idempotency_key=idempotency_key,
-    )
+    payload = STATE.bridge.run_tests(tests)
     payload.setdefault("document_fingerprint_before", fingerprint)
     return payload
 
@@ -1037,7 +1102,7 @@ def navis_run_tests(
 # ------------------------------------------------------------- analysis
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Analizar las interferencias"))
 @_guard
 def navis_analyze(tests: list[str] | None = None, limit: int = 0, top: int = 15) -> dict[str, Any]:
     """Extrae los cruces de Navisworks y corre el motor de coordinación.
@@ -1050,6 +1115,14 @@ def navis_analyze(tests: list[str] | None = None, limit: int = 0, top: int = 15)
     mejor puntuados y las causas raíz. El resultado completo queda en memoria
     para navis_issue_detail, navis_apply_groups y el resto.
     """
+    args = Arguments()
+    names = args.id_list("tests", tests or [], max_items=500)
+    # limit=0 significa "todos"; negativo NO significa "todos menos uno", que
+    # es lo que haría un slice de Python en silencio.
+    cap = args.count("limit", limit, minimum=0, maximum=1000000)
+    head = args.count("top", top, minimum=1, maximum=1000)
+    args.raise_if_invalid()
+
     properties = list(STATE.profile.section("interop").get("harvest_properties", []))
     # The discovered key has to travel with the export or the tagger cannot
     # see it. Assumed lists never include a property nobody knew existed.
@@ -1084,7 +1157,7 @@ def navis_analyze(tests: list[str] | None = None, limit: int = 0, top: int = 15)
     return summary
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Detalle de un problema"))
 @_guard
 def navis_issue_detail(issue_id: str) -> dict[str, Any]:
     """Detalle completo de un problema: elementos, propiedades, por qué puntúa así."""
@@ -1118,7 +1191,7 @@ def navis_issue_detail(issue_id: str) -> dict[str, Any]:
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Causas raíz"))
 @_guard
 def navis_root_causes(limit: int = 10) -> dict[str, Any]:
     """Patrones sistémicos detectados: cota errada, pasos faltantes, detalle repetido, zonas saturadas.
@@ -1130,6 +1203,10 @@ def navis_root_causes(limit: int = 10) -> dict[str, Any]:
     genera decenas de causas del mismo tipo —48 sistemas mal trazados, 19
     zonas saturadas— y volcarlas todas son 61 KB de texto casi repetido.
     """
+    args = Arguments()
+    limit = args.count("limit", limit, minimum=1, maximum=10000)
+    args.raise_if_invalid()
+
     result = STATE.require_fresh_result()
     causes = sorted(result.root_causes, key=lambda c: (-c.clash_count, -c.confidence))
 
@@ -1138,7 +1215,7 @@ def navis_root_causes(limit: int = 10) -> dict[str, Any]:
         entry = by_kind.setdefault(cause.kind, {"causes": 0, "clashes": 0, "issues": 0})
         entry["causes"] += 1
         entry["clashes"] += cause.clash_count
-        entry["issues"] += len(cause.affected_clusters)
+        entry["issues"] += cause.affected_count
 
     return {
         "total_causes": len(causes),
@@ -1153,21 +1230,36 @@ def navis_root_causes(limit: int = 10) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Zonas de mayor severidad"))
 @_guard
 def navis_hotspots(cell_size_m: float = 5.0, limit: int = 10) -> dict[str, Any]:
-    """Zonas del modelo con más severidad acumulada, para recorrerlas en orden."""
+    """Zonas del modelo con más severidad acumulada, para recorrerlas en orden.
+
+    `cell_size_m` discretiza el modelo en una rejilla, así que es un divisor:
+    con cero, el motor falla varias llamadas más adentro y el error no señala
+    al argumento que lo causó.
+    """
+    args = Arguments()
+    cell = args.positive("cell_size_m", cell_size_m, maximum=10000.0)
+    count = args.count("limit", limit, minimum=1, maximum=10000)
+    args.raise_if_invalid()
+
     result = STATE.require_fresh_result()
-    return {"hotspots": hotspots(result, cell_size=cell_size_m, limit=limit)}
+    return {"hotspots": hotspots(result, cell_size=cell, limit=count)}
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Decisiones a tomar"))
 @_guard
 def navis_decisions(limit: int = 20, priority: str = "") -> dict[str, Any]:
     """Los problemas a atacar, ya sin los que otra decisión cierra.
 
     Filtra opcionalmente por prioridad: critical, high, medium, low.
     """
+    args = Arguments()
+    limit = args.count("limit", limit, minimum=1, maximum=10000)
+    priority = args.choice("priority", priority, PRIORITIES)
+    args.raise_if_invalid()
+
     result = STATE.require_fresh_result()
     issues = result.decisions
     if priority:
@@ -1181,7 +1273,7 @@ def navis_decisions(limit: int = 20, priority: str = "") -> dict[str, Any]:
 # ------------------------------------------------------------ entregables
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Estructura real del modelo"))
 @_guard
 def navis_discover(sample: int = 30000) -> dict[str, Any]:
     """Lee cómo está estructurado ESTE modelo, sin asumir nada.
@@ -1199,6 +1291,12 @@ def navis_discover(sample: int = 30000) -> dict[str, Any]:
     Después infiere el rol de cada grupo por su CONTENIDO, no por su nombre:
     un grupo lleno de ductos es ventilación se llame como se llame.
     """
+    args = Arguments()
+    # Un muestreo desproporcionado no es más preciso: es una espera larga con
+    # el hilo de Navisworks ocupado.
+    sample = args.count("sample", sample, minimum=1, maximum=2000000)
+    args.raise_if_invalid()
+
     from .discovery import discover, infer_group_roles
 
     # Any grouping already in memory belongs to whatever was open last. If
@@ -1262,7 +1360,7 @@ def navis_discover(sample: int = 30000) -> dict[str, Any]:
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Informe redactado"))
 @_guard
 def navis_narrative_report() -> dict[str, Any]:
     """El informe redactado: qué le pasa a este modelo, en prosa.
@@ -1291,7 +1389,7 @@ def navis_narrative_report() -> dict[str, Any]:
     return narrative.to_json()
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Plan de trabajo"))
 @_guard
 def navis_work_plan(limit: int = 15, session_max: int = 25) -> dict[str, Any]:
     """El plan de trabajo: las decisiones agrupadas en paquetes ejecutables.
@@ -1307,6 +1405,13 @@ def navis_work_plan(limit: int = 15, session_max: int = 25) -> dict[str, Any]:
     queda contado como cola, no listado, porque fingir que es accionable
     infla el plan de vuelta a mil filas.
     """
+    args = Arguments()
+    limit = args.count("limit", limit, minimum=1, maximum=10000)
+    # session_max divide el plan en sesiones; cero produciría paquetes vacíos
+    # o una división por cero según el camino.
+    session_max = args.count("session_max", session_max, minimum=1, maximum=1000)
+    args.raise_if_invalid()
+
     from .plan import build_plan
 
     result = STATE.require_fresh_result()
@@ -1316,7 +1421,7 @@ def navis_work_plan(limit: int = 15, session_max: int = 25) -> dict[str, Any]:
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Matriz de coordinación"))
 @_guard
 def navis_coordination_matrix() -> dict[str, Any]:
     """Matriz de coordinación: decisiones abiertas por cruce de disciplinas.
@@ -1384,7 +1489,7 @@ def _caption(issue) -> str:
     return "  ·  ".join(p for p in parts if p)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Informe PDF de coordinación"))
 @_guard
 def navis_pdf_report(
     path: str,
@@ -1479,7 +1584,7 @@ def navis_pdf_report(
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Imagen de una interferencia"))
 @_guard
 def navis_clash_image(
     issue_id: str = "",
@@ -1592,7 +1697,7 @@ def navis_clash_image(
 # ------------------------------------------------------------ write-back
 
 
-@mcp.tool()
+@mcp.tool(annotations=_additive("Escribir los problemas como grupos de clash", idempotent=True))
 @_guard
 def navis_apply_groups(
     limit: int = 30,
@@ -1628,7 +1733,7 @@ def navis_apply_groups(
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Marcar el estado de los cruces", idempotent=True))
 @_guard
 def navis_set_status(
     issue_ids: list[str],
@@ -1650,7 +1755,7 @@ def navis_set_status(
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_additive("Guardar un viewpoint por problema", idempotent=True))
 @_guard
 def navis_save_viewpoints(
     limit: int = 20,
@@ -1678,14 +1783,9 @@ def navis_save_viewpoints(
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Colorear el modelo por prioridad"))
 @_guard
-def navis_color_by_priority(
-    limit: int = 50,
-    dry_run: bool = True,
-    expected_document_fingerprint: str = "",
-    idempotency_key: str = "",
-) -> dict[str, Any]:
+def navis_color_by_priority(limit: int = 50, expected_document_fingerprint: str = "") -> dict[str, Any]:
     """Colorea en el modelo los elementos de los problemas más graves.
 
     Rojo crítico, naranja alto, amarillo medio. Colorea el lado que DEBE
@@ -1697,6 +1797,10 @@ def navis_color_by_priority(
     estructura inamovible en rojo mientras el tubo que había que correr
     quedaba gris.
     """
+    args = Arguments()
+    limit = args.count("limit", limit, minimum=1, maximum=100000)
+    args.raise_if_invalid()
+
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
     result = STATE.require_fresh_result()
     palette = {"critical": (220, 30, 30), "high": (240, 130, 20), "medium": (230, 210, 40)}
@@ -1716,29 +1820,12 @@ def navis_color_by_priority(
             unresolved.append(issue.issue_id)
         buckets.setdefault(issue.priority, []).extend(movable)
 
-    planned = []
+    applied = []
     for priority, paths in buckets.items():
         unique = sorted(set(paths))
         if not unique:
             continue
-        planned.append((priority, unique))
-
-    if dry_run:
-        return {
-            "operation": "appearance/color", "status": "planned", "dry_run": True,
-            "document_fingerprint_before": fingerprint,
-            "requested": sum(len(paths) for _, paths in planned),
-            "applied": 0, "verified": 0,
-            "by_priority": {priority: len(paths) for priority, paths in planned},
-        }
-
-    applied = [
-        {priority: STATE.bridge.color(
-            paths, palette[priority], fingerprint=fingerprint,
-            idempotency_key=f"{idempotency_key}:{priority}" if idempotency_key else "",
-        )}
-        for priority, paths in planned
-    ]
+        applied.append({priority: STATE.bridge.color(unique, palette[priority])})
 
     payload: dict[str, Any] = {
         "applied": applied,
@@ -1772,26 +1859,19 @@ def navis_color_by_priority(
     return payload
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Quitar los colores aplicados"))
 @_guard
-def navis_reset_appearance(
-    path_ids: list[str] | None = None,
-    dry_run: bool = True,
-    expected_document_fingerprint: str = "",
-    idempotency_key: str = "",
-) -> dict[str, Any]:
-    """Quita todos los colores aplicados sobre el modelo."""
+def navis_reset_appearance(expected_document_fingerprint: str = "") -> dict[str, Any]:
+    """Quita todos los colores aplicados sobre el modelo.
+
+    Sin argumentos borra TODO override de apariencia del documento, incluidos
+    los que puso una persona a mano. Es la mutación más fácil de disparar por
+    error y la única sin dry_run, así que la huella se comprueba igual.
+    """
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
-    if dry_run:
-        return {
-            "operation": "appearance/reset", "status": "planned", "dry_run": True,
-            "document_fingerprint_before": fingerprint,
-            "scope": "selección" if path_ids else "todo el modelo",
-            "requested": len(set(path_ids or [])), "applied": 0, "verified": 0,
-        }
-    return STATE.bridge.reset_appearance(
-        path_ids, fingerprint=fingerprint, idempotency_key=idempotency_key,
-    )
+    payload = STATE.bridge.reset_appearance()
+    payload.setdefault("document_fingerprint_before", fingerprint)
+    return payload
 
 
 # --------------------------------------------------------- flujo operativo
@@ -1806,12 +1886,50 @@ def _workflow(step: str, run_async: bool, payload: dict[str, Any]) -> dict[str, 
     """
     route = f"workflow/{step}"
     STATE.bridge.require(route)
+
+    # Checked BEFORE running, not mentioned afterwards. After a Navisworks
+    # restart the add-in comes back on its own on-disk default while this
+    # server still holds the profile the operator loaded, and the step would
+    # apply one set of criteria while the report cited the other's checksum.
+    if step in _PROFILE_STEPS:
+        verdict = _ensure_profile_sync()
+        if not verdict.may_run:
+            return verdict.to_json()
+
     if run_async:
         return STATE.bridge.submit_job(route, payload)
-    return STATE.bridge.call(route, payload)
+    result = STATE.bridge.call(route, payload)
+    if step in _PROFILE_STEPS and verdict.resynced:
+        result["profile_resynced"] = verdict.to_json()
+    return result
 
 
-@mcp.tool()
+# The ribbon steps whose behaviour is decided by the profile. Audit and run
+# read the document and the tests; they have no criteria to disagree about.
+_PROFILE_STEPS = frozenset({"configure", "rules", "group_levels"})
+
+
+def _ensure_profile_sync() -> SyncVerdict:
+    """Reconciles the two ends before a profile-dependent step."""
+    return ensure_profile_in_sync(
+        server_checksum=STATE.profile_id,
+        canonical=canonical_text(STATE.profile.raw),
+        read_addin=STATE.bridge.profile_info,
+        push=STATE.bridge.profile_load,
+        active_job=_active_job_id,
+    )
+
+
+def _active_job_id() -> str:
+    """The add-in's in-flight job, or empty. Never raises."""
+    try:
+        jobs = STATE.bridge.call("job/list")
+    except Exception:  # noqa: BLE001 - an unreachable bridge is not a job
+        return ""
+    return str(jobs.get("active") or "")
+
+
+@mcp.tool(annotations=_read_only("Paso 0 — auditar los modelos anexados"))
 @_guard
 def navis_audit_models(run_async: bool = False) -> dict[str, Any]:
     """Paso 0 — audita los modelos anexados ANTES de coordinar.
@@ -1827,7 +1945,7 @@ def navis_audit_models(run_async: bool = False) -> dict[str, Any]:
     return _workflow("audit_models", run_async, {})
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Paso 1 — configurar sets y matriz", idempotent=True))
 @_guard
 def navis_configure(
     run_async: bool = False,
@@ -1853,7 +1971,7 @@ def navis_configure(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Paso 2 — correr todos los tests", idempotent=True))
 @_guard
 def navis_run(
     run_async: bool = True,
@@ -1880,7 +1998,7 @@ def navis_run(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Paso 3 — agrupar los resultados por nivel", idempotent=True))
 @_guard
 def navis_group_levels(
     run_async: bool = True,
@@ -1909,7 +2027,7 @@ def navis_group_levels(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Perfil vigente"))
 @_guard
 def navis_profile_info() -> dict[str, Any]:
     """Qué perfil usará de verdad el complemento en el próximo paso.
@@ -1935,7 +2053,7 @@ def navis_profile_info() -> dict[str, Any]:
 # ----------------------------------------------------------------- trabajos
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Estado de un trabajo"))
 @_guard
 def navis_job_status(job_id: str) -> dict[str, Any]:
     """Estado, fase y avance de un trabajo en curso.
@@ -1949,14 +2067,14 @@ def navis_job_status(job_id: str) -> dict[str, Any]:
     return STATE.bridge.job_status(job_id)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Trabajos de la sesión"))
 @_guard
 def navis_jobs() -> dict[str, Any]:
     """Los trabajos de esta sesión del puente, con el que esté activo."""
     return STATE.bridge.job_list()
 
 
-@mcp.tool()
+@mcp.tool(annotations=_additive("Cancelar un trabajo en curso", idempotent=True))
 @_guard
 def navis_cancel_job(job_id: str) -> dict[str, Any]:
     """Cancela un trabajo, cuando cancelarlo es realmente seguro.
@@ -1974,12 +2092,12 @@ def navis_cancel_job(job_id: str) -> dict[str, Any]:
 # ----------------------------------------------------------------- guardado
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Guardar el documento"))
 @_guard
 def navis_save(
     expected_document_fingerprint: str = "",
     run_async: bool = False,
-    dry_run: bool = True,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Guarda el documento abierto en su propia ruta.
 
@@ -2000,14 +2118,14 @@ def navis_save(
     return STATE.bridge.save(fingerprint, dry_run=dry_run)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Guardar una copia del documento"))
 @_guard
 def navis_save_as(
     path: str,
     expected_document_fingerprint: str = "",
     overwrite: bool = False,
     run_async: bool = False,
-    dry_run: bool = True,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Guarda una copia del documento en otra ruta (.nwf o .nwd).
 
@@ -2034,7 +2152,7 @@ def navis_save_as(
     return STATE.bridge.save_as(path, fingerprint, overwrite=overwrite, dry_run=dry_run)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Cerrar el documento"))
 @_guard
 def navis_close_document(
     disposition: str,
@@ -2060,7 +2178,7 @@ def navis_close_document(
     return result
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Cerrar el documento y salir de Navisworks"))
 @_guard
 def navis_exit(
     disposition: str,
@@ -2095,31 +2213,34 @@ def navis_exit(
     return result
 
 
-@mcp.tool()
+@mcp.tool(annotations=_additive("Seleccionar un problema en Navisworks", idempotent=True))
 @_guard
-def navis_select_issue(
-    issue_id: str,
-    dry_run: bool = True,
-    expected_document_fingerprint: str = "",
-) -> dict[str, Any]:
-    """Selecciona en Navisworks los elementos de un problema."""
-    fingerprint = STATE.require_mutable(expected_document_fingerprint)
+def navis_select_issue(issue_id: str, expected_document_fingerprint: str = "") -> dict[str, Any]:
+    """Selecciona en Navisworks los elementos de un problema.
+
+    Cambiar la selección es una mutación del documento, aunque no se guarde: se
+    exige la huella y se valida el target, como cualquier otra. Antes no lo
+    hacía, así que después de cerrar Torre A y abrir Torre B esta herramienta
+    mandaba los path id del análisis anterior y el complemento seleccionaba lo
+    que esos identificadores nombraran en el modelo nuevo.
+    """
+    # Freshness first: `issue` now goes through `require_fresh_result`, so un
+    # análisis de otro documento se descarta en vez de resolverse.
     issue = STATE.issue(issue_id)
-    path_ids = issue.elements_a + issue.elements_b
-    if dry_run:
-        return {
-            "operation": "selection/set", "status": "planned", "dry_run": True,
-            "document_fingerprint_before": fingerprint,
-            "requested": len(set(path_ids)), "applied": 0, "verified": 0,
-            "issue_id": issue.issue_id,
-        }
-    return STATE.bridge.select(path_ids, fingerprint=fingerprint)
+
+    # And the fingerprint the add-in will check, resolved against the live
+    # document rather than taken on faith from the caller.
+    fingerprint = STATE.require_mutable(expected_document_fingerprint)
+    return STATE.bridge.select(
+        issue.elements_a + issue.elements_b,
+        expected_document_fingerprint=fingerprint,
+    )
 
 
 # ------------------------------------------------------------- ecosystem
 
 
-@mcp.tool()
+@mcp.tool(annotations=_additive("Generar los artefactos de traspaso"))
 @_guard
 def navis_handoff(directory: str) -> dict[str, Any]:
     """Genera los artefactos que consumen las herramientas que consumen la coordinación.
@@ -2144,7 +2265,7 @@ def navis_handoff(directory: str) -> dict[str, Any]:
     return write_handoff(Path(directory), result, STATE.export, STATE.profile)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_destructive("Guardar el export crudo en disco"))
 @_guard
 def navis_save_export(path: str, overwrite: bool = False) -> dict[str, Any]:
     """Guarda el export crudo en disco, para reanalizar sin abrir Navisworks.
@@ -2172,7 +2293,7 @@ def navis_save_export(path: str, overwrite: bool = False) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=_read_only("Política de salida"))
 @_guard
 def navis_output_policy() -> dict[str, Any]:
     """Dónde puede escribir este servidor, y cómo autorizar otra carpeta.

@@ -39,6 +39,23 @@ class FilterResult:
     # still available to anything reasoning about why a clash exists.
     penetration_elements: dict[str, ElementRef] = field(default_factory=dict)
 
+    # Per-test tallies, because a share of the whole run hides exactly the
+    # failure worth catching. A rule that eats one entire test is a serious
+    # fault — that pair of trades now reports clean on no evidence — but if
+    # the run holds thirteen tests it is a seventh of the total and stays
+    # under any global threshold. Measured per test, it is 100% and screams.
+    input_by_test: Counter[str] = field(default_factory=Counter)
+    kept_by_test: Counter[str] = field(default_factory=Counter)
+    reasons_by_test: dict[str, Counter[str]] = field(default_factory=dict)
+
+    # Surviving clashes whose side is a catch-all category. Naming the trade
+    # from the clash test tells us WHO owns the element; it says nothing about
+    # WHAT the element is, and every noise rule keys off what it is. These
+    # cannot be judged either way — not filtered, because a duct filed under
+    # Generic Models grazing a wall is a real hit; not reasoned about, because
+    # nothing knows it is a facade panel. So they are declared.
+    unnameable_kept: Counter[str] = field(default_factory=Counter)
+
     @property
     def kept_count(self) -> int:
         return len(self.kept)
@@ -88,6 +105,69 @@ class FilterResult:
                 out.append(
                     f"El filtro descartó {share:.0%} de los cruces por '{reason}'. {detail}".strip()
                 )
+
+        unnameable = sum(self.unnameable_kept.values())
+        if unnameable and self.kept_count:
+            share = unnameable / self.kept_count
+            if share >= 0.10:
+                worst = ", ".join(
+                    f"«{name}»" for name, _ in self.unnameable_kept.most_common(3)
+                )
+                out.append(
+                    f"{share:.0%} de los cruces que quedan ({unnameable}) tienen un lado "
+                    f"en una categoría genérica ({worst}). Saber de qué especialidad es "
+                    "no basta: las reglas de ruido deciden por lo que el elemento ES, y "
+                    "de estos no se sabe. Ni se filtran ni se pueden explicar bien; "
+                    "nombrarlos en el modelo de origen es lo que los vuelve legibles."
+                )
+
+        out.extend(self._per_test_warnings())
+        return out
+
+    def _per_test_warnings(self) -> list[str]:
+        """Tests the filter emptied, reported one by one.
+
+        A test reduced to nothing is never good news. Either the pair really
+        has no interference — in which case the coordinator wants to know
+        that explicitly, not infer it from an absence — or a rule is eating
+        work, and the report is about to claim that pair of trades is clear
+        on the strength of zero surviving evidence.
+        """
+        out: list[str] = []
+        for test, total in sorted(
+            self.input_by_test.items(), key=lambda kv: kv[1], reverse=True
+        ):
+            if total <= 0:
+                continue
+            kept = self.kept_by_test.get(test, 0)
+            share_dropped = (total - kept) / total
+            # Emptied entirely, or so nearly that what survives cannot speak
+            # for the pair. Only the exact-zero case used to warn, so a test
+            # that went from 477 clashes to 30 — 94% of a structure-versus-
+            # architecture comparison gone — passed without a word.
+            if share_dropped < 0.90:
+                continue
+            reasons = self.reasons_by_test.get(test, Counter())
+            if len(reasons) == 1:
+                reason, _ = reasons.most_common(1)[0]
+                cause = f"todos por '{reason}'"
+            else:
+                spread = ", ".join(f"{r} ({c})" for r, c in reasons.most_common(3))
+                cause = f"por {spread}"
+            if kept:
+                out.append(
+                    f"El test «{test}» aportó {total} cruces y el filtro descartó "
+                    f"{share_dropped:.0%} ({cause}); quedan {kept}. Con tan poco "
+                    "sobreviviente, ese par de especialidades se está juzgando por "
+                    "un resto: confirma la regla antes de leer el conteo."
+                )
+            else:
+                out.append(
+                    f"El test «{test}» aportó {total} cruces y el filtro los descartó "
+                    f"todos ({cause}). Ese par de especialidades queda reportado como "
+                    "limpio sin una sola evidencia que lo sostenga: confirma la regla "
+                    "antes de darlo por resuelto."
+                )
         return out
 
     def to_json(self) -> dict[str, object]:
@@ -96,6 +176,18 @@ class FilterResult:
             "kept": self.kept_count,
             "dropped": self.dropped_count,
             "dropped_by_reason": dict(self.reasons.most_common()),
+            # Named explicitly rather than left to be inferred from a zero.
+            "emptied_tests": [
+                {
+                    "test": test,
+                    "input": count,
+                    "dropped_by_reason": dict(
+                        self.reasons_by_test.get(test, Counter()).most_common()
+                    ),
+                }
+                for test, count in self.input_by_test.most_common()
+                if count > 0 and self.kept_by_test.get(test, 0) == 0
+            ],
             "explanation": {
                 "same_element": "las dos caras del cruce son el mismo elemento o el mismo padre",
                 "below_tolerance": "penetración por debajo del umbral: contacto, no interferencia",
@@ -106,6 +198,7 @@ class FilterResult:
                 "designed_embedment": "dispositivo empotrado en su anfitrión por diseño (tomacorriente en muro, luminaria en cielo)",
                 "architectural_hosting": "puerta o ventana dentro de su propio muro: el traslape ES el vano",
                 "architectural_self_overlap": "arquitectura contra sí misma (muro que sube a losa contra cielo colgado): calidad de modelo, no coordinación",
+                "designed_adjacency": "dos elementos anfitriones de especialidades distintas que se tocan por el espesor de un acabado: el tabique muere contra el muro, no lo atraviesa",
                 "previously_approved": "huella registrada como aprobada en una corrida anterior",
             },
         }
@@ -119,6 +212,20 @@ class NoiseFilter:
         self._insulation = {c.strip().lower() for c in spec_categories}
         self._pass_categories = {
             c.strip().lower() for c in profile.noise_param("pass_through_categories", [])
+        }
+        # Categories that describe nothing. "Generic Models" is where Revit
+        # puts whatever did not fit anywhere else: a sleeve, yes, but equally
+        # a facade panel or an in-place stair. Treated as proof of a sleeve it
+        # produced a textbook false positive — on the model this was found
+        # on, all 255 "sleeves" were cladding, 246 of them named after a paint
+        # colour — which both emptied a 700-clash test as "passes through a
+        # sleeve by design" and supplied the headline root cause its evidence
+        # that the project models sleeves properly elsewhere.
+        #
+        # They stay eligible, but they have to earn it on the name.
+        self._ambiguous_pass_categories = {
+            c.strip().lower()
+            for c in profile.noise_param("ambiguous_pass_through_categories", [])
         }
         self._pass_keywords = [
             k.strip().lower() for k in profile.noise_param("pass_through_keywords", []) if k.strip()
@@ -137,20 +244,36 @@ class NoiseFilter:
                 if self.is_penetration_element(side):
                     result.penetration_elements.setdefault(side.path_id, side)
 
+            test = clash.test or "(sin test)"
+            result.input_by_test[test] += 1
+
             reason = self._reject_reason(clash)
             if reason:
                 result.dropped.append((clash, reason))
                 result.reasons[reason] += 1
+                result.reasons_by_test.setdefault(test, Counter())[reason] += 1
             else:
                 result.kept.append(clash)
+                result.kept_by_test[test] += 1
+                for side in (clash.a, clash.b):
+                    category = side.category.strip()
+                    if category.lower() in self._ambiguous_pass_categories:
+                        result.unnameable_kept[category] += 1
+                        break
         return result
 
     def is_penetration_element(self, element: ElementRef) -> bool:
-        """A sleeve, shaft or modelled opening — by category or by name."""
-        if element.category.strip().lower() in self._pass_categories:
+        """A sleeve, shaft or modelled opening.
+
+        A purpose-built category (Shafts, Sleeves, Openings) is enough on its
+        own — nobody files a facade panel under Sleeves. A catch-all category
+        is not, and must be corroborated by the element's name.
+        """
+        category = element.category.strip().lower()
+        ambiguous = category in self._ambiguous_pass_categories
+        if category in self._pass_categories and not ambiguous:
             return True
-        haystack = f"{element.display_name} {element.parent_name}".lower()
-        return any(keyword in haystack for keyword in self._pass_keywords)
+        return any(keyword in _identity(element) for keyword in self._pass_keywords)
 
     # ------------------------------------------------------------- rules
 
@@ -173,6 +296,9 @@ class NoiseFilter:
         architectural = self._architectural_by_design(clash)
         if architectural:
             return architectural
+
+        if self._is_designed_adjacency(clash):
+            return "designed_adjacency"
 
         if self._is_insulation_graze(clash):
             return "insulation_graze"
@@ -273,22 +399,117 @@ class NoiseFilter:
         cat_a = clash.a.category.strip().lower()
         cat_b = clash.b.category.strip().lower()
 
+        same_trade = clash.a.discipline == clash.b.discipline
+
         for child, host in ((cat_a, cat_b), (cat_b, cat_a)):
             if child in hosted and host in hosted_in:
-                return "architectural_hosting"
+                # Only when the wall really IS the host. A window inside a
+                # STRUCTURAL wall is not hosted there — it is an opening
+                # through structure, which needs a lintel and, in a shear
+                # wall, may not be permissible at all. Skipping the trade
+                # check discarded exactly those: on the reference model, 28
+                # windows between 100 and 170 mm into structure, silently.
+                if same_trade:
+                    return "architectural_hosting"
+                break
 
-        if (
-            cat_a in host_to_host
-            and cat_b in host_to_host
-            and clash.a.discipline == clash.b.discipline
-        ):
+        if cat_a in host_to_host and cat_b in host_to_host and same_trade:
             return "architectural_self_overlap"
 
         return None
 
+    def _is_designed_adjacency(self, clash: Clash) -> bool:
+        """Two host elements of different trades meeting, as buildings do.
+
+        A gypsum partition dies against a concrete wall; a window frame sits
+        in its opening. In the model they overlap by the thickness of the
+        finish, and no one on site acts on it.
+
+        Bounded by DEPTH, not by the pair of categories, because depth is the
+        only thing that separates the convention from the defect. On the
+        reference model the partition-to-wall test had a median of 12.4 mm —
+        one sheet of plasterboard — and a maximum of 51 mm, while the same
+        partitions against beams reached 247 mm. The first is how the wall
+        was drawn; the second means the partition runs through structure.
+        The default cut is 25 mm: two layers of board, one finish build-up.
+
+        Bounding-box volume overlap looks like the natural measure here and
+        is useless: two plates meeting at an angle share a sliver of volume
+        whether they touch or interpenetrate deeply.
+        """
+        spec = self.profile.noise_param("designed_adjacency", {}) or {}
+        if not spec:
+            return False
+        if clash.a.discipline == clash.b.discipline:
+            return False  # same trade is already covered above
+
+        if not self._is_building_surface(clash.a, spec):
+            return False
+        if not self._is_building_surface(clash.b, spec):
+            return False
+
+        limit = float(spec.get("max_contact_m", 0.025))
+        return clash.penetration_m <= limit
+
+    def _is_building_surface(self, element: ElementRef, spec: dict) -> bool:
+        """A wall, floor, ceiling, window — anything a room is made of.
+
+        Category answers this for almost everything. It cannot answer it for
+        the catch-all, and the catch-all is where a surprising amount of a
+        building lives: on the reference model, 605 window blinds filed under
+        `Generic Models` grazed the concrete wall they hang on by a median of
+        6 mm, survived every rule, and became 45% of the surviving clashes and
+        69% of the work assigned to architecture.
+
+        So a catch-all element may identify itself by name. That is the same
+        concession the pass-through rule makes, and it is safe for the same
+        reason plus one: this rule already requires both sides to be surfaces,
+        the two to belong to different trades, and the contact to be within a
+        finish thickness. A duct that talks its way in still has to be grazing
+        a wall by under 25 mm to be dropped.
+        """
+        category = element.category.strip().lower()
+        if category in {c.strip().lower() for c in spec.get("categories", [])}:
+            return True
+        ambiguous = {c.strip().lower() for c in spec.get("ambiguous_categories", [])}
+        if category not in ambiguous:
+            return False
+        keywords = [k.strip().lower() for k in spec.get("name_keywords", []) if k.strip()]
+        if not keywords:
+            return False
+        return any(keyword in _identity(element) for keyword in keywords)
+
     def _is_designed_pass_through(self, clash: Clash) -> bool:
         """A sleeve or shaft doing its job is the opposite of a problem."""
         return any(self.is_penetration_element(side) for side in (clash.a, clash.b))
+
+
+def _identity(element: ElementRef) -> str:
+    """Every name the model gives an element, lowercased, in one string.
+
+    Which of them carries the answer depends on how the export was harvested,
+    and that is not something a rule should have to know. The same window
+    blind came back as `Type: WIN_BLIND_7'8"_BLACKOUT` through one property
+    set and `Type: Solid` through another — Navisworks has more than one
+    property tab offering a field called Type, and which one wins depends on
+    the harvest order. `Family` and the parent's name held the blind's real
+    identity in both.
+
+    So all of them are searched. A rule that reads only `Type` works on one
+    export and silently stops working on the next, which is the failure this
+    whole class of bug keeps taking.
+    """
+    return " ".join(
+        part
+        for part in (
+            element.prop("Type", "Tipo"),
+            element.prop("Family", "Familia"),
+            element.prop("Family and Type"),
+            element.display_name,
+            element.parent_name,
+        )
+        if part
+    ).lower()
 
 
 def _is_fitting(element: ElementRef) -> bool:

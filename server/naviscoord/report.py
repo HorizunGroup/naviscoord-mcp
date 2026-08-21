@@ -377,7 +377,7 @@ def _cover(result, profile: Profile, document_title: str, st) -> list[Any]:
                 Paragraph(
                     bold(cause.title)
                     + f" — {cause.confidence:.0%} de confianza, "
-                    + f"{cause.clash_count} cruces en {len(cause.affected_clusters)} problemas.",
+                    + f"{cause.clash_count} cruces en {cause.affected_count} problemas.",
                     st["body"],
                 )
             )

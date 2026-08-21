@@ -76,7 +76,8 @@ namespace NavisCoord
                 TargetId = Json.Str(payload, "target_id"),
                 IdempotencyKey = idempotencyKey,
                 FingerprintBefore = DocumentContext.Fingerprint(doc),
-                Requested = 1
+                Requested = 1,
+                VerificationSource = VerificationSources.FilesystemAndDocumentReread
             };
 
             var expected = Json.Str(payload, "expected_document_fingerprint");
@@ -109,7 +110,7 @@ namespace NavisCoord
 
             var capability = DocumentContext.SaveCapability(doc);
             var overwrite = Json.Bool(payload, "overwrite", false);
-            var dryRun = Json.Bool(payload, "dry_run", true);
+            var dryRun = Json.Bool(payload, "dry_run", false);
             result.DryRun = dryRun;
 
             string destination;
@@ -160,8 +161,7 @@ namespace NavisCoord
 
             result.Detail["path"] = destination;
             result.Detail["capability"] = capability;
-            var wasModified = DocumentContext.SafeIsModified(doc);
-            result.Detail["was_modified"] = wasModified;
+            result.Detail["was_modified"] = DocumentContext.SafeIsModified(doc);
 
             if (dryRun)
             {
@@ -195,6 +195,8 @@ namespace NavisCoord
             }
 
             var beforeStamp = SnapshotFile(destination);
+            var pathBefore = SafePath(doc);
+            var modifiedBefore = DocumentContext.SafeIsModified(doc);
             bool written;
             try
             {
@@ -205,33 +207,61 @@ namespace NavisCoord
             }
             catch (Exception ex)
             {
-                result.Fail("Navisworks rechazó el guardado: " + ex.Message);
+                // Thrown AFTER the write may have begun. The file could be
+                // complete, half-written or untouched and none of those is
+                // distinguishable from here, so the verdict says indeterminate
+                // rather than picking one.
+                var interrupted = SaveVerification.Judge(new SaveVerification.Observation
+                {
+                    IsSaveAs = saveAs,
+                    Destination = destination,
+                    Interrupted = ex.Message
+                });
+                result.Detail["verification"] = interrupted.ToJson();
+                foreach (var problem in interrupted.Problems) result.Fail(problem);
                 result.FingerprintAfter = DocumentContext.Fingerprint(doc);
                 return result.ToJson();
             }
 
-            result.Applied = written ? 1 : 0;
-            if (!written)
-            {
-                result.Fail(
-                    "Navisworks devolvió falso al guardar en «" + destination + "». " +
-                    "Suele ser un archivo abierto por otro proceso o una carpeta de solo lectura.");
-            }
-
             job?.Phasing("verificando", "Releyendo el archivo escrito");
-            var verification = Verify(doc, destination, beforeStamp, wasModified, saveAs, written);
-            result.Detail["verification"] = verification;
+            var afterStamp = SnapshotFile(destination);
+            var verdict = SaveVerification.Judge(new SaveVerification.Observation
+            {
+                IsSaveAs = saveAs,
+                PathBefore = pathBefore,
+                ModifiedBefore = modifiedBefore,
+                FingerprintBefore = result.FingerprintBefore,
+                PathAfter = SafePath(doc),
+                ModifiedAfter = DocumentContext.SafeIsModified(doc),
+                FingerprintAfter = DocumentContext.Fingerprint(doc),
+                Destination = destination,
+                ExistedBefore = beforeStamp.Existed,
+                LengthBefore = beforeStamp.Length,
+                LastWriteBefore = beforeStamp.LastWriteUtc,
+                ExistsAfter = afterStamp.Existed,
+                LengthAfter = afterStamp.Length,
+                LastWriteAfter = afterStamp.LastWriteUtc,
+                CallSucceeded = written
+            });
+
+            result.Detail["verification"] = verdict.ToJson();
+            result.Detail["save_kind"] = verdict.Kind;
+            result.Detail["document_points_at_destination"] = verdict.PointsAtDestination;
+            result.Detail["document_path_before"] = pathBefore;
+            result.Detail["document_path_after"] = SafePath(doc);
+            result.Detail["modified_before"] = modifiedBefore;
+            result.Detail["modified_after"] = DocumentContext.SafeIsModified(doc);
             result.FingerprintAfter = DocumentContext.Fingerprint(doc);
 
-            var confirmed = verification.TryGetValue("ok", out var flag) && flag is bool b && b;
-            result.Verified = confirmed ? 1 : 0;
-            if (!confirmed)
-            {
-                foreach (var problem in (List<object>)verification["problems"])
-                {
-                    result.Fail(Convert.ToString(problem, CultureInfo.InvariantCulture));
-                }
-            }
+            // `applied` and `verified` are different questions, and the split
+            // is the whole point: a document that was already clean verifies
+            // without applying anything. The old rule read an unchanged
+            // timestamp as a silent no-op and failed the run, which sent
+            // operators looking for a problem that did not exist.
+            result.Applied = verdict.Applied;
+            result.Verified = verdict.Verified;
+            foreach (var note in verdict.Notes) result.Warn(note);
+            foreach (var problem in verdict.Problems) result.Fail(problem);
 
             if (result.Verified == 1 && DocumentContext.IsCloudHosted(doc))
             {
@@ -274,82 +304,12 @@ namespace NavisCoord
             }
         }
 
-        /// <summary>
-        /// Proof that a file was written, gathered from disk and the document.
-        /// </summary>
-        private static Dictionary<string, object> Verify(
-            Document doc, string destination, FileSnapshot before,
-            bool wasModifiedBefore, bool saveAs, bool written)
+        /// <summary>The document's path, or empty. Never throws.</summary>
+        private static string SafePath(Document doc)
         {
-            var problems = new List<object>();
-            var payload = new Dictionary<string, object>
-            {
-                ["source"] = "filesystem_and_document_reread",
-                ["path"] = destination
-            };
-
-            FileInfo info = null;
-            try { info = new FileInfo(destination); } catch { /* reported below */ }
-
-            var exists = info != null && info.Exists;
-            payload["exists"] = exists;
-            if (!exists)
-            {
-                problems.Add("El archivo no existe en «" + destination + "» después de guardar.");
-            }
-            else
-            {
-                payload["bytes"] = (double)info.Length;
-                payload["last_write_utc"] = info.LastWriteTimeUtc.ToString("o", CultureInfo.InvariantCulture);
-                payload["format"] = info.Extension;
-
-                if (info.Length == 0)
-                {
-                    problems.Add("El archivo quedó vacío (0 bytes).");
-                }
-                var changed = !before.Existed || info.LastWriteTimeUtc > before.LastWriteUtc ||
-                              info.Length != before.Length;
-                payload["filesystem_changed"] = changed;
-                payload["was_modified_before"] = wasModifiedBefore;
-                // Same timestamp and size is not a failure by itself: a save
-                // of an already-clean document is a legitimate no-op, and
-                // filesystems can have coarse timestamps. The authoritative
-                // evidence is TrySaveFile + a valid file + the document's
-                // post-save state. Keep the ambiguity visible for diagnosis.
-                if (!changed && wasModifiedBefore)
-                {
-                    payload["filesystem_change_indeterminate"] = true;
-                }
-            }
-
-            string current = string.Empty;
-            try { current = doc.FileName ?? string.Empty; } catch { /* reported below */ }
-            payload["document_path_after"] = current;
-            var pointsAtDestination = string.Equals(
-                Path.GetFullPath(current.Length == 0 ? "." : current),
-                Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase);
-            payload["document_points_at_destination"] = pointsAtDestination;
-            if (!pointsAtDestination)
-            {
-                problems.Add((saveAs ? "Save As" : "Save") +
-                    " devolvió, pero el documento activo no apunta a la ruta verificada.");
-            }
-
-            payload["navisworks_reported_written"] = written;
-            if (!written) problems.Add("Navisworks no confirmó la escritura.");
-
-            var modified = DocumentContext.SafeIsModified(doc);
-            payload["modified_after"] = modified;
-            if (modified)
-            {
-                problems.Add(
-                    "Navisworks sigue marcando el documento como modificado después de guardar: " +
-                    "el guardado no cubrió todos los cambios.");
-            }
-
-            payload["problems"] = problems;
-            payload["ok"] = problems.Count == 0;
-            return payload;
+            try { return doc.FileName ?? string.Empty; }
+            catch (Exception) { return string.Empty; }
         }
+
     }
 }

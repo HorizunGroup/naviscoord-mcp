@@ -26,7 +26,20 @@ namespace NavisCoord
             "Element Id", "Id", "Type", "Family", "Family and Type",
             "System Name", "System Type", "System Classification",
             "Level", "Reference Level", "Workset", "Size", "Diameter",
-            "Category", "Material", "Comments", "Mark"
+            "Category", "Material", "Comments", "Mark",
+            // The storey, on most Revit exports. `Level` is a Revit parameter
+            // and plenty of elements do not carry it; Navisworks puts the
+            // storey in `Layer`, which is what the engine reads first.
+            //
+            // It was not in this list, so it arrived only when a caller
+            // happened to ask for it by name through the profile's harvest
+            // list. An export taken any other way lost the storey on every
+            // element — and the loss is silent, because the level module
+            // falls back to guessing the storey from the median height of
+            // the clashes. Measured: 86% of crossings assigned that way,
+            // with a third of them landing on the wrong floor, under a level
+            // map that looked entirely plausible.
+            "Layer"
         };
 
         // ------------------------------------------------------------ units
@@ -198,9 +211,34 @@ namespace NavisCoord
             var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             if (item == null) return result;
 
+            // Eight, not four.
+            //
+            // A Revit tree runs File > Level > Category > Family > Type >
+            // Instance > Geometry, so an item that clashed can sit five or
+            // six hops below the ancestors that describe it. Measured on a
+            // real federation: at four, six sides came back with no
+            // properties at all and 453 lost their `Mark`.
+            //
+            // It is also why the same window blind arrived as `Type: Solid`
+            // from one document and `Type: WIN_BLIND_...` from another —
+            // nearest ancestor wins, and how deep the geometry node sits
+            // depends on the tree. First-wins stays: the nearest node is the
+            // most specific. Only the ceiling moves.
+            //
+            // The storey was the reason this was looked at, and the effect
+            // there is larger than the property counts suggest. On a document
+            // whose `Layer` had gone missing entirely, the share of crossings
+            // that had to be placed by guessing their height fell from 57% to
+            // 8% — not because `Layer` came back, it is still absent, but
+            // because `Level` and `Reference Level` live on ancestors that
+            // four hops never reached either.
+            //
+            // What it cannot do is invent what the tree does not hold. When a
+            // document really has no storey anywhere, the honest place for
+            // that is the warning the level map prints, not a deeper walk.
             var current = item;
             var depth = 0;
-            while (current != null && depth < 4)
+            while (current != null && depth < 8)
             {
                 foreach (var category in current.PropertyCategories)
                 {

@@ -18,156 +18,21 @@ codes its elements differently changes the profile, not this file.
 from __future__ import annotations
 
 import csv
-import hashlib
-import io
 import json
-import os
-import uuid
 from collections.abc import Iterable
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .analysis.pipeline import AnalysisResult
 from .model import ClashExport, ElementRef, Issue
-from .paths import OutputPolicy, PathPolicyError
+from .paths import OutputPolicy
 from .paths import policy as default_policy
-from .profile import Profile
+from .profile import Profile, checksum_of
+from .bundle import Artifact, publish
 from .safety import sanitize_csv, sanitize_row
 
 HANDOFF_SCHEMA = "naviscoord.coordination/1"
-_BUNDLE_LOCK = ".naviscoord-handoff.lock"
-_BUNDLE_MANIFEST = "handoff_manifest.json"
-
-
-@contextmanager
-def _handoff_lock(directory: Path) -> Iterator[None]:
-    """Hold a process-wide filesystem lock for one handoff directory."""
-    lock_path = directory / _BUNDLE_LOCK
-    handle = lock_path.open("a+b")
-    try:
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() == 0:
-            handle.write(b"\0")
-            handle.flush()
-        handle.seek(0)
-        try:
-            if os.name == "nt":
-                import msvcrt
-
-                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-            else:  # pragma: no cover - exercised by Linux CI
-                import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
-            raise PathPolicyError(
-                f"Ya se está publicando otro handoff en «{directory}»."
-            ) from exc
-        try:
-            yield
-        finally:
-            handle.seek(0)
-            if os.name == "nt":
-                import msvcrt
-
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:  # pragma: no cover - exercised by Linux CI
-                import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-    finally:
-        handle.close()
-
-
-def _csv_bytes(rows: list[dict[str, Any]]) -> bytes:
-    """Render one table completely before any bundle file is published."""
-    if not rows:
-        return b"\xef\xbb\xbf"
-    text = io.StringIO(newline="")
-    fieldnames = list(rows[0].keys())
-    writer = csv.writer(text)
-    writer.writerow([sanitize_csv(name) for name in fieldnames])
-    for row in rows:
-        safe = sanitize_row(row)
-        writer.writerow([safe.get(name, "") for name in fieldnames])
-    return b"\xef\xbb\xbf" + text.getvalue().encode("utf-8")
-
-
-def _replace_file(source: Path, destination: Path) -> None:
-    """Patch seam for failure-injection tests; both paths share a volume."""
-    os.replace(source, destination)
-
-
-def _publish_bundle(
-    directory: Path,
-    artifacts: dict[str, bytes],
-    policy: OutputPolicy,
-    *,
-    overwrite: bool,
-) -> list[str]:
-    """Publish all files as one rollback-capable writer transaction."""
-    run_id = uuid.uuid4().hex
-    manifest = {
-        "schema": "naviscoord.handoff-manifest/1",
-        "run_id": run_id,
-        "artifacts": {
-            name: {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
-            for name, data in sorted(artifacts.items())
-        },
-    }
-    all_artifacts = dict(artifacts)
-    all_artifacts[_BUNDLE_MANIFEST] = json.dumps(
-        manifest, ensure_ascii=False, indent=2
-    ).encode("utf-8")
-
-    with _handoff_lock(directory):
-        targets: dict[str, Path] = {}
-        for name in all_artifacts:
-            targets[name] = policy.resolve_file(
-                directory / name, overwrite=overwrite
-            ).path
-
-        staged: dict[str, Path] = {}
-        backups: dict[str, Path] = {}
-        published: list[Path] = []
-        try:
-            for name, data in all_artifacts.items():
-                temp = directory / f".{name}.{run_id}.stage"
-                temp.write_bytes(data)
-                staged[name] = temp
-
-            for name, target in targets.items():
-                if target.exists():
-                    backup = directory / f".{name}.{run_id}.backup"
-                    os.replace(target, backup)
-                    backups[name] = backup
-
-            order = [n for n in all_artifacts if n != _BUNDLE_MANIFEST]
-            order.append(_BUNDLE_MANIFEST)
-            for name in order:
-                _replace_file(staged[name], targets[name])
-                published.append(targets[name])
-
-        except BaseException:
-            for target in reversed(published):
-                try:
-                    target.unlink()
-                except OSError:
-                    pass
-            for name, backup in backups.items():
-                if backup.exists():
-                    os.replace(backup, targets[name])
-            raise
-        finally:
-            for path in list(staged.values()) + list(backups.values()):
-                try:
-                    path.unlink()
-                except OSError:
-                    pass
-
-    return [str(targets[name]) for name in all_artifacts]
 
 
 def _first_prop(element: ElementRef, keys: Iterable[str]) -> str:
@@ -433,25 +298,67 @@ def write_handoff(
     worklist = revit_worklist(handoff)
     tables = powerbi_tables(handoff)
 
-    artifacts: dict[str, bytes] = {}
-    for name, payload in (
-        ("coordination_handoff.json", handoff),
-        ("revit_worklist.json", worklist),
-    ):
-        artifacts[name] = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-
+    # Every artifact was already written atomically — staged beside its
+    # destination and renamed into place — so nobody could read a truncated
+    # CSV. What nothing protected was the SET. A failure on the third file left
+    # two artifacts from this run and four from the last, and Power BI joins
+    # fct_issues to brg_issue_elements on an issue id: a mixed generation is
+    # not a stale report, it is a report whose rows do not line up, and nothing
+    # in it says so.
+    #
+    # So the whole set is built in staging, verified, hashed and only then
+    # pointed at. Until `current.json` moves, the previous generation is what
+    # the world sees.
+    artifacts: list[Artifact] = [
+        Artifact(
+            name="coordination_handoff.json",
+            kind="json",
+            write=lambda path, payload=handoff: path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"),
+        ),
+        Artifact(
+            name="revit_worklist.json",
+            kind="json",
+            write=lambda path, payload=worklist: path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"),
+        ),
+    ]
     for name, rows in tables.items():
-        artifacts[f"{name}.csv"] = _csv_bytes(rows)
+        artifacts.append(Artifact(
+            name=f"{name}.csv",
+            kind="csv",
+            rows=len(rows),
+            write=lambda path, data=rows: _write_csv(path, data),
+        ))
 
-    written = _publish_bundle(
-        directory, artifacts, policy_in_use, overwrite=overwrite
+    published = publish(
+        directory,
+        artifacts,
+        metadata={
+            "document_title": export.document_title,
+            # The export carries the path, not a fingerprint — the fingerprint
+            # belongs to the live session. Naming what actually exists beats
+            # naming what would be nicer.
+            "document_path": export.document_path,
+            "profile_name": profile.name,
+            "profile_checksum": checksum_of(profile.raw),
+            "issues": len(handoff["issues"]),
+            "traceable_to_revit": handoff["totals"]["traceable_to_revit"],
+            "revit_models_with_work": len(worklist["models"]),
+            "caveats": handoff["caveats"],
+        },
     )
 
     return {
-        "written": written,
-        "manifest": str(directory / _BUNDLE_MANIFEST),
-        "directory": str(directory),
+        "generation_id": published.generation_id,
+        "current": str(published.current),
+        "directory": str(published.directory),
+        # Kept so existing callers still find the file list they read; it now
+        # names files inside the generation rather than loose in the root.
+        "written": [str(published.directory / f["name"]) for f in published.manifest["files"]],
         "allowed_root": str(target_dir.root),
+        "manifest": published.manifest,
+        "replaced_generation": published.replaced,
         "issues": len(handoff["issues"]),
         "traceable_to_revit": handoff["totals"]["traceable_to_revit"],
         "revit_models_with_work": len(worklist["models"]),

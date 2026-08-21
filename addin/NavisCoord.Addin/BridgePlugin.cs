@@ -84,21 +84,39 @@ namespace NavisCoord
             }
         }
 
+        /// <summary>
+        /// Asks the bridge to stop, and reports what actually happened.
+        /// </summary>
+        /// <remarks>
+        /// It used to Dispose unconditionally and answer "detenido y token
+        /// eliminado" — a sentence the operator reads as "nothing further will
+        /// touch my model". That was false whenever a job was inside a
+        /// Navisworks call: the listener closed, the session file went away,
+        /// and the mutation carried on with nobody able to ask about it.
+        ///
+        /// Now the bridge decides. If it drained, the session goes and the
+        /// message says so. If a job is still running, the bridge stays in
+        /// `draining` — queryable — and the message names the job instead of
+        /// claiming a stop.
+        /// </remarks>
         public static string Stop()
         {
             lock (Gate)
             {
                 if (!IsRunning) return "NavisCoord no estaba activo.";
-                var busy = JobManager.BlockingMutation();
-                if (busy != null)
+
+                var outcome = _bridge.Stop();
+                if (Json.Bool(outcome, "stopped", false))
                 {
-                    return "NavisCoord NO se detuvo: el trabajo " + busy.Id + " (" +
-                           busy.Operation + ") está reservado o ejecutándose. Cancélalo si aún " +
-                           "está en cola, o espera su estado terminal antes de detener el puente.";
+                    _bridge = null;
+                    return "NavisCoord detenido y token de sesión eliminado.";
                 }
-                _bridge.Dispose();
-                _bridge = null;
-                return "NavisCoord detenido y token de sesión eliminado.";
+
+                // Deliberately keeps the reference: the bridge is draining and
+                // still has to answer job/status.
+                return "NavisCoord está DRENANDO, no detenido.\n\n" +
+                       Json.Str(outcome, "detail") + "\n\n" +
+                       "Vuelve a pulsar Detener cuando ese trabajo termine.";
             }
         }
 

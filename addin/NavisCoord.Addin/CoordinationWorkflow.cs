@@ -305,7 +305,8 @@ namespace NavisCoord
             var result = new MutationResult("workflow/configure")
             {
                 JobId = job?.Id ?? string.Empty,
-                FingerprintBefore = DocumentContext.Fingerprint(doc)
+                FingerprintBefore = DocumentContext.Fingerprint(doc),
+                VerificationSource = VerificationSources.SavedItemReread
             };
             result.Detail["profile"] = validation.ToJson();
 
@@ -320,22 +321,21 @@ namespace NavisCoord
             job?.Phasing("creando search sets");
             var setsSummary = new Dictionary<string, object> { ["present"] = false };
             if (profile.TryGetValue("sets", out var setsRaw) &&
-                setsRaw is Dictionary<string, object> setsPayload)
+                setsRaw is Dictionary<string, object> setsSection)
             {
-                // ActiveProfile is an immutable identity snapshot: its
-                // checksum must continue to describe the content jobs use.
-                // Derived execution flags therefore go into a deep copy.
-                var executionPayload = Json.ParseObject(Json.Write(setsPayload));
-                executionPayload["dry_run"] = false;
-                if (!executionPayload.ContainsKey("replace_existing")) executionPayload["replace_existing"] = true;
-                executionPayload["observe_categories"] = false;
-                setsSummary = SummariseSets(WriteHandlers.BuildCriteriaSets(executionPayload));
+                // A COPY, because the flags below are ours and the section is
+                // the profile's. Writing them into the profile's own
+                // dictionary left the active profile no longer matching the
+                // checksum it was published under — and that checksum is what
+                // a report cites to say which criteria produced it.
+                var setsPayload = ProfileStore.DeepCopy(setsSection);
+                setsPayload["dry_run"] = false;
+                if (!setsPayload.ContainsKey("replace_existing")) setsPayload["replace_existing"] = true;
+                setsPayload["observe_categories"] = false;
+                setsPayload["expected_document_fingerprint"] = result.FingerprintBefore;
+                setsSummary = SummariseSets(WriteHandlers.BuildCriteriaSets(setsPayload));
             }
             result.Detail["sets"] = setsSummary;
-            if (setsSummary.TryGetValue("ok", out var setsOk) && setsOk is bool ok && !ok)
-            {
-                result.Fail("La publicación de Selection Sets no superó la verificación exacta.");
-            }
 
             job?.Phasing("creando la matriz de clash");
             var clashSummary = new Dictionary<string, object> { ["present"] = false };
@@ -379,8 +379,7 @@ namespace NavisCoord
                 ["matches"] = 0.0,
                 ["empty_sets"] = new List<object>(),
                 ["skipped_folders"] = new List<object>(),
-                ["verified_folders"] = 0.0,
-                ["ok"] = raw.TryGetValue("ok", out var rawOk) && rawOk is bool b && b
+                ["verified_folders"] = 0.0
             };
 
             if (raw.TryGetValue("planned", out var rawPlanned) && rawPlanned is List<object> planned)
@@ -421,11 +420,9 @@ namespace NavisCoord
             {
                 summary["verified_folders"] = (double)verified
                     .OfType<Dictionary<string, object>>()
-                    .Count(v => v.TryGetValue("verified", out var e) && e is bool b && b);
+                    .Count(v => v.TryGetValue("exists", out var e) && e is bool b && b);
                 summary["verified_in_document"] = verified;
             }
-            if (raw.TryGetValue("publications", out var publications)) summary["publications"] = publications;
-            if (raw.TryGetValue("error", out var error)) summary["error"] = error;
             return summary;
         }
 
@@ -439,10 +436,17 @@ namespace NavisCoord
             var replace = Json.Bool(payload, "replace_existing", true);
             var nameFormat = Json.Str(payload, "name_format", "{0} VS {1}");
             var scale = NavisContext.MetreScale(doc);
+            var clash = doc.GetClash();
+
             var created = 0;
             var kept = 0;
             var skipped = new List<object>();
             var outdated = new List<object>();
+            var orphaned = new List<object>();
+            // Tests kept BECAUSE they had results, and how many they had. The
+            // verification re-reads them: preserving a test and then emptying
+            // it is worse than having refused to touch it.
+            var expectedResults = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var requested = 0;
             var wanted = new List<string>();
 
@@ -459,21 +463,10 @@ namespace NavisCoord
                 if (string.IsNullOrWhiteSpace(name)) name = string.Format(nameFormat, a, b);
                 wanted.Add(name);
 
-                if (!Enum.TryParse<ClashTestType>(typeName, true, out var expectedType))
-                {
-                    skipped.Add(name + " (tipo '" + typeName + "')");
-                    continue;
-                }
+                Enum.TryParse<ClashTestType>(typeName, true, out var expectedType);
                 var expectedTolerance = toleranceM / (scale == 0 ? 1 : scale);
-                var sourcesA = BuildSideSources(doc, a, Json.StrArr(spec, "a_sets"));
-                var sourcesB = BuildSideSources(doc, b, Json.StrArr(spec, "b_sets"));
-                if (sourcesA == null || sourcesB == null)
-                {
-                    skipped.Add(name);
-                    continue;
-                }
 
-                var duplicate = doc.GetClash().TestsData.Tests
+                var duplicate = clash.TestsData.Tests
                     .OfType<ClashTest>()
                     .FirstOrDefault(t => string.Equals(t.DisplayName, name, StringComparison.OrdinalIgnoreCase));
                 if (duplicate != null)
@@ -483,21 +476,72 @@ namespace NavisCoord
                     // and report it as stale, because throwing away a finished
                     // run is a human decision. Changed and empty: refresh, it
                     // costs nothing.
-                    var sameDefinition = TestDefinitionMatches(
-                        duplicate, expectedType, expectedTolerance, sourcesA, sourcesB);
+                    var sameDefinition = duplicate.TestType == expectedType &&
+                                         Math.Abs(duplicate.Tolerance - expectedTolerance) < 0.0001;
                     var hasResults = duplicate.Children.Count > 0;
-                    if (sameDefinition || hasResults || !replace)
+
+                    // Whether its two sides still point at anything.
+                    //
+                    // The sets step runs before this one and rebuilds the
+                    // discipline folders, which gives every set inside a new
+                    // identity. A test kept here for having results was kept
+                    // holding references to the items that rebuild deleted —
+                    // and since the old verification compared names, the run
+                    // reported success over a test that could no longer be
+                    // executed. Keeping a test is only safe if it still
+                    // resolves.
+                    var liveA = WriteHandlers.SourceGuids(doc, duplicate.SelectionA).Count;
+                    var liveB = WriteHandlers.SourceGuids(doc, duplicate.SelectionB).Count;
+                    var resolvable = liveA > 0 && liveB > 0;
+
+                    if (resolvable && (sameDefinition || hasResults || !replace))
                     {
                         kept++;
+                        if (hasResults) expectedResults[name] = duplicate.Children.Count;
                         if (!sameDefinition && hasResults) outdated.Add(name);
                         continue;
                     }
+
+                    if (!resolvable && hasResults)
+                    {
+                        // Rebuilding would discard a finished run; keeping it
+                        // silently would publish a test nobody can execute.
+                        // Neither is ours to choose, so it is reported.
+                        orphaned.Add(new Dictionary<string, object>
+                        {
+                            ["test"] = name,
+                            ["action"] = ConfigurePlanning.Blocked,
+                            ["results"] = (double)duplicate.Children.Count,
+                            ["selection_a_sources"] = (double)liveA,
+                            ["selection_b_sources"] = (double)liveB,
+                            ["reason"] =
+                                "quedó apuntando a conjuntos que ya no existen y tiene "
+                                + "resultados: rehacerlo los perdería. Revísalo a mano."
+                        });
+                        kept++;
+                        continue;
+                    }
+
+                    clash.TestsData.TestsRemove(duplicate);
+                }
+
+                var sourcesA = BuildSideSources(doc, a, Json.StrArr(spec, "a_sets"));
+                var sourcesB = BuildSideSources(doc, b, Json.StrArr(spec, "b_sets"));
+                if (sourcesA == null || sourcesB == null)
+                {
+                    skipped.Add(name);
+                    continue;
+                }
+                if (!Enum.TryParse<ClashTestType>(typeName, true, out var testType))
+                {
+                    skipped.Add(name + " (tipo '" + typeName + "')");
+                    continue;
                 }
 
                 var test = new ClashTest
                 {
                     DisplayName = name,
-                    TestType = expectedType,
+                    TestType = testType,
                     // The profile states tolerances in metres; Navisworks
                     // wants document units, so a millimetre on a job authored
                     // in feet stays a millimetre.
@@ -505,58 +549,55 @@ namespace NavisCoord
                 };
                 test.SelectionA.Selection.CopyFrom(sourcesA);
                 test.SelectionB.Selection.CopyFrom(sourcesB);
-                // A changed empty test can be replaced without losing run
-                // history, but the publication itself must still be atomic.
-                // Re-resolve the collection in this iteration because every
-                // Clash mutation may rebuild its native wrappers.
-                var freshTestsData = doc.GetClash().TestsData;
-                var replaceTarget = freshTestsData.Tests.OfType<ClashTest>()
-                    .FirstOrDefault(t => string.Equals(t.DisplayName, name, StringComparison.OrdinalIgnoreCase));
-                if (replaceTarget != null)
-                {
-                    var index = freshTestsData.Tests.IndexOfGuid(replaceTarget.Guid);
-                    if (index < 0) throw new InvalidOperationException($"No se pudo re-resolver el test '{name}'.");
-                    freshTestsData.TestsReplaceWithCopy(index, test);
-                }
-                else
-                {
-                    freshTestsData.TestsAddCopy(test);
-                }
+                clash.TestsData.TestsAddCopy(test);
                 created++;
             }
 
-            // Verification re-builds the expected sources from the live set
-            // tree. A matching name alone is not evidence: an old test may
-            // still point at a deleted/replaced Selection Set.
-            var verified = 0;
-            var verificationFailures = new List<object>();
-            foreach (var raw in Json.Arr(payload, "pairs"))
+            // Verification by identity, re-read from the document.
+            //
+            // Counting names was the hole: a rebuilt set carries the name of
+            // the one it replaced, so "the test is present" said nothing about
+            // whether it could still run. A test counts as verified only when
+            // both of its sides resolve to saved items that are in THIS
+            // document. A source that resolves to zero elements is still
+            // valid — existing and matching something today are different
+            // questions, and a set is legitimately empty before the models
+            // are attached.
+            var observed = new List<ConfigurePlanning.ObservedTest>();
+            foreach (var name in wanted)
             {
-                if (!(raw is Dictionary<string, object> spec)) continue;
-                var a = Json.Str(spec, "a");
-                var b = Json.Str(spec, "b");
-                var typeName = Json.Str(spec, "type", "Hard");
-                var toleranceM = Json.Num(spec, "tolerance_m", 0.01);
-                var name = Json.Str(spec, "name");
-                if (string.IsNullOrWhiteSpace(name)) name = string.Format(nameFormat, a, b);
-
-                var matches = doc.GetClash().TestsData.Tests.OfType<ClashTest>()
-                    .Where(t => string.Equals(t.DisplayName, name, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                var freshA = BuildSideSources(doc, a, Json.StrArr(spec, "a_sets"));
-                var freshB = BuildSideSources(doc, b, Json.StrArr(spec, "b_sets"));
-                if (matches.Count == 1 && freshA != null && freshB != null &&
-                    Enum.TryParse<ClashTestType>(typeName, true, out var expectedType) &&
-                    TestDefinitionMatches(matches[0], expectedType,
-                        toleranceM / (scale == 0 ? 1 : scale), freshA, freshB))
+                var live = doc.GetClash().TestsData.Tests
+                    .OfType<ClashTest>()
+                    .FirstOrDefault(t => string.Equals(t.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+                var entry = new ConfigurePlanning.ObservedTest
                 {
-                    verified++;
-                }
-                else
+                    Name = name,
+                    Exists = live != null,
+                    ResultCount = live?.Children.Count ?? 0
+                };
+                if (live != null)
                 {
-                    verificationFailures.Add(name);
+                    foreach (var guid in WriteHandlers.SourceGuids(doc, live.SelectionA))
+                    {
+                        entry.SideA.Add(new ConfigurePlanning.ObservedSource
+                        {
+                            Guid = guid, ExistsInDocument = true
+                        });
+                    }
+                    foreach (var guid in WriteHandlers.SourceGuids(doc, live.SelectionB))
+                    {
+                        entry.SideB.Add(new ConfigurePlanning.ObservedSource
+                        {
+                            Guid = guid, ExistsInDocument = true
+                        });
+                    }
                 }
+                observed.Add(entry);
             }
+
+            var verdict = ConfigurePlanning.Verify(
+                observed, expectedResults, preserved: kept, blocked: orphaned.Count);
+            var verified = verdict.Verified;
 
             return new Dictionary<string, object>
             {
@@ -566,26 +607,13 @@ namespace NavisCoord
                 ["kept"] = (double)kept,
                 ["skipped"] = skipped,
                 ["outdated"] = outdated,
-                ["verification_failures"] = verificationFailures,
-                ["tests_in_document"] = (double)doc.GetClash().TestsData.Tests.Count,
-                ["verified_tests"] = (double)verified
+                ["orphaned"] = orphaned,
+                ["tests_in_document"] = (double)clash.TestsData.Tests.Count,
+                ["verified_tests"] = (double)verified,
+                ["failed_tests"] = (double)verdict.Failed,
+                ["verification"] = verdict.Details.Cast<object>().ToList(),
+                ["status"] = verdict.Status
             };
-        }
-
-        private static bool TestDefinitionMatches(
-            ClashTest test,
-            ClashTestType expectedType,
-            double expectedTolerance,
-            SelectionSourceCollection sourcesA,
-            SelectionSourceCollection sourcesB)
-        {
-            if (test == null || sourcesA == null || sourcesB == null) return false;
-            return test.TestType == expectedType &&
-                   Math.Abs(test.Tolerance - expectedTolerance) < 0.0001 &&
-                   test.SelectionA.Selection.HasSelectionSources &&
-                   test.SelectionB.Selection.HasSelectionSources &&
-                   test.SelectionA.Selection.SelectionSources.ValueEquals(sourcesA) &&
-                   test.SelectionB.Selection.SelectionSources.ValueEquals(sourcesB);
         }
 
         private static SelectionSourceCollection BuildSideSources(
@@ -619,64 +647,140 @@ namespace NavisCoord
         /// <c>TestsRunAllTests</c> is one atomic API call that owns the UI
         /// thread for minutes, so there are no units to report — the job says
         /// phase and indeterminate rather than inventing a percentage.
+        ///
+        /// The verification is a comparison of two snapshots taken around that
+        /// call, never a reading of its return. Nothing captured before it is
+        /// dereferenced after: the call rebuilds the results tree, and a
+        /// <c>ClashTest</c> held across it is a dangling native pointer that
+        /// takes the process down rather than throwing.
         /// </remarks>
         public static Dictionary<string, object> RunAll(Document doc, JobManager.Job job = null)
         {
-            var clash = doc.GetClash();
             var result = new MutationResult("workflow/run")
             {
                 JobId = job?.Id ?? string.Empty,
-                FingerprintBefore = DocumentContext.Fingerprint(doc)
+                FingerprintBefore = DocumentContext.Fingerprint(doc),
+                VerificationSource = VerificationSources.ClashTestStatusReread
             };
 
-            var before = clash.TestsData.Tests
-                .OfType<ClashTest>()
-                .ToDictionary(t => t.DisplayName ?? string.Empty,
-                    t => Router.CountResults(t), StringComparer.OrdinalIgnoreCase);
+            var before = SnapshotForRun(doc);
             result.Requested = before.Count;
+
+            if (before.Count == 0)
+            {
+                // Nothing to run. Reporting this as a successful Run All is
+                // the most misleading answer this route can give: the operator
+                // reads "completed" and concludes the model is clash-free.
+                var emptyVerdict = RunVerification.Classify(
+                    before, before, invocationStarted: false);
+                result.Applied = 0;
+                result.Verified = 0;
+                result.FingerprintAfter = result.FingerprintBefore;
+                foreach (var pair in emptyVerdict.ToJson()) result.Detail[pair.Key] = pair.Value;
+                result.Detail["run_status"] = emptyVerdict.Status;
+                result.Detail["invoked"] = false;
+                result.Warn("No hay clash tests en el documento: no se ejecutó nada. " +
+                            "Crea la matriz antes de correr.");
+                return result.ToJson();
+            }
 
             job?.Phasing("corriendo todos los tests",
                 before.Count + " tests; Navisworks queda ocupado hasta terminar");
-            clash.TestsData.TestsRunAllTests();
-            result.Applied = before.Count;
 
-            job?.Phasing("verificando", "Recontando resultados por test");
-            var perTest = new List<object>();
-            var totalAfter = 0;
-            var ranOk = 0;
-            foreach (var test in doc.GetClash().TestsData.Tests.OfType<ClashTest>())
+            var invocationStarted = false;
+            string invocationError = null;
+            try
             {
-                var name = test.DisplayName ?? string.Empty;
-                var after = Router.CountResults(test);
-                totalAfter += after;
-                before.TryGetValue(name, out var wasCount);
-                var status = test.Status.ToString();
-                // Only Complete proves a finished run. Old means its inputs
-                // changed since the last run and Partial means the operation
-                // did not finish; both used to be counted as a false green.
-                if (test.Status == ClashTestStatus.Complete) ranOk++;
-
-                perTest.Add(new Dictionary<string, object>
-                {
-                    ["name"] = name,
-                    ["status"] = status,
-                    ["results_before"] = (double)wasCount,
-                    ["results_after"] = (double)after
-                });
+                doc.GetClash().TestsData.TestsRunAllTests();
+                invocationStarted = true;
+            }
+            catch (Exception error)
+            {
+                // Recorded, then the verification runs anyway. A call that
+                // threw halfway still left some tests Complete, and refusing
+                // to look would report a total loss that did not happen.
+                invocationStarted = true;
+                invocationError = error.Message;
             }
 
-            result.Verified = ranOk;
-            result.Failed = Math.Max(0, result.Applied - ranOk);
-            result.Detail["tests"] = perTest;
-            result.Detail["results_total"] = (double)totalAfter;
+            job?.Phasing("verificando", "Releyendo el estado de cada test");
+            var after = SnapshotForRun(doc);
+            var verdict = RunVerification.Classify(before, after, invocationStarted);
+
+            // `applied` is what the invocation covered; `verified` is what
+            // re-reading proved. They are different numbers on purpose — the
+            // gap between them is the whole finding.
+            result.Applied = verdict.Requested;
+            result.Verified = verdict.Verified;
+            result.Failed = verdict.Failed;
+            foreach (var pair in verdict.ToJson()) result.Detail[pair.Key] = pair.Value;
+            result.Detail["run_status"] = verdict.Status;
+            result.Detail["invoked"] = invocationStarted;
+            result.Detail["results_total"] = (double)after.Sum(t => t.ResultCount);
             result.FingerprintAfter = DocumentContext.Fingerprint(doc);
-            if (result.Failed > 0)
+
+            if (invocationError != null)
             {
-                result.Warn(result.Failed + " test(s) no quedaron en estado Complete tras la corrida " +
-                            "(New, Old o Partial no cuentan como ejecución verificada).");
+                result.Fail("TestsRunAllTests lanzó: " + invocationError +
+                            ". El veredicto sale de releer los tests, no de la llamada.");
+            }
+            if (verdict.OldCount > 0)
+            {
+                result.Warn(verdict.OldCount + " test(s) quedaron Old: sus resultados son de una " +
+                            "versión anterior del modelo y no cuentan como corridos.");
+            }
+            if (verdict.PartialCount > 0)
+            {
+                result.Warn(verdict.PartialCount + " test(s) quedaron Partial: la ejecución no " +
+                            "cubrió toda la selección.");
+            }
+            if (verdict.NewCount > 0)
+            {
+                result.Warn(verdict.NewCount + " test(s) siguen en New tras la corrida: " +
+                            "revisa que sus selecciones no estén vacías.");
+            }
+            if (verdict.MissingCount > 0)
+            {
+                result.Warn(verdict.MissingCount + " test(s) no se pudieron re-resolver por " +
+                            "identidad después de correr.");
+            }
+            if (verdict.UnexpectedCount > 0)
+            {
+                result.Warn(verdict.UnexpectedCount + " test(s) aparecieron y no estaban antes: " +
+                            string.Join(", ", verdict.UnexpectedNames) +
+                            ". No compensan a los que faltan.");
             }
             return result.ToJson();
         }
+
+        /// <summary>
+        /// Every clash test as stable values, for comparison across the run.
+        /// </summary>
+        /// <remarks>
+        /// Taken fresh from the document each time — the "before" list must
+        /// not hold anything the run will invalidate, so it holds strings and
+        /// ints and nothing else.
+        /// </remarks>
+        private static List<RunVerification.TestState> SnapshotForRun(Document doc)
+        {
+            var states = new List<RunVerification.TestState>();
+            foreach (var saved in doc.GetClash().TestsData.Tests)
+            {
+                if (!(saved is ClashTest test)) continue;
+                states.Add(new RunVerification.TestState
+                {
+                    Guid = test.Guid.ToString(),
+                    Name = test.DisplayName ?? string.Empty,
+                    Status = test.Status.ToString(),
+                    ResultCount = Router.CountResults(test),
+                    GroupCount = test.Children.OfType<ClashResultGroup>().Count(),
+                    SourceGuidsA = WriteHandlers.SourceGuids(doc, test.SelectionA),
+                    SourceGuidsB = WriteHandlers.SourceGuids(doc, test.SelectionB)
+                });
+            }
+            return states;
+        }
+
 
         // ------------------------------------------------- 3. group by level
 
@@ -690,7 +794,8 @@ namespace NavisCoord
             var result = new MutationResult("workflow/group_levels")
             {
                 JobId = job?.Id ?? string.Empty,
-                FingerprintBefore = DocumentContext.Fingerprint(doc)
+                FingerprintBefore = DocumentContext.Fingerprint(doc),
+                VerificationSource = VerificationSources.GroupMembershipReread
             };
 
             var testNames = clash.TestsData.Tests
@@ -993,18 +1098,19 @@ namespace NavisCoord
             var result = new MutationResult("workflow/rules")
             {
                 JobId = job?.Id ?? string.Empty,
-                FingerprintBefore = DocumentContext.Fingerprint(doc)
+                FingerprintBefore = DocumentContext.Fingerprint(doc),
+                VerificationSource = VerificationSources.ResultStatusReread
             };
 
-            var rulesDefinition = ExtractRules(profile);
-            if (rulesDefinition == null)
+            var rulesPayload = ExtractRules(profile);
+            if (rulesPayload == null)
             {
                 result.Detail["note"] = "El perfil no define reglas residuales.";
                 result.FingerprintAfter = result.FingerprintBefore;
                 return result.ToJson();
             }
 
-            if (Json.Arr(rulesDefinition, "pairs").Count == 0)
+            if (Json.Arr(rulesPayload, "pairs").Count == 0)
             {
                 // With the current standard the exclusions live in the tests'
                 // own selections, so an empty 'pairs' is the NORMAL state, not
@@ -1016,19 +1122,22 @@ namespace NavisCoord
                 return result.ToJson();
             }
 
-            if (Json.Bool(rulesDefinition, "run_tests", false))
+            if (Json.Bool(rulesPayload, "run_tests", false))
             {
                 job?.Phasing("corriendo tests antes del triaje");
                 doc.GetClash().TestsData.TestsRunAllTests();
             }
 
             job?.Phasing("aplicando reglas");
-            // Never mutate ActiveProfile.Content: the checksum attached to a
-            // job must continue to identify the exact bytes it executes.
-            var rulesPayload = Json.ParseObject(Json.Write(rulesDefinition));
-            rulesPayload["dry_run"] = false;
-            rulesPayload["sets_index"] = BuildSetsIndex(profile);
-            var applied = WriteHandlers.ApplyIgnoreRules(rulesPayload);
+
+            // Same reasoning as configure: the derived flags go on a copy, so
+            // the published profile still canonicalises to its own checksum
+            // after the run.
+            var rulesRequest = ProfileStore.DeepCopy(rulesPayload);
+            rulesRequest["dry_run"] = false;
+            rulesRequest["sets_index"] = BuildSetsIndex(profile);
+            rulesRequest["expected_document_fingerprint"] = result.FingerprintBefore;
+            var applied = WriteHandlers.ApplyIgnoreRules(rulesRequest);
 
             result.Requested = (int)Json.Num(applied, "matched", 0);
             result.Applied = (int)Json.Num(applied, "edited", 0);

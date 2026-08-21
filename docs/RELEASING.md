@@ -100,6 +100,27 @@ Y con Navisworks instalado, para cada versión soportada:
 powershell -File scripts\Build-Release.ps1
 ```
 
+### Qué necesita la máquina que compila el add-in
+
+- **.NET Framework 4.8 Developer Pack** (targeting pack). El add-in apunta a
+  `net48` porque es el runtime que carga Navisworks; el SDK de .NET 8 solo
+  puede compilarlo si el targeting pack está instalado. Sin él, el error es
+  `NETSDK1045`/«reference assemblies for .NETFramework,Version=v4.8 were not
+  found» — se instala desde
+  <https://dotnet.microsoft.com/download/dotnet-framework/net48> y no
+  requiere reiniciar.
+- **SDK de .NET 8** (`dotnet --version` ≥ 8): compila el proyecto y corre la
+  suite de pruebas, que apunta al mismo `net48`.
+- **Navisworks Manage instalado** por cada versión a compilar. La detección
+  ya no asume `C:\Program Files`: `scripts\FindNavisworks.ps1` consulta el
+  registro de Autodesk (las dos vistas, 32 y 64 bits) y después las rutas
+  convencionales en **todas** las unidades fijas, y verifica que
+  `Autodesk.Navisworks.Api.dll` esté de verdad en el candidato. Si no
+  encuentra una versión, el error lista cada ruta que sondeó.
+- Los DLL de Autodesk **nunca** se empaquetan: se compila contra ellos con
+  `Private=false` y el ZIP lleva solo `NavisCoord.dll`, licencias y el perfil
+  de ejemplo.
+
 Compila una vez por versión detectada, arma `dist/addin/<versión>/`, copia
 `LICENSE`, `NOTICE` y el perfil de ejemplo dentro de cada carpeta, empaqueta
 el ZIP y verifica en disco lo que dejó. `-WhatIf` enseña qué haría sin tocar
@@ -219,7 +240,24 @@ gh run list --commit "$(git rev-list -n1 "$TAG")" --limit 5
 ## 8. Artefactos, construidos desde el tag
 
 Construir desde el working tree puede meter en el ZIP cambios que el tag no
-contiene. Sal a una copia limpia del tag y construye ahí:
+contiene. **No es hipotético**: comprobado en esta máquina, el mismo commit
+daba un DLL de 246.272 B construido desde el ref y 348.160 B construido desde
+el árbol con cambios sin commitear.
+
+Para el add-in, `Build-Release.ps1` lo hace solo:
+
+```powershell
+powershell -File scripts\Build-Release.ps1 -Ref v0.4.0
+```
+
+Resuelve el ref a **un** SHA una sola vez —resolverlo dos veces es la ventana
+en la que un `git tag -f` ajeno cambia lo que se publica—, clona ese commit
+desprendido en un temporal único, compila ahí con el script *de ese commit*, y
+copia los ZIP a `dist\addin\` junto a un `FROM-REF.txt` con ref y SHA. El
+temporal se borra solo, tras comprobar ruta absoluta, contención en `%TEMP%`,
+marcador de propiedad de esa corrida y ausencia de reparse points.
+
+Para el paquete de Python, una copia limpia del tag:
 
 ```bash
 RELEASE_TREE="/tmp/release-${VERSION}"
@@ -228,6 +266,39 @@ cd "$RELEASE_TREE"
 python scripts/build_artifacts.py
 powershell -File scripts/Build-Release.ps1 -Version all -VerifyReproducible
 ```
+
+`build_artifacts.py` **no escribe en `server/`**. Copia el paquete a un
+workspace temporal único, mete ahí LICENSE, NOTICE y README, y construye en la
+copia. La versión anterior los dejaba caer dentro de `server/` y los borraba en
+un `finally` —que no corre si matan el proceso—, así que un build interrumpido
+dejaba tres archivos sin rastrear que parecen una segunda fuente de verdad, dos
+builds simultáneos se peleaban por ellos, y compilar desde un tag ensuciaba el
+worktree cuya limpieza la release tenía que demostrar.
+
+### Las dos comprobaciones que solo se responden construyendo
+
+```bash
+python scripts/verify_sdist.py --strict        # ¿se basta el sdist a sí mismo?
+python scripts/build_artifacts.py --reproducible  # ¿dos builds, los mismos bytes?
+```
+
+- **`verify_sdist.py`** extrae el sdist en un temporal y reconstruye el wheel
+  *desde ahí*. Un sdist sin `pyproject.toml`, sin el perfil por defecto o sin
+  el README que `project.readme` nombra se descarga bien y falla al construir,
+  meses después y en la máquina de otro. Informa por separado de dos cosas:
+  mismos **miembros** (autosuficiente) y mismos **bytes** (reproducible desde
+  la fuente publicada). Nunca llama reproducible a algo que no comparó.
+- **`--reproducible`** construye dos veces desde cero y compara. Un rebuild
+  incremental no demuestra nada: demuestra que no se recompiló. Esta es la
+  única comprobación que dice si `normalize_sdist` sigue funcionando —
+  setuptools honra `SOURCE_DATE_EPOCH` en el wheel pero **no** en el sdist,
+  donde las marcas de tiempo son las del disco.
+
+Medido en esta máquina sobre `0.4.0`: wheel y sdist idénticos byte a byte entre
+dos construcciones, y el wheel reconstruido desde el sdist idéntico al
+original (`sha256 6522bb21…`).
+
+Ambas corren también en el job `packaging` del CI.
 
 Adjuntar al release de GitHub, con los nombres que produce el script —no otros:
 

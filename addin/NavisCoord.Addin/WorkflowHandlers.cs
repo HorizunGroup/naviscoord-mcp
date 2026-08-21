@@ -23,14 +23,12 @@ namespace NavisCoord
             Dictionary<string, object> payload, JobManager.Job job)
         {
             var doc = Router.RequireDocument();
-            var profile = job?.ProfileSnapshot;
-            if (profile == null && !TryProfile(out profile, out var problem)) return problem;
+            if (!TryProfile(out var profile, out var problem)) return problem;
 
             var result = CoordinationWorkflow.AuditModels(doc, profile, job);
             Attribute(result, profile);
             result["document_fingerprint"] = DocumentContext.Fingerprint(doc);
             result["text"] = WorkflowText.AuditModels(result);
-            result["status"] = "completed";
             return result;
         }
 
@@ -87,16 +85,13 @@ namespace NavisCoord
             var fingerprint = DocumentContext.Fingerprint(doc);
 
             var expected = Json.Str(payload, "expected_document_fingerprint");
-            if (string.IsNullOrWhiteSpace(expected) ||
-                !DocumentFingerprint.Matches(expected, fingerprint))
+            if (!DocumentFingerprint.Matches(expected, fingerprint))
             {
                 return new Dictionary<string, object>
                 {
                     ["operation"] = operation,
                     ["status"] = "failed",
-                    ["error"] = string.IsNullOrWhiteSpace(expected)
-                        ? "mutation_target_required"
-                        : "document_changed",
+                    ["error"] = "document_changed",
                     ["document_fingerprint_before"] = fingerprint,
                     ["detail"] = "El documento activo no es el que esperabas (esperado " + expected +
                                  ", activo " + fingerprint + "). No se tocó nada.",
@@ -110,7 +105,14 @@ namespace NavisCoord
             ProfileStore.ActiveProfile profile = null;
             if (needsProfile)
             {
-                profile = job?.ProfileSnapshot;
+                // The profile the job was ACCEPTED under, not the one loaded
+                // now. Calling ProfileStore.Active() here was the bug: a job
+                // could be admitted under profile A, wait in the queue while
+                // the operator loaded profile B, and then run under B while
+                // reporting A's checksum. The frozen copy is reparsed from
+                // canonical JSON, so it is also isolated from the handlers
+                // that write into the dictionary they are handed.
+                profile = FrozenProfile(job);
                 if (profile == null && !TryProfile(out profile, out var problem)) return problem;
             }
 
@@ -119,10 +121,46 @@ namespace NavisCoord
             result["target_id"] = Json.Str(payload, "target_id");
             result["idempotency_key"] = key;
             if (needsProfile) Attribute(result, profile);
+            result["session_id"] = job?.SessionId ?? string.Empty;
             result["text"] = render(result);
 
             IdempotencyLedger.Remember(key, result);
             return result;
+        }
+
+        /// <summary>
+        /// The profile this job was admitted with, rebuilt from its snapshot.
+        /// </summary>
+        /// <remarks>
+        /// Rebuilt rather than referenced. A reference would still point at a
+        /// live dictionary, and configure writes into the profile section it
+        /// is given — so two jobs sharing one reference is not hypothetical,
+        /// and neither is a job seeing edits made by the one before it.
+        ///
+        /// Null when there is no job (the synchronous path) or no snapshot,
+        /// and the caller falls back to the active profile — which is correct
+        /// there, because a synchronous call runs immediately.
+        /// </remarks>
+        private static ProfileStore.ActiveProfile FrozenProfile(JobManager.Job job)
+        {
+            var canonical = job?.Request?.ProfileCanonical;
+            if (string.IsNullOrWhiteSpace(canonical)) return null;
+
+            Dictionary<string, object> content;
+            try { content = Json.ParseObject(canonical); }
+            catch (FormatException) { return null; }
+            if (content == null) return null;
+
+            return new ProfileStore.ActiveProfile
+            {
+                Content = content,
+                Canonical = canonical,
+                Checksum = job.Request.ProfileChecksum,
+                Name = Json.Str(content, "profile_name"),
+                Schema = Json.Str(content, "schema"),
+                Source = "frozen_at_submit",
+                LoadedUtc = job.Request.SubmittedUtc
+            };
         }
 
         /// <summary>

@@ -29,33 +29,63 @@ class RootCause:
     title: str
     detail: str
     confidence: float
+    #: Positions in the cluster list, which is the only identity that exists
+    #: while causes are being detected. It stops being an identity the moment
+    #: the issues are ranked: `analyze` sorts them by severity and position 7
+    #: then means "the eighth worst", not "the thing cluster 7 became".
+    #: Nothing downstream of the ranking may read this — see
+    #: `affected_issue_ids`, which is what survives the sort.
     affected_clusters: list[int] = field(default_factory=list)
-    # Stable public identity populated by the pipeline once issue IDs have
-    # been assigned.  Cluster positions are an internal detector detail and
-    # stop referring to the same issue as soon as the result is ranked.
-    affected_issue_ids: list[str] = field(default_factory=list)
     clash_count: int = 0
     evidence: dict[str, Any] = field(default_factory=dict)
     suggested_action: str = ""
     cause_id: str = ""
-    # IDs represented by this cause after planning-time merges. A merged
-    # cause must still answer to the IDs already stamped on issues.
-    source_cause_ids: list[str] = field(default_factory=list)
+    #: The issues this cause actually explains, by their public id. Filled in
+    #: once, by `analyze`, at the only moment both facts are known: the
+    #: clusters have become issues and the issues have been given their ids.
+    affected_issue_ids: list[str] = field(default_factory=list)
+    #: Cluster positions that resolved to no issue. Kept rather than dropped
+    #: quietly: a cause pointing at nothing is a bug in the detector, and the
+    #: alternative — matching it to whatever sits at that position now — is
+    #: exactly the failure this field exists to make visible.
+    unresolved_clusters: list[int] = field(default_factory=list)
+    #: Causes folded into this one, when several are a single decision.
+    merged_from: list[str] = field(default_factory=list)
+    #: For a merged cause, which original contributed which issues. Kept so a
+    #: package built from it can name all of them instead of collapsing the
+    #: evidence to whichever id the merge happened to take.
+    contributions: dict[str, list[str]] = field(default_factory=dict)
+
+    @property
+    def affected_count(self) -> int:
+        """How many issues this cause explains.
+
+        Reads the resolved ids once they exist, so a cause that pointed at a
+        cluster nobody turned into an issue reports what it really covers
+        instead of what it hoped to.
+        """
+        if self.affected_issue_ids or self.unresolved_clusters:
+            return len(self.affected_issue_ids)
+        return len(self.affected_clusters)
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        payload = {
             "cause_id": self.cause_id,
             "kind": self.kind,
             "title": self.title,
             "detail": self.detail,
             "confidence": round(self.confidence, 2),
-            "affected_issues": len(self.affected_issue_ids or self.affected_clusters),
+            "affected_issues": self.affected_count,
             "affected_issue_ids": list(self.affected_issue_ids),
             "clash_count": self.clash_count,
             "evidence": self.evidence,
             "suggested_action": self.suggested_action,
-            "source_cause_ids": list(self.source_cause_ids or ([self.cause_id] if self.cause_id else [])),
         }
+        if self.unresolved_clusters:
+            payload["unresolved_clusters"] = list(self.unresolved_clusters)
+        if self.merged_from:
+            payload["merged_from"] = list(self.merged_from)
+        return payload
 
 
 class RootCauseDetector:
@@ -83,7 +113,6 @@ class RootCauseDetector:
         causes.sort(key=lambda c: (-c.clash_count, -c.confidence))
         for index, cause in enumerate(causes, start=1):
             cause.cause_id = f"RC-{index:03d}"
-            cause.source_cause_ids = [cause.cause_id]
         return causes
 
     # ------------------------------------------------- systemic elevation
@@ -112,6 +141,13 @@ class RootCauseDetector:
 
         causes: list[RootCause] = []
         for (system, hard_discipline), entries in buckets.items():
+            if len(entries) < min_clashes:
+                continue
+            # Only crossings a vertical move could actually change. Without
+            # this the statistic is computed over pass-throughs, where the
+            # overlap is the run's own diameter and its tightness says
+            # nothing about elevation.
+            entries = [pair for pair in entries if _is_elevation_candidate(pair[1])]
             if len(entries) < min_clashes:
                 continue
             overlaps = [_vertical_overlap(clash) for _, clash in entries]
@@ -263,10 +299,24 @@ class RootCauseDetector:
                 "El modelo sí tiene pasos definidos en otras partes, así que estos quedaron por fuera."
             )
         else:
-            confidence = 0.9
+            # Finding nothing used to RAISE the confidence to 0.9 and licence
+            # the sentence "the model has not one pass defined". It cannot.
+            #
+            # A sleeve only reaches this export by clashing with something
+            # inside one of the configured tests. On a matrix whose selection
+            # sets hold structure, ducts and pipes, no sleeve was ever
+            # eligible to appear — so zero is what this export would report
+            # whether the project models passes beautifully or not at all.
+            # That is a statement about the tests, not about the model.
+            #
+            # The crossings themselves are unaffected and still reported. What
+            # goes is the certainty about WHY, which is now lower than the
+            # case where sleeves were actually seen, not higher.
+            confidence = 0.7
             context = (
-                "El modelo no tiene un solo paso definido, de modo que ninguno de estos cruces "
-                "está resuelto en papel: todos se van a decidir en obra."
+                "No apareció ningún paso definido en este export — pero los tests corridos "
+                "tampoco podían mostrarlo, porque ningún conjunto de selección incluye "
+                "elementos de paso. Antes de darlo por hecho, confírmalo contra el modelo."
             )
 
         return [
@@ -330,33 +380,89 @@ class RootCauseDetector:
             level = cluster.dominant("level") or f"z={centroid[2]:.1f}"
             levels[key].add(level)
 
+        # How many families the clashes actually involve.
+        #
+        # This is a guard, not a repair: the grouping above is positional —
+        # discipline pair plus a half-metre cell in plan — and says nothing
+        # about what collided, while the sentence it publishes, "it is a type
+        # detail", is a claim about the elements. Nothing enforced the link.
+        #
+        # Checked against a real model, every one of the twenty-eight groups
+        # came back with one to three families, so the detector was right and
+        # the guard never fires there. It stays because the claim should be
+        # checkable rather than trusted, and `distinct_families` now travels
+        # in the evidence so a reader can argue with it. A clean repeat runs
+        # two, one per side.
+        max_families = int(
+            self.profile.root_cause_param("repeated_typology", "max_families", 4)
+        )
+
         causes: list[RootCause] = []
         for key, indices in buckets.items():
             distinct_levels = levels[key]
             if len(distinct_levels) < min_levels:
                 continue
             clash_total = sum(len(clusters[i].clashes) for i in indices)
+
+            families: set[str] = set()
+            for i in indices:
+                for clash in clusters[i].clashes:
+                    for side in (clash.a, clash.b):
+                        name = (
+                            side.prop("Family", "Familia")
+                            or side.parent_name
+                            or side.category
+                        )
+                        if name:
+                            families.add(name.strip().lower())
+
+            one_detail = len(families) <= max_families
+            where = ", ".join(sorted(distinct_levels)[:6])
+            if one_detail:
+                title = f"Cruce repetido en {len(distinct_levels)} niveles"
+                detail = (
+                    f"El mismo cruce {self.profile.label(key[0])} × {self.profile.label(key[1])} "
+                    f"aparece en la misma posición en planta en {len(distinct_levels)} niveles "
+                    f"({where}), y siempre entre los mismos {len(families)} tipos de elemento. "
+                    f"Es un detalle tipo, no {len(indices)} problemas distintos."
+                )
+                action = (
+                    "Resolver el detalle una vez y propagarlo a todos los niveles; "
+                    "verificar si el error viene del tipo o del grupo repetido."
+                )
+                confidence = min(0.5 + 0.1 * len(distinct_levels), 0.95)
+            else:
+                title = f"Zona conflictiva repetida en {len(distinct_levels)} niveles"
+                detail = (
+                    f"En la misma posición en planta hay cruces "
+                    f"{self.profile.label(key[0])} × {self.profile.label(key[1])} en "
+                    f"{len(distinct_levels)} niveles ({where}), pero entre {len(families)} tipos "
+                    "de elemento distintos: no es un detalle tipo repetido, es una franja "
+                    "vertical donde se acumulan problemas diferentes — un pase, un ducto "
+                    "técnico o un eje que nadie respetó."
+                )
+                action = (
+                    "Revisar la franja completa de una vez, en sección: se cierra con varias "
+                    "decisiones, no con una, pero mirarlas juntas evita repetir el análisis "
+                    "en cada planta."
+                )
+                confidence = 0.6
+
             causes.append(
                 RootCause(
-                    kind="repeated_typology",
-                    title=f"Cruce repetido en {len(distinct_levels)} niveles",
-                    detail=(
-                        f"El mismo cruce {self.profile.label(key[0])} × {self.profile.label(key[1])} "
-                        f"aparece en la misma posición en planta en {len(distinct_levels)} niveles "
-                        f"({', '.join(sorted(distinct_levels)[:6])}). Es un detalle tipo, no "
-                        f"{len(indices)} problemas distintos."
-                    ),
-                    confidence=min(0.5 + 0.1 * len(distinct_levels), 0.95),
+                    kind="repeated_typology" if one_detail else "repeated_zone",
+                    title=title,
+                    detail=detail,
+                    confidence=confidence,
                     affected_clusters=sorted(indices),
                     clash_count=clash_total,
                     evidence={
                         "levels": sorted(distinct_levels),
                         "plan_position": [round(key[2] * tolerance, 1), round(key[3] * tolerance, 1)],
+                        "distinct_families": len(families),
+                        "families": sorted(families)[:8],
                     },
-                    suggested_action=(
-                        "Resolver el detalle una vez y propagarlo a todos los niveles; "
-                        "verificar si el error viene del tipo o del grupo repetido."
-                    ),
+                    suggested_action=action,
                 )
             )
         return causes
@@ -465,19 +571,74 @@ def _dense_peaks(
     return peaks
 
 
-def _system_key(clash: Clash) -> tuple[str, str] | None:
-    """(system identity of the movable side, discipline of the hard side)."""
-    hard_side, soft_side = None, None
+def _hard_and_soft(clash: Clash) -> tuple[ElementRef, ElementRef] | None:
+    """The side that does not move, and the side that does."""
     for side, other in ((clash.a, clash.b), (clash.b, clash.a)):
         if side.discipline in {"EST", "ARQ"} and other.discipline not in {"EST", "ARQ"}:
-            hard_side, soft_side = side, other
-            break
-    if hard_side is None or soft_side is None:
+            return side, other
+    return None
+
+
+def _system_key(clash: Clash) -> tuple[str, str] | None:
+    """(system identity of the movable side, discipline of the hard side)."""
+    sides = _hard_and_soft(clash)
+    if sides is None:
         return None
+    hard_side, soft_side = sides
     system = soft_side.prop("System Name", "System Type", "Sistema") or soft_side.parent_name
     if not system:
         return None
     return (system, hard_side.discipline)
+
+
+def _is_elevation_candidate(clash: Clash) -> bool:
+    """Could this crossing be explained by the run sitting at the wrong height?
+
+    Only if the run STICKS OUT of what it crosses. A pipe wholly inside the
+    host's vertical range is passing through it, and then the Z overlap this
+    detector measures is the pipe's own diameter — the same number at every
+    crossing, because the pipe is the same pipe. That constancy is precisely
+    what the detector reads as proof of a systematic error, so a clean
+    pass-through produced the most confident finding in the report.
+
+    Measured on a live model: 67 of 67 crossings of two sprinkler branches
+    had a Z overlap equal to the branch's own bounding height, and the claim
+    that the run sat 44 mm too low was published at 0.88 and 0.95 confidence.
+    Its suggested fix — lower the run 50 mm — could not have worked: 40 of
+    the 54 things it crossed were vertical walls and columns, where moving
+    down keeps you inside the wall and merely moves the hole.
+
+    Those crossings are real and they are not free; they are penetrations
+    needing a sleeve, which is what `missing_penetration` already says about
+    them. What they are not is a levelling mistake.
+    """
+    sides = _hard_and_soft(clash)
+    if sides is None:
+        return False
+    hard, soft = sides
+
+    overlap = _vertical_overlap(clash)
+    if overlap <= 0.0:
+        return False
+
+    soft_height = soft.bbox_max[2] - soft.bbox_min[2]
+    hard_height = hard.bbox_max[2] - hard.bbox_min[2]
+    if soft_height <= 0.0 or hard_height <= 0.0:
+        return False
+
+    # A tenth of slack on each side: an overlap that consumes ALL of either
+    # box means that box passes clean through the other, and moving it up or
+    # down carries the crossing with it.
+    #
+    # The test has to run both ways round because the same arithmetic hides
+    # two different geometries. A horizontal branch through a wall reports
+    # its own diameter; a vertical riser through a slab reports the slab's
+    # thickness — 177.8 mm, seven inches, with a standard deviation of
+    # exactly zero across every crossing, which the detector read as the
+    # tightest evidence it had ever seen.
+    if overlap >= soft_height * 0.9:
+        return False
+    return overlap < hard_height * 0.9
 
 
 def _vertical_overlap(clash: Clash) -> float:

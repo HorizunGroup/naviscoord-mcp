@@ -185,13 +185,8 @@ class SessionState:
                 hint="Comprueba navis_health: puede que Navisworks aún esté cargando el federado.",
             )
 
-        expected = (expected_fingerprint or "").strip()
-        if not expected:
-            raise StateError(
-                "Falta expected_document_fingerprint; no voy a mutar usando una huella cacheada.",
-                hint="Lee la huella vigente con navis_health y repite la operación explícitamente.",
-            )
-        if expected != live:
+        expected = (expected_fingerprint or self.document_fingerprint or "").strip()
+        if expected and expected != live:
             raise StateError(
                 f"El documento activo («{title or live}») no es el que esperabas ({expected}). "
                 "No se tocó nada.",
@@ -206,6 +201,19 @@ class SessionState:
         return live
 
     def issue(self, issue_id: str) -> Issue:
+        """One issue from the analysis — and only if the analysis still applies.
+
+        It used to call ``require_result``, which asks whether an analysis
+        exists and not whether it describes the document that is open now. So
+        after the operator closed Torre A and opened Torre B, ``navis_select_issue``
+        happily returned an Issue full of Torre A's path ids and the add-in
+        selected whatever those ids happened to name in Torre B — or nothing,
+        which was the lucky outcome.
+
+        Every consumer that resolves an ``issue_id`` goes through here, so the
+        freshness check lives here rather than in each of them: detail, select
+        and status cannot each remember on their own.
+        """
         result = self.require_fresh_result()
         for issue in result.issues:
             if issue.issue_id.lower() == issue_id.lower():

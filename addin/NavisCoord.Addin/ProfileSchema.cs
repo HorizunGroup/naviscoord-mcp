@@ -92,6 +92,8 @@ namespace NavisCoord
             "clustering", "severity", "root_cause", "interop", "clash_matrix",
             // workflow half (add-in)
             "sets", "clash", "reglas", "rules",
+            // free area: never validated, never consumed by this side
+            "extensions",
             // metadata
             "$schema", "schema", "name", "description", "units", "version"
         };
@@ -313,7 +315,7 @@ namespace NavisCoord
                 if (!KnownSections.Contains(key))
                 {
                     report.Warnings.Add(
-                        "Sección desconocida \"" + key + "\": se ignora. ¿Un typo?");
+                        "Sección desconocida \"" + key + "\": la validación semántica (ProfileRules) la rechaza. Los datos propios van en «extensions»; ¿un typo?");
                     continue;
                 }
                 if (profile[key] is Dictionary<string, object> || profile[key] is List<object>)
