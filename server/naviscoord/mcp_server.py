@@ -131,8 +131,9 @@ def _protocol_server(server: Any) -> Any:
 #
 # El título viaja dentro de ToolAnnotations y no en el parámetro `title=` de
 # `mcp.tool()`, que solo existe en las versiones nuevas de la librería: el
-# rango soportado arranca en mcp 1.9 (ver pyproject) y allí ese kwarg todavía
-# no está — pasarlo rompería la instalación más vieja que decimos soportar.
+# rango soportado arranca en mcp 1.14 (ver pyproject) y allí ese kwarg
+# todavía no está — pasarlo rompería la instalación más vieja que decimos
+# soportar.
 
 
 def _read_only(title: str) -> ToolAnnotations:

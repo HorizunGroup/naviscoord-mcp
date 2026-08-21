@@ -109,11 +109,52 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return seen
 
 
+def _text_depth_exceeds(text: str, limit: int) -> bool:
+    """La anidación del TEXTO, sin construir el documento.
+
+    `json.loads` con `object_pairs_hook` no usa el escáner en C: usa el de
+    Python, que recursa. Un documento de miles de niveles agota la pila del
+    intérprete mientras se parsea —antes de que `_assert_depth` llegue a
+    mirarlo— y lo que recibe quien llamó es un RecursionError, que no es un
+    rechazo tratable sino un fallo del intérprete. Y depende de la plataforma:
+    el mismo documento pasa en un Windows con la pila grande y revienta en el
+    Linux del CI, que es la peor forma de tener un límite.
+
+    Se cuenta igual que `_assert_depth` —contenedores abiertos, no valores—
+    para que las dos medidas no puedan discrepar en uno.
+    """
+    depth = 0
+    in_string = False
+    escaped = False
+    for character in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character in "{[":
+            depth += 1
+            if depth > limit:
+                return True
+        elif character in "}]":
+            depth -= 1
+    return False
+
+
 def loads_strict(text: str) -> Any:
     """Parse JSON the way the add-in does: no NaN, no duplicates, bounded."""
     if len(text.encode("utf-8")) > MAX_PROFILE_BYTES:
         raise ProfileRejected(
             "profile_too_large", f"el perfil supera {MAX_PROFILE_BYTES} bytes"
+        )
+    if _text_depth_exceeds(text, MAX_PROFILE_DEPTH):
+        raise ProfileRejected(
+            "json_too_deep", f"el anidamiento supera {MAX_PROFILE_DEPTH} niveles"
         )
     try:
         value = json.loads(

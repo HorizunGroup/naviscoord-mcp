@@ -65,16 +65,21 @@ SERVER = ROOT / "server"
 # Kept in step with server/pyproject.toml. Both mcp majors are supported;
 # the <3 bound stands because 2.0 showed a major can remove the entry point
 # this server imports.
-REQUIREMENTS = ["mcp>=1.9,<3", "reportlab>=4.0,<6", "pillow>=10.0"]
+REQUIREMENTS = ["mcp>=1.14,<3", "reportlab>=4.0.4,<6", "pillow>=10.0,<13"]
 
 # The same bounds, in a form a version can be checked against. `import mcp`
 # was the whole validation, and mcp 3.0 imports perfectly — it is a major the
 # server cannot use, which is why the requirement says `<3`, and the failure
 # arrived at the first real call instead of at startup.
 VERSION_CONTRACT = [
-    Requirement("mcp", "mcp", minimum=(1, 9), below=(3,)),
-    Requirement("reportlab", "reportlab", minimum=(4, 0), below=(6,)),
-    Requirement("pillow", "PIL", minimum=(10, 0)),
+    # El suelo de mcp es 1.14 y no 1.9 porque 1.9 no puede registrar estas
+    # tools: resuelve el parámetro de contexto con issubclass sobre la
+    # anotación, y con `from __future__ import annotations` esa anotación
+    # es una cadena. El import del servidor revienta entero, así que no es
+    # una versión que se pueda declarar soportada.
+    Requirement("mcp", "mcp", minimum=(1, 14), below=(3,)),
+    Requirement("reportlab", "reportlab", minimum=(4, 0, 4), below=(6,)),
+    Requirement("pillow", "PIL", minimum=(10, 0), below=(13,)),
 ]
 
 # Every module that must import for the server to actually work, mapped to

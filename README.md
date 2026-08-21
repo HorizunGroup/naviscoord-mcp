@@ -206,7 +206,7 @@ long anything is kept, is in [Privacy policy](docs/PRIVACY.md).
 | Operating system | Windows |
 | Navisworks | Autodesk Navisworks Manage 2024, 2025, 2026 |
 | Python | 3.10–3.14 |
-| MCP Python SDK | 1.9.x and 2.x |
+| MCP Python SDK | 1.14+ (1.x) and 2.x |
 | Add-in runtime | .NET Framework 4.8, x64 |
 | MCP clients | Claude Code, Codex, and clients that support local stdio servers |
 

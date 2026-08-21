@@ -520,7 +520,13 @@ jobs:
           assert lines[2]["result"]["isError"] is True
           payload = json.loads(lines[2]["result"]["content"][0]["text"])
           assert "simulado" in payload["detail"]
-          assert "pip install" in payload["arreglo"]
+          # No se busca "pip install": el launcher dejó de aconsejarlo a
+          # propósito, porque instalar los rangos públicos es justo lo que
+          # el lock existe para evitar. Lo que tiene que seguir siendo
+          # cierto es que el mensaje diga cómo crear el entorno y dónde
+          # está el lock del que sale.
+          assert "-m venv" in payload["arreglo"], payload["arreglo"]
+          assert payload["lock"] in payload["arreglo"], "el arreglo no dice dónde está el lock"
           print("modo degradado: ok")
           PY
 

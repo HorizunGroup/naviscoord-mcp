@@ -102,6 +102,29 @@ def _schema(tool) -> dict:
     return {}
 
 
+def _hint(annotations, *names: str):
+    """1.x spells the hints in camelCase; 2.x renamed the attributes to snake_case.
+
+    Both accept the camelCase spelling when the object is BUILT — the field
+    alias survived the rename — so the server registers its tools identically
+    on either release and only a reader has to know. Looking up one spelling
+    raises AttributeError on the other, which fails the checker rather than
+    the thing checked.
+    """
+    for name in names:
+        if hasattr(annotations, name):
+            return getattr(annotations, name)
+    raise AssertionError(f"ToolAnnotations no expone ninguno de {names}")
+
+
+def _read_only(annotations) -> bool:
+    return bool(_hint(annotations, "readOnlyHint", "read_only_hint"))
+
+
+def _destructive(annotations):
+    return _hint(annotations, "destructiveHint", "destructive_hint")
+
+
 @pytest.fixture(scope="module")
 def tools():
     return asyncio.run(mcp.list_tools())
@@ -222,7 +245,7 @@ def test_every_tool_is_annotated(tools):
         annotations = getattr(tool, "annotations", None)
         assert annotations is not None, f"{tool.name} no lleva anotaciones"
         assert (annotations.title or "").strip(), f"{tool.name} no lleva título"
-        declared = annotations.readOnlyHint or annotations.destructiveHint is not None
+        declared = _read_only(annotations) or _destructive(annotations) is not None
         assert declared, f"{tool.name} no declara readOnlyHint ni destructiveHint"
 
 
@@ -238,4 +261,4 @@ def test_no_writing_tool_claims_to_be_read_only(tools):
     for tool in tools:
         properties = set(_schema(tool).get("properties") or {})
         if {"expected_document_fingerprint", "dry_run"} & properties:
-            assert not tool.annotations.readOnlyHint, f"{tool.name} escribe y se declara de solo lectura"
+            assert not _read_only(tool.annotations), f"{tool.name} escribe y se declara de solo lectura"
