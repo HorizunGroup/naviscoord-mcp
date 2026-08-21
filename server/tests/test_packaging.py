@@ -9,6 +9,7 @@ cannot start the tool at all.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -511,6 +512,32 @@ class TestRuntimeDetection:
         pyproject = (ROOT / "server" / "pyproject.toml").read_text(encoding="utf-8")
         for requirement in launcher.REQUIREMENTS:
             assert f'"{requirement}"' in pyproject, requirement
+
+    def test_ci_installs_the_floors_the_package_declares(self) -> None:
+        """El job de mínimos no puede llevar su propia idea del suelo.
+
+        Instalaba `mcp==1.9.*` a mano mientras pyproject decía otra cosa. Un
+        suelo escrito en dos sitios se separa, y cuando se separa el job deja
+        de medir lo que dice medir: o prueba una versión que ya no se soporta,
+        o deja sin probar la que sí. Aquí se comparan los dos.
+        """
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        pins = re.search(
+            r'pip install ("mcp==[^"]+" "reportlab==[^"]+" "pillow==[^"]+")', workflow
+        )
+        assert pins, "no encontré el paso que instala los suelos exactos"
+
+        floors = {}
+        for requirement in launcher.REQUIREMENTS:
+            name, _, rest = requirement.partition(">=")
+            floors[name.strip()] = rest.split(",")[0].strip()
+
+        for pin_text in re.findall(r'"([^"]+)"', pins.group(1)):
+            name, _, exact = pin_text.partition("==")
+            declared = floors[name]
+            assert exact.rstrip(".*") == declared or exact == declared, (
+                f"{name}: el CI fija {exact} y el paquete declara >={declared}"
+            )
 
     def test_old_python_is_refused_with_an_explanation(self) -> None:
         ok, why = launcher.python_is_supported((3, 9))

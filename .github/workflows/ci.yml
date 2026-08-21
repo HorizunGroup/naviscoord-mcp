@@ -74,7 +74,7 @@ jobs:
         run: cd server && python -m pytest tests -q
 
   engine-minimums:
-    # pyproject declara mcp>=1.9, reportlab>=4.0, pillow>=10.0. Nada de eso es
+    # pyproject declara mcp>=1.14, reportlab>=4.0.4, pillow>=10.0. Nada de eso es
     # verdad si nadie lo ejecuta: la matriz normal resuelve las versiones MAS
     # NUEVAS dentro del rango, así que el mínimo declarado puede llevar roto
     # meses sin que ningún job lo note. Este job instala exactamente los
@@ -96,7 +96,7 @@ jobs:
         run: |
           cd server
           pip install -e ".[dev]"
-          pip install "mcp==1.9.*" "reportlab==4.0.*" "pillow==10.0.*"
+          pip install "mcp==1.14.*" "reportlab==4.0.4" "pillow==10.0.*"
       - name: Versiones resueltas
         run: pip show mcp reportlab pillow | grep -E "^(Name|Version)"
       - name: Pruebas
@@ -174,7 +174,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Herramienta de build
-        run: pip install build
+        # setuptools va explícito: desde 3.12 el intérprete ya no lo trae,
+        # y `verify_sdist --strict` reconstruye SIN red, así que no puede
+        # bajarlo como backend aislado. Sin él el paso no falla por lo que
+        # mide, sino por lo que le falta a la máquina.
+        run: pip install build setuptools
 
       - name: Construir y verificar artefactos
         # Reads both archives back and asserts LICENSE, NOTICE, the default

@@ -162,10 +162,10 @@ class TestRuntimeKey:
     def test_the_key_carries_no_personal_path(self) -> None:
         """The executable is part of the identity and must not be readable."""
         key = runtime_key(
-            interpreter=self._interp(executable=r"C:\Users\pablo\Python\python.exe"),
+            interpreter=self._interp(executable=r"C:\Users\tu-usuario\Python\python.exe"),
             **self.BASE,
         )
-        assert "pablo" not in key
+        assert "tu-usuario" not in key
         assert "Users" not in key
         assert "\\" not in key and "/" not in key
 

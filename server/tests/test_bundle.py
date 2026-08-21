@@ -288,11 +288,18 @@ class TestConcurrentWriters:
         threads = [threading.Thread(target=run, args=(f"w{i}",)) for i in range(4)]
         for t in threads:
             t.start()
+        # El join tiene que ser MAYOR que el timeout del candado del puntero:
+        # un hilo que esperó su turno sigue trabajando legítimamente, y un join
+        # que vence antes lo cuenta como "no publicó". Con los dos plazos en 30
+        # segundos el fallo aparecía solo en un runner cargado, una vez de cada
+        # diez, que es la peor manera de tener una prueba de concurrencia.
         for t in threads:
-            t.join(30)
+            t.join(120)
+        assert not any(t.is_alive() for t in threads), "un escritor no terminó"
 
         published = [r for r in results if not isinstance(r, BundleError)]
-        assert len(published) == 4, "los cuatro deben poder generar"
+        errors = [r for r in results if isinstance(r, BundleError)]
+        assert len(published) == 4, f"los cuatro deben poder generar; errores: {errors}"
         assert len({p.generation_id for p in published}) == 4, "ids distintos"
 
         # Whatever won, it is whole.
