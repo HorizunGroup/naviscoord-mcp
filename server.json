@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.horizungroup/naviscoord",
+  "name": "io.github.HorizunGroup/naviscoord-mcp",
   "title": "NavisCoord",
   "description": "Autodesk Navisworks coordination: clash triage, root causes, work plans and reports",
   "version": "0.4.1",

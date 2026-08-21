@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">NavisCoord turns raw Navisworks clashes into coordination decisions</title>
+  <desc id="desc">A five-step flow from thousands of raw clashes through filtering and root-cause analysis to work packages and verified reports.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="1" stop-color="#0d2538"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#000" flood-opacity=".3"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="360" rx="24" fill="url(#background)"/>
+  <text x="60" y="64" fill="#f8fafc" font-family="Segoe UI,Arial,sans-serif" font-size="30" font-weight="700">From clash noise to decisions a team can execute</text>
+  <text x="60" y="96" fill="#9fb3c8" font-family="Segoe UI,Arial,sans-serif" font-size="17">Deterministic analysis locally on the coordinator's workstation</text>
+
+  <g filter="url(#shadow)" font-family="Segoe UI,Arial,sans-serif">
+    <g transform="translate(55 135)">
+      <rect width="190" height="150" rx="16" fill="#16283d" stroke="#39536d"/>
+      <text x="22" y="38" fill="#7dd3fc" font-size="15" font-weight="700">01 · RAW</text>
+      <text x="22" y="75" fill="#fff" font-size="30" font-weight="700">5k–50k</text>
+      <text x="22" y="105" fill="#c4d2df" font-size="16">Navisworks clashes</text>
+      <text x="22" y="130" fill="#8299ae" font-size="13">duplicates · contacts · noise</text>
+    </g>
+    <path d="M255 210h35" stroke="#4d7598" stroke-width="4"/><path d="m286 202 12 8-12 8" fill="none" stroke="#4d7598" stroke-width="4"/>
+    <g transform="translate(305 135)">
+      <rect width="190" height="150" rx="16" fill="#123548" stroke="#28718e"/>
+      <text x="22" y="38" fill="#67e8f9" font-size="15" font-weight="700">02 · COMPRESS</text>
+      <text x="22" y="75" fill="#fff" font-size="24" font-weight="700">Filter + collapse</text>
+      <text x="22" y="105" fill="#c4d2df" font-size="16">Actionable issues</text>
+      <text x="22" y="130" fill="#82aebe" font-size="13">every rejection is auditable</text>
+    </g>
+    <path d="M505 210h35" stroke="#4d7598" stroke-width="4"/><path d="m536 202 12 8-12 8" fill="none" stroke="#4d7598" stroke-width="4"/>
+    <g transform="translate(555 135)">
+      <rect width="190" height="150" rx="16" fill="#163a3a" stroke="#2a8075"/>
+      <text x="22" y="38" fill="#5eead4" font-size="15" font-weight="700">03 · EXPLAIN</text>
+      <text x="22" y="75" fill="#fff" font-size="24" font-weight="700">Root causes</text>
+      <text x="22" y="105" fill="#c4d2df" font-size="16">Severity + hotspots</text>
+      <text x="22" y="130" fill="#82aea9" font-size="13">deterministic and configurable</text>
+    </g>
+    <path d="M755 210h35" stroke="#4d7598" stroke-width="4"/><path d="m786 202 12 8-12 8" fill="none" stroke="#4d7598" stroke-width="4"/>
+    <g transform="translate(805 135)">
+      <rect width="150" height="150" rx="16" fill="#253542" stroke="#64748b"/>
+      <text x="20" y="38" fill="#cbd5e1" font-size="15" font-weight="700">04 · PLAN</text>
+      <text x="20" y="75" fill="#fff" font-size="23" font-weight="700">Packages</text>
+      <text x="20" y="105" fill="#c4d2df" font-size="15">trade · zone · owner</text>
+      <text x="20" y="130" fill="#8fa0af" font-size="13">meeting-sized work</text>
+    </g>
+    <path d="M965 210h35" stroke="#4d7598" stroke-width="4"/><path d="m996 202 12 8-12 8" fill="none" stroke="#4d7598" stroke-width="4"/>
+    <g transform="translate(1015 135)">
+      <rect width="130" height="150" rx="16" fill="#173b31" stroke="#31a46c"/>
+      <text x="18" y="38" fill="#86efac" font-size="15" font-weight="700">05 · DELIVER</text>
+      <text x="18" y="75" fill="#fff" font-size="21" font-weight="700">Verified</text>
+      <text x="18" y="103" fill="#fff" font-size="21" font-weight="700">reports</text>
+      <text x="18" y="130" fill="#9ac4ae" font-size="13">PDF · CSV · handoff</text>
+    </g>
+  </g>
+  <text x="60" y="326" fill="#86efac" font-family="Segoe UI,Arial,sans-serif" font-size="15" font-weight="600">LOCAL MODEL DATA</text>
+  <text x="230" y="326" fill="#7890a5" font-family="Segoe UI,Arial,sans-serif" font-size="15">•</text>
+  <text x="255" y="326" fill="#7dd3fc" font-family="Segoe UI,Arial,sans-serif" font-size="15" font-weight="600">EXPLAINABLE RANKING</text>
+  <text x="455" y="326" fill="#7890a5" font-family="Segoe UI,Arial,sans-serif" font-size="15">•</text>
+  <text x="480" y="326" fill="#5eead4" font-family="Segoe UI,Arial,sans-serif" font-size="15" font-weight="600">EXPLICIT TARGETING</text>
+  <text x="665" y="326" fill="#7890a5" font-family="Segoe UI,Arial,sans-serif" font-size="15">•</text>
+  <text x="690" y="326" fill="#cbd5e1" font-family="Segoe UI,Arial,sans-serif" font-size="15" font-weight="600">POST-WRITE RE-READS</text>
+</svg>

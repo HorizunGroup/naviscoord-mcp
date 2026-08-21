@@ -7,53 +7,11 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [0.4.1] — 2026-08-20
 
-Nada de esto cambia lo que el motor calcula: los conteos de 0.4.0 siguen
-valiendo y un informe de esa versión no hay que rehacerlo. Lo que cambia es
-que NavisCoord ya puede listarse donde alguien lo encuentre, y que las
-escrituras se anuncian como lo que son.
-
-### Added
-
-- **Anotaciones en las 50 tools**: cada una declara su `title` y su hint de
-  solo lectura o destructivo. No es metadato decorativo — el cliente decide
-  con ellos qué ejecuta sin preguntar y qué exige confirmación del usuario,
-  así que un hint optimista es una escritura que nadie confirmó. Dos pruebas
-  lo sostienen: una exige la anotación, y la otra falla si una tool que acepta
-  `expected_document_fingerprint` o `dry_run` se declara de solo lectura.
-- **Política de privacidad** (`docs/PRIVACY.md`, con su sección en el README),
-  escrita leyendo el código y no la intención. Por eso dice dos cosas que el
-  README no decía: los resúmenes que devuelven las tools viajan al proveedor
-  del modelo a través del cliente MCP, y el launcher abre una conexión a PyPI
-  cuando aprovisiona su entorno.
-- **`server.json`** para el registro oficial de MCP, y el marcador `mcp-name`
-  dentro del README, que es donde ese registro verifica la propiedad del
-  paquete — viaja en la descripción que PyPI publica.
-- **Empaquetado como bundle de escritorio** (`scripts/build_mcpb.py`), única
-  puerta de un servidor local al directorio de conectores, con la lista de
-  tools leída del servidor vivo en vez de escrita a mano. El icono se genera
-  con código (`scripts/make_icon.py`) sobre el `brandColor` ya declarado.
-- **Validación de argumentos por parámetro**: el rechazo ocurre antes de
-  llamar a nada, así que un argumento inválido no toca el puente ni el estado
-  en memoria, y el error dice cuál falló. Los perfiles se rechazan al leerlos
-  —truncado, NaN, clave duplicada, cuerpo enorme— en vez de convertirse en un
-  `Profile` del que ya nadie puede fiarse.
-- **Contrato y sincronización de perfil** entre servidor y complemento, para
-  que no discrepen en silencio sobre cuál está vigente.
-- **Aprovisionamiento del runtime del plugin** con lock e identidad, que es lo
-  que permite arrancar en una máquina que no preparó nadie.
-- **Add-in**: admisión de trabajos, contratos de ruta, verificación de la
-  corrida y del guardado, ledger de apariencia, planificación de configure y
-  de clash, JSON estricto y seguridad de la sesión, cada uno con sus pruebas.
-
-### Changed
-
-- La ficha que publican los directorios pasa a inglés, que es quien la lee;
-  las tools se siguen describiendo en español, que es el idioma de quien
-  trabaja con ellas.
-- `docs/PUBLISHING.md` documenta las tres puertas de publicación y lo que
-  exige cada una.
-
-## [0.4.0] — 2026-08-19
+**Los conteos cambian.** Estos arreglos del motor se escribieron antes de
+0.4.0 pero no entraron en esa release: el 0.4.0 publicado es el de la línea
+de seguridad e instalación. Salen aquí. Un informe archivado antes de esta
+versión sobrestima lo limpio que estaba el modelo, y conviene volver a
+correrlo.
 
 Menor, no parche: los conteos cambian. Sobre el modelo con el que se encontró
 esto, los mismos 1.911 cruces crudos pasaron de 397 problemas y 18 críticos a
@@ -238,6 +196,96 @@ buena noticia.
   search sets de cada lado, que son la señal exacta y no dependen de cómo se
   tituló el test. El servidor cae al nombre del test cuando habla con un
   add-in anterior, así que la corrección funciona sin actualizar el complemento.
+
+### Added
+
+- **Anotaciones en las 50 tools**: cada una declara su `title` y su hint de
+  solo lectura o destructivo. No es metadato decorativo — el cliente decide
+  con ellos qué ejecuta sin preguntar y qué exige confirmación del usuario,
+  así que un hint optimista es una escritura que nadie confirmó. Dos pruebas
+  lo sostienen: una exige la anotación, y la otra falla si una tool que acepta
+  `expected_document_fingerprint` o `dry_run` se declara de solo lectura.
+- **Política de privacidad** (`docs/PRIVACY.md`, con su sección en el README),
+  escrita leyendo el código y no la intención. Por eso dice dos cosas que el
+  README no decía: los resúmenes que devuelven las tools viajan al proveedor
+  del modelo a través del cliente MCP, y el launcher abre una conexión a PyPI
+  cuando aprovisiona su entorno.
+- **`server.json`** para el registro oficial de MCP, y el marcador `mcp-name`
+  dentro del README, que es donde ese registro verifica la propiedad del
+  paquete — viaja en la descripción que PyPI publica.
+- **Empaquetado como bundle de escritorio** (`scripts/build_mcpb.py`), única
+  puerta de un servidor local al directorio de conectores, con la lista de
+  tools leída del servidor vivo en vez de escrita a mano. El icono se genera
+  con código (`scripts/make_icon.py`) sobre el `brandColor` ya declarado.
+- **Validación de argumentos por parámetro**: el rechazo ocurre antes de
+  llamar a nada, así que un argumento inválido no toca el puente ni el estado
+  en memoria, y el error dice cuál falló. Los perfiles se rechazan al leerlos
+  —truncado, NaN, clave duplicada, cuerpo enorme— en vez de convertirse en un
+  `Profile` del que ya nadie puede fiarse.
+- **Contrato y sincronización de perfil** entre servidor y complemento, para
+  que no discrepen en silencio sobre cuál está vigente.
+- **Aprovisionamiento del runtime del plugin** con lock e identidad, que es lo
+  que permite arrancar en una máquina que no preparó nadie.
+- **Add-in**: admisión de trabajos, contratos de ruta, verificación de la
+  corrida y del guardado, ledger de apariencia, planificación de configure y
+  de clash, JSON estricto y seguridad de la sesión, cada uno con sus pruebas.
+
+### Changed
+
+- La ficha que publican los directorios pasa a inglés, que es quien la lee;
+  las tools se siguen describiendo en español, que es el idioma de quien
+  trabaja con ellas.
+- `docs/PUBLISHING.md` documenta las tres puertas de publicación y lo que
+  exige cada una.
+
+
+## [0.4.0] — 2026-08-20
+
+Esta versión combina la superficie visual y operativa de 0.3.1 con una
+revisión profunda de seguridad, consistencia del análisis, instalación y
+presentación pública. Cambian varias firmas mutantes al añadir `dry_run`,
+fingerprint e idempotencia; por eso es una versión menor y no un parche.
+
+### Added
+
+- Instalador de releases para principiantes con detección de Navisworks
+  2024–2026, verificación de `SHA256SUMS.txt`, validación estricta del ZIP,
+  publicación atómica y rollback.
+- README bilingüe, quick starts, benchmark público, plan de lanzamiento,
+  `llms.txt`, imagen social y metadatos de distribución.
+- Bundles de handoff publicados bajo lock, manifest de ejecución, staging y
+  rollback del conjunto completo.
+- Pruebas estructurales para handles de Clash frescos y publicación semántica
+  de Selection Sets sin ventana `Remove` + `AddCopy`.
+
+### Fixed
+
+- Las causas raíz y los paquetes usan identidades estables después de ordenar
+  las incidencias; una causa ya no recibe decisiones de otro cluster.
+- Los paquetes pueden solaparse como contexto, pero cada decisión tiene un
+  único dueño determinista y no se cuenta dos veces.
+- El límite espacial de clustering se cumple incluso cuando DBSCAN devuelve
+  una sola partición sobredimensionada.
+- Perfiles con `NaN`, infinitos, tipos incompatibles o parámetros que provocan
+  divisiones por cero se rechazan antes del motor.
+- Las mutaciones heredadas, selección, apariencia y guardado exigen identidad
+  explícita, empiezan en `dry_run` y retornan el envelope común.
+- La admisión de trabajos reserva documento e idempotencia atómicamente y
+  congela payload y perfil antes de entrar en cola.
+- El parser HTTP aplica JSON estricto y profundidad acotada; errores de dominio
+  reciben códigos HTTP coherentes.
+- Los wrappers de `ClashResult` y `ClashTest` nunca sobreviven a una mutación
+  del árbol; cada edición re-resuelve el GUID en la generación vigente.
+- Instalación, release, checks de artefactos y launcher endurecidos contra
+  copias parciales, runtimes incompatibles, carreras y rutas no autorizadas.
+
+### Changed
+
+- El posicionamiento público pasa de “control MCP” a inteligencia de
+  coordinación: clashes → incidencias → causas raíz → paquetes verificables.
+- CI cubre Python 3.10–3.14, mínimos declarados, tags de release, dependencias
+  hash-locked y validaciones de packaging en Windows y Linux.
+
 
 ## [0.3.1] — 2026-08-16
 

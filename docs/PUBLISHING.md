@@ -63,13 +63,14 @@ el esquema `2025-12-11`.
 
 Dos cosas que se comprueban solas y conviene entender antes de correr nada:
 
-- **El nombre exige ser Owner.** `io.github.horizungroup/naviscoord` solo se
-  concede a un Owner de la organización HorizunGroup en GitHub; pertenecer a
-  la organización no basta. Si no lo eres, el registro te dará el espacio
-  personal `io.github.<tu-usuario>/*` en su lugar.
+- **El nombre exige ser Owner.** `io.github.HorizunGroup/naviscoord-mcp` solo
+  se concede a un Owner de la organización HorizunGroup en GitHub; pertenecer
+  a la organización no basta. Que `io.github.HorizunGroup/horizun-msproject-mcp`
+  ya esté publicado en el registro confirma que el namespace funciona con esa
+  cuenta y con esa capitalización.
 - **La propiedad del paquete se verifica leyendo el README que PyPI muestra
   como descripción**, buscando ahí la cadena `mcp-name:
-  io.github.horizungroup/naviscoord`. El marcador ya está en
+  io.github.HorizunGroup/naviscoord-mcp`. El marcador ya está en
   [README.md](../README.md), pero viaja dentro del wheel y del sdist: si
   subes a PyPI un artefacto construido **antes** de que se agregara, la
   verificación falla y no hay forma de arreglarlo salvo publicar otra versión.

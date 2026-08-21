@@ -78,8 +78,8 @@ Los archivos a cambiar en el paso 2 son:
 - `.claude-plugin/marketplace.json`
 - `.agents/plugins/marketplace.json`
 
-Este repositorio no publica instalador: el artefacto del complemento es un
-ZIP por versión de Navisworks, construido en el paso 4.
+`Install-NavisCoord.ps1` es el instalador ligero distribuido con el código; los
+artefactos binarios siguen siendo un ZIP por versión de Navisworks.
 
 ## 3. Actualizar el CHANGELOG
 
@@ -262,7 +262,9 @@ Para el paquete de Python, una copia limpia del tag:
 ```bash
 RELEASE_TREE="/tmp/release-${VERSION}"
 git worktree add "$RELEASE_TREE" "$TAG"
-cd "$RELEASE_TREE" && python scripts/build_artifacts.py
+cd "$RELEASE_TREE"
+python scripts/build_artifacts.py
+powershell -File scripts/Build-Release.ps1 -Version all -VerifyReproducible
 ```
 
 `build_artifacts.py` **no escribe en `server/`**. Copia el paquete a un
@@ -321,7 +323,8 @@ El build de Release desactiva símbolos, normaliza rutas con `PathMap` y es
 determinista. `Build-Release.ps1` ejecuta `Assert-PublicArtifacts.ps1` antes de
 empaquetar: cualquier ruta de usuario, PDB o raíz absoluta bloquea el ZIP. Aun
 así, los checksums publicados deben salir del build definitivo hecho desde el
-tag, nunca de un ensayo anterior.
+tag, nunca de un ensayo anterior. `-VerifyReproducible` construye en rutas
+distintas y exige hashes idénticos antes de aceptar los ZIP.
 
 ## 9. Después
 
@@ -339,9 +342,10 @@ Mantener activos estos controles:
 - alertas y correcciones de seguridad de Dependabot;
 - secret scanning y push protection.
 
-Discussions permanece apagado deliberadamente: las preguntas de uso tienen su
-propio formulario de Issue. `CODEOWNERS` queda como decisión del equipo; la
-revisión obligatoria ya existe sin asignar propietarios por ruta.
+Discussions permanece habilitado para preguntas, ejemplos y soporte comunitario;
+los defectos reproducibles siguen entrando por los formularios de Issue.
+`CODEOWNERS` queda como decisión del equipo; la revisión obligatoria ya existe
+sin asignar propietarios por ruta.
 
 ### Por qué el check requerido es `ci-ok` y no cada job de la matriz
 

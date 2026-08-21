@@ -1,6 +1,7 @@
 # Local MCP registration: the paths in it are specific to one machine.
 # Ship .mcp.json.example instead.
 .mcp.json
+.claude/scheduled_tasks.lock
 
 # Build output
 bin/
