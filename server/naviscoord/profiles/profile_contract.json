@@ -1,0 +1,235 @@
+{
+  "schema": "naviscoord.profile-contract/1",
+  "_comment": [
+    "El contrato canónico del perfil: cada sección y cada campo que ALGÚN",
+    "consumidor lee de verdad. Las dos implementaciones de ProfileRules",
+    "(naviscoord/profilerules.py y NavisCoord.Addin/ProfileRules.cs) se",
+    "comprueban contra este archivo en sus suites: una clave consumida que",
+    "no aparezca aquí, o una clave de aquí que nadie consuma, rompe una",
+    "prueba en el lado que se desvió. Editarlo es declarar una extensión",
+    "del formato, no documentarla después.",
+    "",
+    "Las claves que empiezan por '_' son comentario en cualquier nivel del",
+    "perfil y no forman parte del contrato. La única zona libre para datos",
+    "propios es la sección 'extensions': ahí no se valida nada."
+  ],
+  "metadata_keys": [
+    "$schema",
+    "schema",
+    "name",
+    "description",
+    "units",
+    "version"
+  ],
+  "extensions_key": "extensions",
+  "sections": {
+    "disciplines": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [
+        "label",
+        "categories",
+        "file_patterns"
+      ],
+      "field_policy": "closed"
+    },
+    "discipline_aliases": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [],
+      "field_policy": "open-map",
+      "_why_open": "las claves son códigos de disciplina del proyecto"
+    },
+    "freestanding_disciplines": {
+      "consumers": [
+        "addin"
+      ],
+      "fields": [],
+      "field_policy": "open-map"
+    },
+    "element_nouns": {
+      "consumers": [
+        "engine"
+      ],
+      "fields": [],
+      "field_policy": "open-map",
+      "_why_open": "las claves son categorías de Navisworks"
+    },
+    "non_discipline_categories": {
+      "consumers": [
+        "engine"
+      ],
+      "fields": [
+        "names"
+      ],
+      "field_policy": "closed"
+    },
+    "system_keywords": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [],
+      "field_policy": "open-map"
+    },
+    "movability": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [
+        "by_category",
+        "by_discipline",
+        "gravity_disciplines"
+      ],
+      "field_policy": "closed"
+    },
+    "criticality_matrix": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [],
+      "field_policy": "open-map",
+      "_why_open": "las claves son pares 'DISCIPLINA|DISCIPLINA'"
+    },
+    "noise_filter": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [
+        "ambiguous_pass_through_categories",
+        "architectural_by_design",
+        "designed_adjacency",
+        "drop_same_system_fittings",
+        "drop_statuses",
+        "flush_mounted",
+        "insulation_categories",
+        "insulation_penetration_tolerance_m",
+        "max_penetration_m",
+        "min_penetration_m",
+        "pass_through_categories",
+        "pass_through_keywords"
+      ],
+      "field_policy": "closed",
+      "reserved": [
+        "max_penetration_m"
+      ],
+      "_why_reserved": "max_penetration_m se valida (rango y relacion min<=max) pero hoy ningun consumidor lo lee: el filtro solo usa min_penetration_m. Se conserva reservado porque quitar la validacion cambiaria las decisiones del corpus compartido; conectarlo o retirarlo es una decision de producto pendiente."
+    },
+    "clustering": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [
+        "eps_m",
+        "min_samples",
+        "max_cluster_span_m",
+        "same_discipline_pair_only"
+      ],
+      "field_policy": "closed"
+    },
+    "severity": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [
+        "weights",
+        "priority_bands",
+        "cluster_size_saturation",
+        "congestion_saturation",
+        "congestion_radius_m",
+        "deep_interference_m",
+        "penetration_ratio_cap"
+      ],
+      "field_policy": "closed"
+    },
+    "root_cause": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [
+        "min_clashes",
+        "min_confidence",
+        "folding",
+        "congested_zone",
+        "missing_penetration",
+        "repeated_typology",
+        "systemic_elevation"
+      ],
+      "field_policy": "closed"
+    },
+    "interop": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [
+        "handoff_schema",
+        "harvest_properties",
+        "budget_code_keys",
+        "classification_keys",
+        "revit_element_id_keys"
+      ],
+      "field_policy": "closed"
+    },
+    "clash_matrix": {
+      "consumers": [
+        "engine",
+        "addin"
+      ],
+      "fields": [
+        "pairs",
+        "default_tolerance_m"
+      ],
+      "field_policy": "closed",
+      "reserved": [
+        "default_tolerance_m"
+      ],
+      "_why_reserved": "default_tolerance_m se valida (0..100) pero ningun consumidor lo lee: las tolerancias reales viajan por par dentro de pairs[]. Mismo caso que noise_filter.max_penetration_m: conectar o retirar es decision pendiente."
+    },
+    "sets": {
+      "consumers": [
+        "addin"
+      ],
+      "fields": [],
+      "field_policy": "open-map",
+      "_why_open": "las claves son nombres de search sets del proyecto"
+    },
+    "clash": {
+      "consumers": [
+        "addin"
+      ],
+      "fields": [],
+      "field_policy": "open-map"
+    },
+    "rules": {
+      "consumers": [
+        "addin"
+      ],
+      "fields": [],
+      "field_policy": "open-map"
+    },
+    "reglas": {
+      "consumers": [
+        "addin"
+      ],
+      "fields": [],
+      "field_policy": "open-map"
+    },
+    "extensions": {
+      "consumers": [],
+      "fields": [],
+      "field_policy": "free",
+      "_why_free": "la única zona donde un proyecto guarda datos propios sin validación"
+    }
+  }
+}

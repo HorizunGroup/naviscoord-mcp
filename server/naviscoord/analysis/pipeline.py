@@ -283,6 +283,7 @@ def analyze(
         issues.append(
             Issue(
                 issue_id="",  # assigned after ranking so IDs follow priority
+                cluster_id=index,  # stable; survives every later reordering
                 kind=cluster.kind,
                 discipline_pair=cluster.discipline_pair,
                 clash_ids=[c.guid for c in cluster.clashes],
@@ -325,6 +326,12 @@ def analyze(
         issue = issues[original_index]
         issue.issue_id = f"ISS-{rank:04d}"
         ranked.append(issue)
+
+    # The last moment cluster position still means anything, and the first at
+    # which the issues have public ids. Everything downstream — the plan, the
+    # reports, the handoff — reads the ids from here on, so the sort above
+    # cannot silently re-point a cause at somebody else's issue.
+    _resolve_cause_identities(issues, result.root_causes)
 
     _fold_shared_causes(ranked, profile)
     result.issues = ranked
@@ -418,6 +425,40 @@ def _all_elements(clashes: list[Clash]) -> list[ElementRef]:
     return list(seen.values())
 
 
+def _resolve_cause_identities(issues: list[Issue], causes: list[RootCause]) -> None:
+    """Translates cluster numbers into issue ids through an explicit map.
+
+    The list may arrive in any order. Each issue carries the cluster it came
+    from, so the correspondence is a lookup rather than an agreement between
+    two orderings — which is what broke: causes named clusters, issues were
+    sorted by severity, and the plan read the sorted list at the cause's
+    cluster number.
+
+    Building the map from `cluster_id` rather than from position is the point.
+    Inserting another sort anywhere before this call changes nothing, and a
+    test does exactly that to prove it.
+
+    A cluster with no issue behind it is recorded, never guessed at; guessing
+    is the failure this replaces.
+    """
+    by_cluster: dict[int, str] = {}
+    for issue in issues:
+        if issue.cluster_id >= 0 and issue.issue_id:
+            by_cluster[issue.cluster_id] = issue.issue_id
+
+    for cause in causes:
+        resolved: list[str] = []
+        missing: list[int] = []
+        for index in cause.affected_clusters:
+            found = by_cluster.get(index)
+            if found:
+                resolved.append(found)
+            else:
+                missing.append(index)
+        cause.affected_issue_ids = resolved
+        cause.unresolved_clusters = missing
+
+
 def _attach_root_causes(issues: list[Issue], causes: list[RootCause]) -> None:
     """Annotate each issue with the strongest cause that claims it."""
     best: dict[int, RootCause] = {}
@@ -426,10 +467,16 @@ def _attach_root_causes(issues: list[Issue], causes: list[RootCause]) -> None:
             current = best.get(index)
             if current is None or cause.confidence > current.confidence:
                 best[index] = cause
+    # By cluster id, not by position. This runs before the ranking today, so
+    # position would still work — and that is precisely the kind of quiet
+    # dependence on running order that put a zone's issues in an elevation
+    # package. Looking it up costs nothing and stops mattering when somebody
+    # moves this call.
+    by_cluster = {issue.cluster_id: issue for issue in issues if issue.cluster_id >= 0}
     for index, cause in best.items():
-        if index >= len(issues):
+        issue = by_cluster.get(index)
+        if issue is None:
             continue
-        issue = issues[index]
         issue.root_cause = {
             "cause_id": cause.cause_id,
             "kind": cause.kind,

@@ -73,6 +73,8 @@ namespace NavisCoord
         private int _port;
         private Thread _worker;
         private volatile bool _running;
+        private volatile string _state = BridgeState.Starting;
+        private string _securityFailure = string.Empty;
 
         public HttpBridge(UiDispatcher dispatcher, Router router, int port = DefaultPort)
         {
@@ -132,9 +134,34 @@ namespace NavisCoord
                     lastFailure);
             }
 
-            _running = true;
+            // The port is reserved above and NOT yet being accepted: the loop
+            // that calls GetContext starts at the bottom of this method. So the
+            // order is reserve, publish the credential securely, then accept —
+            // no authenticated request can be served before the token exists
+            // where the client can find it, and none is served at all if it
+            // could not be protected.
             SessionStore.Prune();
-            WriteSessionFile();
+            try
+            {
+                WriteSessionFile();
+            }
+            catch (SecurityNotEnforceable secure)
+            {
+                // Fail closed. Nothing listens, nothing is published, and the
+                // reason is actionable rather than a warning in a log nobody
+                // reads.
+                _state = BridgeState.FailedSecurity;
+                _securityFailure = secure.Message;
+                try { _listener?.Close(); } catch { /* never accepted */ }
+                _listener = null;
+                _running = false;
+                SessionStore.Remove(_pid, _sessionId);
+                BridgeHost.Log("El puente NO se inició: " + secure.Message);
+                throw;
+            }
+
+            _running = true;
+            _state = BridgeState.Ready;
             AuditRuntimeSecurity();
             SubscribeDocumentEvents();
 
@@ -146,15 +173,135 @@ namespace NavisCoord
             _worker.Start();
         }
 
-        public void Stop()
+        /// <summary>What the bridge is doing, as one of the named states.</summary>
+        public string State => _state;
+
+        /// <summary>Why the bridge refused to start, when it did.</summary>
+        public string SecurityFailure => _securityFailure;
+
+        /// <summary>
+        /// Stop accepting, drop what has not started, and stay answerable
+        /// until nothing can still be mutating.
+        /// </summary>
+        /// <remarks>
+        /// The old Stop closed the listener and deleted the session file. Both
+        /// of those are what "stopped" looks like from outside, and neither was
+        /// true: a job already accepted could still be inside a Navisworks call
+        /// rewriting clash tests, and with the session file gone there was no
+        /// way left to ask about it. The operator read "detenido" and concluded
+        /// nothing further would happen to their model.
+        ///
+        /// So Stop has two exits. If nothing survives the drain it finishes and
+        /// the session goes away. If a job is running inside an atomic API call
+        /// — which has no supported interruption — the bridge stays in
+        /// `draining`: the listener no longer accepts new mutations, the
+        /// session record stays so job/status still answers, and Stop reports
+        /// which job is holding it open.
+        /// </remarks>
+        public Dictionary<string, object> Stop()
         {
-            if (!_running) return;
+            if (!_running)
+            {
+                return new Dictionary<string, object>
+                {
+                    ["state"] = _state,
+                    ["stopped"] = _state == BridgeState.Stopped ||
+                                  _state == BridgeState.FailedSecurity,
+                    ["detail"] = "El puente no estaba escuchando."
+                };
+            }
+
+            // Refuse new work first, so nothing joins the queue while it drains.
+            _state = BridgeState.Stopping;
             UnsubscribeDocumentEvents();
+
+            var drain = JobManager.StopAndDrain();
+            var stillRunning = Json.Str(drain, "still_running");
+
+            if (!string.IsNullOrEmpty(stillRunning))
+            {
+                // Draining, not stopped. The session record stays exactly so
+                // this job remains queryable.
+                _state = BridgeState.Draining;
+                var pendingJob = JobManager.Get(stillRunning);
+                return new Dictionary<string, object>
+                {
+                    ["state"] = _state,
+                    ["stopped"] = false,
+                    ["cancelled_pending"] = drain["cancelled_pending"],
+                    ["running_job"] = stillRunning,
+                    ["running_operation"] = pendingJob?.Operation ?? string.Empty,
+                    ["running_stopped"] = false,
+                    ["detail"] = "El trabajo " + stillRunning + " (" +
+                                 (pendingJob?.Operation ?? "?") + ") sigue dentro de una llamada " +
+                                 "de Navisworks y no se puede interrumpir. El puente queda en " +
+                                 "'draining': no acepta mutaciones nuevas y sigue respondiendo " +
+                                 "job/status hasta que ese trabajo termine.",
+                    ["poll"] = "job/status con {\"job_id\": \"" + stillRunning + "\"}"
+                };
+            }
+
+            return FinishStop(drain);
+        }
+
+        /// <summary>Completes a stop once nothing can still mutate.</summary>
+        /// <remarks>
+        /// Only here does the listener close and the session record disappear.
+        /// Separated from <see cref="Stop"/> so the draining path reaches the
+        /// same ending rather than a second copy of it.
+        /// </remarks>
+        public Dictionary<string, object> FinishStop(Dictionary<string, object> drain = null)
+        {
             _running = false;
+            _state = BridgeState.Stopped;
             try { _listener?.Stop(); } catch { /* already tearing down */ }
             // Only OUR entry. Deleting the shared file was the bug that made
             // closing 2024 break the live 2026 bridge.
             SessionStore.Remove(_pid, _sessionId);
+
+            var result = new Dictionary<string, object>
+            {
+                ["state"] = _state,
+                ["stopped"] = true,
+                ["detail"] = "El puente se detuvo y la sesión se retiró."
+            };
+            if (drain != null && drain.TryGetValue("cancelled_pending", out var cancelled))
+            {
+                result["cancelled_pending"] = cancelled;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Process teardown: best effort, and honest about what that means.
+        /// </summary>
+        /// <remarks>
+        /// Navisworks closing is not the same event as the operator pressing
+        /// Stop. There is no waiting to be done — the process is destroying the
+        /// APIs a running job is inside — so this records what was in flight
+        /// and removes the session so nothing else can call in, without
+        /// pretending anything was cancelled.
+        /// </remarks>
+        public Dictionary<string, object> Dispose(string reason)
+        {
+            var running = JobManager.Active();
+            if (running != null)
+            {
+                BridgeHost.Log("El proceso termina (" + reason + ") con el trabajo " + running.Id +
+                               " (" + running.Operation + ") en ejecución. No se puede cancelar; " +
+                               "el estado final de ese trabajo no quedará registrado.");
+            }
+            _running = false;
+            _state = BridgeState.Stopped;
+            try { _listener?.Abort(); } catch { /* the process is going */ }
+            SessionStore.Remove(_pid, _sessionId);
+            return new Dictionary<string, object>
+            {
+                ["state"] = _state,
+                ["reason"] = reason ?? string.Empty,
+                ["was_running"] = running?.Id ?? string.Empty,
+                ["running_stopped"] = false
+            };
         }
 
         private void Loop()
@@ -214,7 +361,13 @@ namespace NavisCoord
             // nothing about the model.
             if (IsAnonymousLiveness(request, route))
             {
-                TryRespond(context, 200, LivenessPayload());
+                var liveness = LivenessPayload();
+                liveness["bridge_state"] = _state;
+                if (_state == BridgeState.Draining)
+                {
+                    liveness["draining_job"] = JobManager.Active()?.Id ?? string.Empty;
+                }
+                TryRespond(context, 200, liveness);
                 return;
             }
 
@@ -247,19 +400,23 @@ namespace NavisCoord
                 return;
             }
 
-            // Json.ParseObject is deliberately forgiving and returns an empty
-            // object for malformed input rather than throwing, so a bad body
-            // reaches the handler as "no arguments" instead of a 500. That is
-            // right for a MISSING body and wrong for a malformed one: a
-            // truncated payload would be acted on as though the caller had
-            // asked for the defaults, and answered 200.
-            var payload = Json.ParseObject(body);
-            if (!LooksLikeJsonObject(body, payload))
+            // One strict parse, not a permissive parse checked afterwards by a
+            // second scanner. Two readers over one string is two grammars, and
+            // the one that decides what the handler sees was the lenient one:
+            // a body cut off in transit came through as a complete-looking
+            // dictionary and was answered 200.
+            Dictionary<string, object> payload;
+            if (string.IsNullOrWhiteSpace(body))
             {
-                TryRespond(context, 400, Error(
-                    "invalid_json",
-                    "El cuerpo no es un objeto JSON válido. Se recibieron " +
-                    Encoding.UTF8.GetByteCount(body) + " bytes."));
+                // An absent body is legitimate: most routes take no arguments.
+                payload = new Dictionary<string, object>();
+            }
+            else if (!JsonStrict.TryParseObject(body, out payload, out var badJson))
+            {
+                var refusal = badJson.ToJson();
+                refusal["detail"] = badJson.Detail + " (posición " + badJson.Position + ", " +
+                                    Encoding.UTF8.GetByteCount(body) + " bytes recibidos)";
+                TryRespond(context, HttpStatus.For(badJson.Code), refusal);
                 return;
             }
 
@@ -267,12 +424,39 @@ namespace NavisCoord
             // answering while a job owns the UI thread.
             if (NonDocumentRoutes.Contains(route))
             {
-                TryRespond(context, 200, HandleWithoutDocument(route, payload));
+                var answered = HandleWithoutDocument(route, payload);
+                TryRespond(context, HttpStatus.For(answered), answered);
+                return;
+            }
+
+            // A bridge that is draining still answers questions and still
+            // refuses work. Accepting a mutation now would queue it behind the
+            // job that is keeping the drain open, which is the opposite of
+            // what pressing Stop asked for.
+            if (!BridgeState.AcceptsMutations(_state) && RouteContracts.IsMutation(route))
+            {
+                TryRespond(context, HttpStatus.For("bridge_stopping"), new Dictionary<string, object>
+                {
+                    ["error"] = "bridge_stopping",
+                    ["state"] = _state,
+                    ["detail"] = "El puente está " + _state + ": no acepta mutaciones nuevas. " +
+                                 "Las consultas siguen respondiendo."
+                });
                 return;
             }
 
             if (string.Equals(route, "job/submit", StringComparison.OrdinalIgnoreCase))
             {
+                if (!BridgeState.AcceptsMutations(_state))
+                {
+                    TryRespond(context, HttpStatus.For("bridge_stopping"), new Dictionary<string, object>
+                    {
+                        ["error"] = "bridge_stopping",
+                        ["state"] = _state,
+                        ["detail"] = "El puente está " + _state + " y no admite trabajos nuevos."
+                    });
+                    return;
+                }
                 var submission = SubmitJob(payload);
                 TryRespond(context, SubmitStatus(submission), submission);
                 return;
@@ -282,10 +466,15 @@ namespace NavisCoord
             {
                 var described = _dispatcher.Invoke(
                     () => _router.DescribeCapabilities(), TimeSpan.FromSeconds(20));
-                TryRespond(context, described.Ok ? 200 : 503,
-                    described.Ok
-                        ? Decorate(AddBridgeRoutes(described.Value), described.WaitedMs)
-                        : Error("bridge_busy", described.Rejection ?? described.Error?.Message ?? "sin respuesta"));
+                if (!described.Ok)
+                {
+                    TryRespond(context, HttpStatus.Unavailable,
+                        Error("dispatcher_busy",
+                            described.Rejection ?? described.Error?.Message ?? "sin respuesta"));
+                    return;
+                }
+                var manifest = Decorate(AddBridgeRoutes(described.Value), described.WaitedMs);
+                TryRespond(context, HttpStatus.For(manifest), manifest);
                 return;
             }
 
@@ -312,13 +501,16 @@ namespace NavisCoord
                 // federation simply has not finished opening — so it answers
                 // 409 with its own code instead of masquerading as a crash.
                 var noDocument = outcome.Error is Router.NoDocumentException;
-                var status = outcome.Rejection != null ? 503 : noDocument ? 409 : 500;
+                var code = outcome.Rejection != null
+                    ? "dispatcher_busy"
+                    : noDocument ? "no_document" : "internal_error";
+                var status = HttpStatus.For(code);
 
                 var error = outcome.Rejection != null
-                    ? Error("bridge_busy", outcome.Rejection)
+                    ? Error(code, outcome.Rejection)
                     : noDocument
-                        ? Error("no_document", outcome.Error.Message)
-                        : Error("command_failed", outcome.Error?.Message ?? "error desconocido");
+                        ? Error(code, outcome.Error.Message)
+                        : Error(code, outcome.Error?.Message ?? "error desconocido");
 
                 error["route"] = route;
                 if (outcome.Error != null && !noDocument)
@@ -337,7 +529,12 @@ namespace NavisCoord
 
             var exitAfterResponse = string.Equals(route, "application/exit", StringComparison.OrdinalIgnoreCase) &&
                                     Json.Bool(outcome.Value, "exit_requested", false);
-            TryRespond(context, 200, Decorate(outcome.Value, outcome.WaitedMs));
+            // Read from the reply rather than assumed from having got here.
+            // A handler that answered `status: failed` or carried an `error`
+            // used to go out as 200, and the Python client raises on status
+            // codes — so a refusal arrived as a successful call.
+            var answer = Decorate(outcome.Value, outcome.WaitedMs);
+            TryRespond(context, HttpStatus.For(answer), answer);
             if (exitAfterResponse)
             {
                 // The response stream is closed synchronously above.  Only
@@ -564,95 +761,112 @@ namespace NavisCoord
                 ? inner
                 : new Dictionary<string, object>();
 
-            var key = Json.Str(body, "idempotency_key");
-            var expectedFingerprint = Json.Str(body, "expected_document_fingerprint");
-
-            // A finished operation replays from the ledger…
-            if (IdempotencyLedger.TryGet(key, route, expectedFingerprint, out var cached))
-            {
-                return new Dictionary<string, object>
-                {
-                    ["job_id"] = string.Empty,
-                    ["state"] = JobManager.Completed,
-                    ["idempotent_replay"] = true,
-                    ["result"] = cached
-                };
-            }
-
-            // …and one still in flight returns THAT job rather than a second
-            // one. The ledger is only written when the work finishes, so
-            // without this a client that retried during execution got a
-            // duplicate submission — refused as a conflict, which is safe but
-            // tells the caller the wrong story about what happened.
-            var inFlight = JobManager.FindByIdempotencyKey(key, route, expectedFingerprint);
-            if (inFlight != null)
-            {
-                return new Dictionary<string, object>
-                {
-                    ["accepted"] = true,
-                    ["job_id"] = inFlight.Id,
-                    ["route"] = inFlight.Operation,
-                    ["state"] = inFlight.State,
-                    ["idempotent_replay"] = true,
-                    ["session_id"] = _sessionId,
-                    ["detail"] = "Ya había un trabajo con esta idempotency_key; se devuelve ese, " +
-                                 "no se envió uno nuevo.",
-                    ["poll"] = "job/status con {\"job_id\": \"" + inFlight.Id + "\"}"
-                };
-            }
-
-            // Collision BEFORE touching the document: asking Navisworks for a
-            // fingerprint while a job owns the UI thread blocks for the whole
-            // dispatcher timeout, so a submit during a long run took twenty
-            // seconds to answer "busy" — from the route whose entire purpose
-            // is to answer immediately.
-            if (JobManager.WouldCollide(null, out var busy))
-            {
-                return Error("job_conflict", busy);
-            }
-
+            // The fingerprint, read once, before anything is decided.
+            //
+            // It has to be taken outside the admission lock — reading it means
+            // reaching the Navisworks UI thread, and holding the job lock
+            // across that would block every job/status poll for the duration.
+            // What matters is that it is only ever an INPUT to the decision:
+            // the accept-or-refuse itself happens in one indivisible step
+            // below, so a stale reading here can lose the race but cannot open
+            // a window in it.
             var fingerprint = _dispatcher
                 .Invoke(() => DocumentContext.Fingerprint(Autodesk.Navisworks.Api.Application.ActiveDocument),
                     TimeSpan.FromSeconds(20));
             var currentFingerprint = fingerprint.Ok ? fingerprint.Value : string.Empty;
 
-            if (JobManager.WouldCollide(currentFingerprint, out var collision))
-            {
-                return Error("job_conflict", collision);
-            }
+            var profile = ProfileStore.Active();
+            var request = new JobRequest(
+                jobId: "job-" + Guid.NewGuid().ToString("N").Substring(0, 10),
+                route: route,
+                payload: body,
+                targetId: Json.Str(payload, "target_id"),
+                sessionId: _sessionId,
+                expectedFingerprint: currentFingerprint,
+                idempotencyKey: Json.Str(body, "idempotency_key"),
+                // Frozen here, at admission. The job is judged by the profile
+                // it was accepted under, not by whatever is loaded when its
+                // turn finally comes.
+                profileChecksum: profile?.Checksum ?? string.Empty,
+                profileCanonical: profile?.Canonical ?? string.Empty);
 
-            var job = JobManager.Submit(
-                route,
+            // One call. The bridge no longer assembles ledger lookup, in-flight
+            // lookup, collision check and submit into a sequence that two
+            // concurrent POSTs could both walk through before either reserved
+            // anything.
+            var admission = JobManager.TrySubmit(
+                request,
                 j =>
                 {
-                    // The work still runs on the UI thread — the API leaves no
-                    // choice — but the HTTP caller is no longer waiting on it.
-                    var outcome = _dispatcher.Invoke(() => handler(body, j), TimeSpan.FromMinutes(30));
+                    // Re-validated on the UI thread, immediately before the
+                    // handler runs. Being right at submit does not authorise a
+                    // mutation twenty minutes later on a document the operator
+                    // has since swapped.
+                    var outcome = _dispatcher.Invoke(() =>
+                    {
+                        var live = DocumentContext.Fingerprint(
+                            Autodesk.Navisworks.Api.Application.ActiveDocument);
+                        var blocker = JobPreflight.Blocker(request, live, ProfileStore.ActiveChecksum());
+                        if (blocker != null) return blocker;
+                        return handler(request.Payload, j);
+                    }, TimeSpan.FromMinutes(30));
                     if (outcome.Ok) return outcome.Value;
                     throw outcome.Error ?? new InvalidOperationException(
                         outcome.Rejection ?? "El puente rechazó el trabajo.");
-                },
-                targetId: Json.Str(payload, "target_id"),
-                sessionId: _sessionId,
-                fingerprint: currentFingerprint,
-                idempotencyKey: key,
-                // Frozen here, before the job can start: the profile in force
-                // at submit is the one it will be judged by, and ProfileStore
-                // refuses to swap it while the job runs.
-                profileChecksum: ProfileStore.ActiveChecksum(),
-                cancellable: Router.IsCancellable(route));
+                });
 
-            return new Dictionary<string, object>
+            switch (admission.Outcome)
             {
-                ["accepted"] = true,
-                ["job_id"] = job.Id,
-                ["route"] = route,
-                ["state"] = job.State,
-                ["session_id"] = _sessionId,
-                ["document_fingerprint"] = currentFingerprint,
-                ["poll"] = "job/status con {\"job_id\": \"" + job.Id + "\"}"
-            };
+                case Admission.ReplayedFromLedger:
+                    return new Dictionary<string, object>
+                    {
+                        ["job_id"] = admission.JobId,
+                        ["state"] = admission.TerminalState,
+                        ["idempotent_replay"] = true,
+                        ["outcome"] = admission.Outcome,
+                        ["detail"] = admission.Detail,
+                        ["result"] = admission.Replay
+                    };
+
+                case Admission.DeduplicatedInFlight:
+                    return new Dictionary<string, object>
+                    {
+                        ["accepted"] = true,
+                        ["outcome"] = admission.Outcome,
+                        ["job_id"] = admission.JobId,
+                        ["route"] = route,
+                        ["state"] = JobManager.Get(admission.JobId)?.State ?? JobManager.Queued,
+                        ["idempotent_replay"] = true,
+                        ["session_id"] = _sessionId,
+                        ["detail"] = admission.Detail,
+                        ["poll"] = "job/status con {\"job_id\": \"" + admission.JobId + "\"}"
+                    };
+
+                case Admission.NewSubmission:
+                    return new Dictionary<string, object>
+                    {
+                        ["accepted"] = true,
+                        ["outcome"] = admission.Outcome,
+                        ["job_id"] = admission.JobId,
+                        ["route"] = route,
+                        ["state"] = JobManager.Get(admission.JobId)?.State ?? JobManager.Queued,
+                        ["session_id"] = _sessionId,
+                        ["document_fingerprint"] = currentFingerprint,
+                        ["payload_hash"] = request.PayloadHash,
+                        ["profile_checksum"] = request.ProfileChecksum,
+                        ["poll"] = "job/status con {\"job_id\": \"" + admission.JobId + "\"}"
+                    };
+
+                default:
+                    // The outcome IS the error code, so the central mapper
+                    // turns document_busy into 409 and a bad route into 404
+                    // without this switch deciding anything.
+                    var refusal = Error(admission.Outcome, admission.Detail);
+                    refusal["outcome"] = admission.Outcome;
+                    return refusal;
+            }
         }
+
 
         /// <summary>
         /// The HTTP status for a submission, derived from what it produced.
@@ -671,21 +885,25 @@ namespace NavisCoord
         /// route that cannot be a job at all (retrying will never help), 202
         /// only when something was really queued or replayed.
         /// </remarks>
+        /// <summary>The status a submission deserves, from its own outcome.</summary>
+        /// <remarks>
+        /// It used to answer 400 for everything it did not recognise, which
+        /// told a client that a busy document was its own malformed request.
+        /// Now the outcome names the case and the central mapper turns it into
+        /// a status — the same mapper every other reply goes through.
+        /// </remarks>
         private static int SubmitStatus(Dictionary<string, object> submission)
         {
-            if (submission == null) return 500;
-            if (!submission.TryGetValue("error", out var raw)) return 202;
+            if (submission == null) return HttpStatus.ServerError;
 
-            var code = Convert.ToString(raw, CultureInfo.InvariantCulture) ?? string.Empty;
-            switch (code)
+            var outcome = Json.Str(submission, "outcome");
+            if (!string.IsNullOrEmpty(outcome)) return HttpStatus.ForAdmission(outcome);
+
+            if (submission.TryGetValue("error", out var raw))
             {
-                case "job_conflict":
-                    return 409;
-                case "unsupported_job_route":
-                    return 400;
-                default:
-                    return 400;
+                return HttpStatus.For(Convert.ToString(raw, CultureInfo.InvariantCulture));
             }
+            return HttpStatus.Accepted;
         }
 
         private Dictionary<string, object> QueueInfo(long waitedMs) => new Dictionary<string, object>
@@ -739,24 +957,6 @@ namespace NavisCoord
             {
                 return BodyReader.Read(stream, request.ContentLength64, limit);
             }
-        }
-
-        /// <summary>
-        /// Whether a body that carried content actually parsed into one.
-        /// </summary>
-        /// <remarks>
-        /// An absent body is legitimate — most routes take no arguments — so
-        /// emptiness alone is not an error. Content that produced nothing is:
-        /// that is a payload the caller believes it sent.
-        /// </remarks>
-        private static bool LooksLikeJsonObject(string body, Dictionary<string, object> parsed)
-        {
-            // An absent body is legitimate — most routes take no arguments —
-            // so emptiness alone is not an error. Content that is not one
-            // complete object is: that is a payload the caller believes it
-            // sent in full.
-            if (string.IsNullOrWhiteSpace(body)) return true;
-            return Json.IsWellFormedObject(body);
         }
 
         private static void TryRespond(HttpListenerContext context, int status, object payload)
@@ -1006,7 +1206,11 @@ namespace NavisCoord
 
         public void Dispose()
         {
-            Stop();
+            // The IDisposable path is process teardown, not the operator
+            // pressing Stop. It does not wait and does not claim a cancel:
+            // `Dispose(reason)` records what was still running and removes the
+            // session so nothing else can call in.
+            Dispose("plugin_unload");
             try { _listener?.Close(); } catch { /* nothing left to do */ }
         }
     }

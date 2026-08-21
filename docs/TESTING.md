@@ -13,6 +13,87 @@ python scripts/build_artifacts.py            # wheel + sdist, verificados leyén
 claude plugin validate .                     # manifiestos, contra el validador real
 ```
 
+### Autopruebas de PowerShell
+
+Los scripts de release llevan la suya dentro, porque son la parte del sistema
+que toca la instalación del usuario y la que ningún runner sin licencia puede
+ejercitar de otro modo:
+
+```powershell
+pwsh -File scripts\NavisworksSafety.ps1 -SelfTest       # compuerta de procesos (pura)
+pwsh -File scripts\RestoreSafety.ps1 -SelfTest          # resolución de rutas de restauración
+pwsh -File scripts\FindNavisworks.ps1 -SelfTest         # descubrimiento de instalaciones
+pwsh -File scripts\Assert-PublicArtifacts.ps1 -SelfTest # detección de rutas filtradas
+pwsh -File scripts\Test-SmokeRestore.ps1                # ciclo Backup/Install/Restore completo
+```
+
+`Test-SmokeRestore.ps1` es el que más se acerca a lo real: apunta `$env:APPDATA`
+a un sandbox temporal único y corre el ciclo entero —incluida la sustitución del
+DLL— **sin tocar ninguna instalación**, contra una versión inventada (9999) que
+no existe en ninguna máquina. Demuestra tres cosas:
+
+1. Un plugin de terceros sobrevive intacto al ciclo completo.
+2. Un add-in que **no** estaba instalado antes desaparece tras `Restore`.
+   Copiar de vuelta solo lo respaldado dejaba el DLL puesto para siempre
+   mientras el script anunciaba «restaurado».
+3. Un manifiesto manipulado —una fila cuyo `Original` apunta fuera de la raíz
+   aprobada— aborta y **no** escribe en el destino que pedía. Antes, `Restore`
+   copiaba exactamente ahí, porque leía `$row.Original` de un CSV que vive en
+   `%TEMP%`. Ahora la ruta se **deriva** de la versión y de la ruta relativa
+   validada; el CSV es dato, nunca autoridad.
+
+La compuerta `Assert-NoNavisworks` **no admite excepciones**. Una versión
+anterior de esta prueba escribía un marcador `.naviscoord-sandbox` que la
+desactivaba, para poder correr con Navisworks abierto; eso convertía «cualquier
+cosa capaz de crear un archivo en el directorio de plugins» en «cualquier cosa
+capaz de apagar la única protección que impide sustituir un DLL en uso». Se
+quitó. La compuerta ya no recibe parámetros: ni `-Force`, ni `-Skip`, ni
+marcador, ni variable de entorno.
+
+Lo que se prueba en su lugar está en `scripts\NavisworksSafety.ps1`, que separa
+la **decisión** de la **observación**:
+
+- `Test-NavisworksSafety` es pura: recibe una lista de procesos y devuelve
+  `clear` / `blocked` / `indeterminate` con su evidencia. Las pruebas la llaman
+  con listas inventadas —`Roamer`, `ROAMER`, `Roamer.exe`, una entrada sin
+  nombre legible, una enumeración fallida— y por eso **ninguna prueba depende
+  de que haya, o no haya, un Navisworks abierto**.
+- `Get-NavisworksProcesses` es la única que mira el sistema, y distingue «no
+  hay ninguno» de «no pude averiguarlo». Lo segundo bloquea: *fail-closed*.
+- La autoprueba comprueba estructuralmente que la decisión no consulta el
+  disco ni el entorno, y que la compuerta no expone ningún parámetro.
+
+La consecuencia es honesta: con Navisworks abierto, `Test-SmokeRestore.ps1`
+**omite** las fases que mutan el árbol y lo dice. Lo que sí corre siempre es el
+rechazo del manifiesto manipulado, porque el plan de restauración se construye
+antes de la compuerta.
+
+### Concurrencia, con procesos de verdad
+
+`test_runtime_lock.py` levanta **procesos reales**, no hilos: dos hilos no
+demuestran exclusión entre procesos. Todos esperan a un mismo instante de reloj
+antes de competir, porque sin esa barrera la prueba medía el arranque del
+intérprete y no el lock.
+
+Dos preguntas distintas:
+
+- **Solo uno construye**, con la contención garantizada por la barrera.
+- **Los intervalos de tenencia son disjuntos**, que es la propiedad que el lock
+  promete y no depende del planificador ni de la carga. Todo rechazo, además,
+  tiene que demostrar que agotó su plazo: uno que llegue antes es un defecto
+  distinto y no vuelve a leerse igual que un plazo vencido.
+
+Esa segunda prueba encontró tres defectos que la primera no podía ver:
+
+| Defecto | Síntoma |
+|---|---|
+| Lock ilegible tratado como corrupción | `O_EXCL` crea el archivo **vacío** y el contenido se escribe después; un competidor que mire en medio leía cero bytes y recibía «revísalo a mano» al instante, sin respetar su timeout |
+| `release()` mentía | Un `unlink()` dentro de `except OSError: pass`; en Windows, un lector con el archivo abierto impedía el borrado, y el lock sobrevivía a todos los procesos que sabían de él |
+| Reparse comprobado tarde | `resolve()` **sigue** un junction, así que la comprobación miraba el destino y autorizaba borrarlo |
+
+`lock_denied` es un desenlace legítimo y está contemplado: en Windows un archivo
+marcado para borrado responde `ACCESS_DENIED` en vez de «ya existe».
+
 ### Python
 
 | Archivo | Cubre |

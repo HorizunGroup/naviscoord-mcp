@@ -5,24 +5,38 @@ licence texts live at the repository root — one level above `server/`. Told
 nothing, it produces a wheel with no licence at all, which is the single thing
 a redistributable must never do and the single thing nobody checks by hand.
 
-So: copy them in, build, verify by reading the archives back, clean up. The
-verification is the point — a build step that copies files and trusts the
-result is how the problem returns.
+So: copy the SOURCE somewhere else, put the licences in that copy, build
+there, and verify by reading the archives back. The verification is the point
+— a build step that copies files and trusts the result is how the problem
+returns.
 
-    python scripts/build_artifacts.py            # build and verify
-    python scripts/build_artifacts.py --check    # verify existing artifacts
+Why a copy rather than staging into `server/`: the previous version wrote
+LICENSE, NOTICE and README.md into the source tree and removed them in a
+`finally`. A `finally` does not run when the process is killed, so an
+interrupted build left three untracked files behind that look like a second
+source of truth; two builds at once fought over them; and a build from a
+checked-out tag mutated the very worktree whose cleanliness the release is
+supposed to prove. Building the copy costs a directory copy and removes all
+three.
+
+    python scripts/build_artifacts.py                 # build and verify
+    python scripts/build_artifacts.py --check         # verify existing artifacts
+    python scripts/build_artifacts.py --reproducible  # build twice, compare bytes
 """
 
 from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import io
 import os
+import secrets
 import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -62,43 +76,112 @@ def source_date_epoch() -> str:
     return "315532800"
 
 
-def stage_legal() -> list[Path]:
-    """Copies the root licence files and README into the package directory."""
-    staged: list[Path] = []
+# Written into every workspace this script creates, and checked again before
+# the workspace is deleted. A recursive delete that trusts only the path it
+# was handed deletes whatever it was handed.
+OWNERSHIP_MARKER = ".naviscoord-build-workspace"
+
+# Never copied into the build workspace: build output, caches and virtual
+# environments are not sources, and copying `dist` in would package the
+# previous release inside the next sdist.
+EXCLUDED = {"dist", "build", "__pycache__", ".venv", "venv", ".pytest_cache",
+            ".mypy_cache", ".ruff_cache", ".tox", ".eggs"}
+
+
+def _ignore(directory: str, names: list[str]) -> set[str]:
+    skipped = {n for n in names if n in EXCLUDED or n.endswith(".egg-info")}
+    return skipped
+
+
+def make_workspace() -> tuple[Path, str]:
+    """A private copy of `server/` with the licences in it. Unique per run.
+
+    Returns the workspace and the nonce that proves this run created it.
+    """
+    nonce = secrets.token_hex(8)
+    workspace = Path(tempfile.mkdtemp(prefix=f"naviscoord-build-{nonce}-"))
+    (workspace / OWNERSHIP_MARKER).write_text(nonce, encoding="utf-8")
+
+    package = workspace / "server"
+    shutil.copytree(SERVER, package, ignore=_ignore, symlinks=False)
+
     for name in STAGED:
         source = ROOT / name
         if not source.is_file():
             raise SystemExit(f"falta {name} en la raíz del repositorio")
-        target = SERVER / name
-        shutil.copy2(source, target)
-        staged.append(target)
-    return staged
+        shutil.copy2(source, package / name)
+    return workspace, nonce
 
 
-def unstage(paths: list[Path]) -> None:
-    for path in paths:
-        try:
-            path.unlink()
-        except OSError:
-            pass
+def discard_workspace(workspace: Path, nonce: str) -> None:
+    """Removes a workspace this run created, and refuses anything else.
+
+    Absolute path, inside the system temp directory, carrying OUR marker with
+    OUR nonce, and not a reparse point. A recursive delete that skips any of
+    these is one bad variable away from removing a real directory.
+    """
+    # Antes de resolver nada: `resolve()` SIGUE un junction, así que mirar el
+    # reparse en la ruta ya resuelta mira el destino y no el enlace. Una
+    # comprobación puesta después de resolver da permiso para borrar
+    # exactamente lo que el enlace apuntaba.
+    if workspace.is_symlink() or _is_reparse_point(workspace):
+        return
+    try:
+        resolved = workspace.resolve()
+        temp_root = Path(tempfile.gettempdir()).resolve()
+    except OSError:
+        return
+    if resolved == temp_root or temp_root not in resolved.parents:
+        return
+    marker = resolved / OWNERSHIP_MARKER
+    try:
+        if marker.read_text(encoding="utf-8").strip() != nonce:
+            return
+    except (OSError, ValueError):
+        return
+    if resolved.is_symlink() or _is_reparse_point(resolved):
+        return
+    shutil.rmtree(resolved, ignore_errors=True)
 
 
-def build() -> None:
+def _is_reparse_point(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    if os.name != "nt":
+        return False
+    FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+    try:
+        return bool(os.stat(path, follow_symlinks=False).st_file_attributes
+                    & FILE_ATTRIBUTE_REPARSE_POINT)
+    except (OSError, AttributeError):
+        return False
+
+
+def build(*, isolated: bool = True) -> None:
+    """Builds wheel and sdist. `isolated=False` uses what is already installed.
+
+    Isolation is right for a release: the build backend is resolved fresh and
+    pinned by `pyproject.toml`, so the artifact does not depend on whatever
+    happened to be on the builder's machine. It is wrong for a test, because
+    resolving the backend means reaching the network — and a test that
+    downloads is a test that fails when the index is slow and passes for
+    reasons that have nothing to do with the code.
+    """
     if DIST.exists():
         shutil.rmtree(DIST)
-    staged = stage_legal()
     env = dict(os.environ)
     env["SOURCE_DATE_EPOCH"] = source_date_epoch()
     print(f"SOURCE_DATE_EPOCH={env['SOURCE_DATE_EPOCH']}")
+
+    command = [sys.executable, "-m", "build", "--outdir", str(DIST)]
+    if not isolated:
+        command.append("--no-isolation")
+
+    workspace, nonce = make_workspace()
     try:
-        subprocess.run(
-            [sys.executable, "-m", "build", "--outdir", str(DIST)],
-            cwd=SERVER, check=True, env=env,
-        )
+        subprocess.run(command, cwd=workspace / "server", check=True, env=env)
     finally:
-        # Always removed: a stray copy at server/LICENSE looks like a second
-        # source of truth and drifts from the real one.
-        unstage(staged)
+        discard_workspace(workspace, nonce)
 
     _, sdist = artifacts()
     normalize_sdist(sdist, int(env["SOURCE_DATE_EPOCH"]))
@@ -211,13 +294,69 @@ def verify() -> int:
     return 0
 
 
+def digests() -> dict[str, str]:
+    """SHA-256 de cada artefacto publicable que hay ahora en dist/."""
+    found: dict[str, str] = {}
+    for path in sorted([*DIST.glob("*.whl"), *DIST.glob("*.tar.gz")]):
+        found[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return found
+
+
+def reproducible(*, isolated: bool = True) -> int:
+    """Construye DOS veces desde cero y compara byte a byte.
+
+    Un solo build no dice nada sobre reproducibilidad, y un rebuild
+    incremental menos todavía: demuestra que no se recompiló. Esto borra
+    `dist/` cada vez —lo hace `build()`— y compara los bytes resultantes.
+
+    El sdist necesitó trabajo para llegar aquí: setuptools honra
+    SOURCE_DATE_EPOCH en el wheel pero no en el tar, así que `normalize_sdist`
+    reescribe los metadatos de cada miembro. Esta comprobación es la que dice
+    si ese trabajo sigue funcionando; sin ella la normalización podía
+    romperse y nadie se enteraba hasta comparar dos releases.
+    """
+    build(isolated=isolated)
+    first = digests()
+    build(isolated=isolated)
+    second = digests()
+
+    names = sorted(set(first) | set(second))
+    if not names:
+        print("no se generó ningún artefacto que comparar", file=sys.stderr)
+        return 1
+
+    differing = []
+    for name in names:
+        a, b = first.get(name), second.get(name)
+        same = a is not None and a == b
+        print(f"  {'ok  ' if same else 'DIFIERE'} {name}")
+        if not same:
+            differing.append(name)
+            print(f"       build 1: {a}")
+            print(f"       build 2: {b}")
+
+    if differing:
+        print(f"NO reproducible: {len(differing)} artefacto(s) difieren entre dos "
+              "construcciones del mismo árbol.", file=sys.stderr)
+        return 1
+    print(f"reproducible: {len(names)} artefacto(s) idénticos byte a byte.")
+    return verify()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="solo verificar dist/ existente")
+    parser.add_argument("--reproducible", action="store_true",
+                        help="construir dos veces y comparar los bytes")
+    parser.add_argument("--no-isolation", action="store_true",
+                        help="construir con el backend ya instalado, sin tocar la red")
     args = parser.parse_args()
 
+    isolated = not args.no_isolation
+    if args.reproducible:
+        return reproducible(isolated=isolated)
     if not args.check:
-        build()
+        build(isolated=isolated)
     return verify()
 
 

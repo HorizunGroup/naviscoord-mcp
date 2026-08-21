@@ -431,12 +431,23 @@ class TestDegradedLauncher:
         assert report["minimo_requerido"] == "3.10"
         assert report["python"].startswith(str(sys.version_info.major))
 
-    def test_failure_report_gives_a_runnable_fix(self) -> None:
+    def test_failure_report_points_at_the_lock_not_at_ranges(self) -> None:
+        """The advice used to be `pip install mcp>=1.9,<3 ...`.
+
+        That is exactly what the runtime lock exists to replace: resolving
+        ranges at install time is how two machines running the same plugin
+        version ended up running different code. Telling a stuck user to do it
+        by hand would walk them straight back into it.
+        """
         report = launcher.failure_report("x")
         assert "venv" in report["arreglo"]
-        assert "pip install" in report["arreglo"]
-        for requirement in launcher.REQUIREMENTS:
-            assert requirement in report["arreglo"]
+        assert "runtime-lock" in report["arreglo"], "nombra el lock vigente"
+        for floating in (">=", "<3", "<6"):
+            assert floating not in report["arreglo"], (
+                f"el arreglo no puede aconsejar un rango flotante ({floating})")
+        # The public ranges are still reported, as information about the
+        # contract — just not as an install instruction.
+        assert report["dependencias_publicas"] == launcher.REQUIREMENTS
 
     def test_failure_report_does_not_claim_to_ship_a_python(self) -> None:
         """The docs used to promise an included runtime. It creates a venv."""
@@ -572,10 +583,25 @@ class TestRuntimeDetection:
         inside.mkdir(parents=True)
         assert launcher.runtime_is_private(inside)[0]
 
-    def test_runtime_dir_is_keyed_by_interpreter_version(self, monkeypatch, tmp_path: Path) -> None:
+    def test_runtime_dir_is_keyed_by_every_incompatibility(self, monkeypatch, tmp_path: Path) -> None:
+        """major/minor alone was never enough to identify a runtime.
+
+        Two interpreters can share a major/minor and be incompatible in every
+        way that matters — x86 and x64, CPython and another implementation,
+        two installs whose wheels are not interchangeable — and under the old
+        key they all resolved to one directory and poisoned each other. The
+        readable prefix survives for a human; the digest is what makes it
+        correct, and it is a digest because the interpreter PATH is part of
+        the identity and must not appear in a directory name.
+        """
         monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-        tag = f"py{sys.version_info.major}{sys.version_info.minor}"
-        assert launcher.runtime_dir().name == tag
+        name = launcher.runtime_dir().name
+
+        prefix = f"py{sys.version_info.major}{sys.version_info.minor}-"
+        assert name.startswith(prefix), name
+        assert len(name) > len(prefix) + 8, "la clave lleva un digest, no solo la versión"
+        # Whatever the interpreter path is on this machine, none of it leaks.
+        assert "\\" not in name and "/" not in name
 
     def test_a_missing_runtime_dir_counts_as_private(self, tmp_path: Path) -> None:
         assert launcher.runtime_is_private(tmp_path / "todavia-no")[0]

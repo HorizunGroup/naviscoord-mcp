@@ -226,19 +226,45 @@ namespace NavisCoord.Tests
                 "un checksum que no corresponde al contenido se rechaza");
             _eq("perfil-A", ProfileStore.Active().Name, "…y el perfil anterior sigue vigente");
 
+            // A push with no declared checksum is refused before anything is
+            // parsed: accepting "trust me" is the one thing a checksum exists
+            // to replace, and it is also how a body corrupted in transit
+            // installs cleanly.
+            var unsigned = ProfileStore.Load(new Dictionary<string, object>
+            {
+                ["canonical"] = canonicalA
+            });
+            _eq("profile_checksum_mismatch", unsigned["error"],
+                "un perfil sin checksum declarado no se instala");
+            _eq("perfil-A", ProfileStore.Active().Name, "…y el anterior sigue vigente");
+
             // A profile that does not validate must not displace a good one.
+            const string schemaV9 = @"{""$schema"":""naviscoord.profile/v9"",""sets"":{""folders"":[]}}";
             var invalid = ProfileStore.Load(new Dictionary<string, object>
             {
-                ["canonical"] = @"{""$schema"":""naviscoord.profile/v9"",""sets"":{""folders"":[]}}"
+                ["canonical"] = schemaV9,
+                ["checksum"] = ProfileSchema.ChecksumOf(schemaV9)
             });
             _eq("profile_invalid", invalid["error"], "un esquema desconocido no se instala");
             _eq("perfil-A", ProfileStore.Active().Name, "…y sigue vigente el que ya estaba");
 
             var unreadable = ProfileStore.Load(new Dictionary<string, object>
             {
-                ["canonical"] = "no soy json"
+                ["canonical"] = "no soy json",
+                ["checksum"] = ProfileSchema.ChecksumOf("no soy json")
             });
             _eq("profile_unreadable", unreadable["error"], "un cuerpo que no es JSON se rechaza");
+
+            // And the case the permissive reader used to install: a profile
+            // whose last brace was lost in transit.
+            var truncated = canonicalA.Substring(0, canonicalA.Length - 1);
+            var cut = ProfileStore.Load(new Dictionary<string, object>
+            {
+                ["canonical"] = truncated,
+                ["checksum"] = ProfileSchema.ChecksumOf(truncated)
+            });
+            _eq("profile_unreadable", cut["error"], "un perfil truncado se rechaza");
+            _eq("perfil-A", ProfileStore.Active().Name, "…y no desplaza al vigente");
 
             var empty = ProfileStore.Load(new Dictionary<string, object>());
             _eq("profile_missing", empty["error"], "una petición sin contenido se rechaza");
@@ -704,9 +730,24 @@ namespace NavisCoord.Tests
             var full = new MutationResult("clash/group")
             {
                 Requested = 10, Applied = 10, Verified = 10,
-                FingerprintBefore = "abc", FingerprintAfter = "abc"
+                FingerprintBefore = "abc", FingerprintAfter = "abc",
+                VerificationSource = VerificationSources.GroupMembershipReread
             };
             _eq("completed", full.Status(), "todo verificado = completed");
+
+            // The source is not optional any more. It used to default to
+            // "document_reread", so a handler that never verified anything
+            // inherited the claim that it had — which is the generic filler
+            // the contract now forbids.
+            var sourceless = new MutationResult("clash/group")
+            {
+                Requested = 10, Applied = 10, Verified = 10,
+                FingerprintBefore = "abc", FingerprintAfter = "abc"
+            };
+            _eq(VerificationSources.None, sourceless.ToJson()["verification_source"],
+                "sin declararla, la fuente es 'none'");
+            _eq("partial", sourceless.Status(),
+                "y sin fuente real no hay completed, aunque los conteos cuadren");
 
             var partial = new MutationResult("clash/group") { Requested = 10, Applied = 10, Verified = 7 };
             _eq("partial", partial.Status(), "verificado < aplicado = partial");
@@ -762,8 +803,11 @@ namespace NavisCoord.Tests
             {
                 _check(json.ContainsKey(key), $"el envelope incluye «{key}»");
             }
-            _eq("document_reread", json["verification_source"],
-                "la verificación declara que vino de releer el documento");
+            _eq(VerificationSources.GroupMembershipReread, json["verification_source"],
+                "la verificación declara de qué relectura vino");
+            _check(VerificationSources.ProvesVerification(
+                    Convert.ToString(json["verification_source"])),
+                "y esa fuente sí demuestra algo posterior a la mutación");
             _check(!string.IsNullOrEmpty((string)json["operation_id"]),
                 "cada mutación lleva su propio operation_id");
 
@@ -837,7 +881,12 @@ namespace NavisCoord.Tests
                 return new Dictionary<string, object>
                 {
                     ["status"] = "completed",
-                    ["requested"] = 3.0, ["applied"] = 3.0, ["verified"] = 3.0
+                    ["dry_run"] = false,
+                    ["requested"] = 3.0, ["applied"] = 3.0, ["verified"] = 3.0,
+                    ["failed"] = 0.0,
+                    ["verification_source"] = VerificationSources.ClashTestStatusReread,
+                    ["document_fingerprint_before"] = "fp-1",
+                    ["document_fingerprint_after"] = "fp-1"
                 };
             }, fingerprint: "fp-1");
 
@@ -846,14 +895,9 @@ namespace NavisCoord.Tests
             _check(JobManager.Get(job.Id) != null, "el trabajo se encuentra por id");
             _check(JobManager.Get("no-existe") == null, "un id inexistente devuelve null");
 
-            // While it runs, a second exclusive mutation on the same document
-            // must be refused rather than interleaved.
+            // Collision and in-flight idempotency now live in the single
+            // admission step and are asserted there — see AdmissionTests.
             WaitUntil(() => JobManager.Active() != null, 2000);
-            _check(JobManager.WouldCollide("fp-1", out var reason),
-                "una segunda mutación sobre el mismo documento colisiona");
-            _check(reason != null && reason.Contains(job.Id), "el rechazo nombra el trabajo en curso");
-            _check(!JobManager.WouldCollide("otro-documento", out _),
-                "una mutación sobre OTRO documento no colisiona");
 
             // Cancelling something atomic must say so instead of pretending.
             // This job was submitted without `cancellable`, so nothing in its
@@ -885,8 +929,8 @@ namespace NavisCoord.Tests
             // A queued job HAS touched nothing, so cancelling it is honest.
             JobManager.Reset();
             var blocker = new ManualResetEventSlim(false);
-            var first = JobManager.Submit("a", _ => { blocker.Wait(3000); return Ok(); });
-            var second = JobManager.Submit("b", _ => Ok());
+            var first = JobManager.Submit("workflow/rules", _ => { blocker.Wait(3000); return Ok(); });
+            var second = JobManager.Submit("workflow/run", _ => Ok());
             WaitUntil(() => JobManager.Active() != null, 2000);
             var cancelQueued = JobManager.Cancel(second.Id);
             _eq(true, cancelQueued["cancelled"], "un trabajo aún en cola sí se cancela");
@@ -905,7 +949,7 @@ namespace NavisCoord.Tests
 
             // A failing job reports the failure, not a silent success.
             JobManager.Reset();
-            var boom = JobManager.Submit("boom", _ => throw new InvalidOperationException("revienta"));
+            var boom = JobManager.Submit("workflow/run", _ => throw new InvalidOperationException("revienta"));
             WaitUntil(() => boom.FinishedUtc.HasValue, 3000);
             _eq(JobManager.Failed, boom.State, "una excepción deja el trabajo en failed");
             _check(boom.Error != null && Convert.ToString(boom.Error["detail"]).Contains("revienta"),
@@ -913,16 +957,20 @@ namespace NavisCoord.Tests
 
             // A partial envelope produces a partial job.
             JobManager.Reset();
-            var half = JobManager.Submit("half", _ => new Dictionary<string, object>
+            var half = JobManager.Submit("workflow/run", _ => new Dictionary<string, object>
             {
-                ["status"] = "partial", ["requested"] = 10.0, ["applied"] = 10.0, ["verified"] = 4.0
+                ["status"] = "partial",
+                ["dry_run"] = false,
+                ["requested"] = 10.0, ["applied"] = 10.0, ["verified"] = 4.0,
+                ["failed"] = 6.0,
+                ["verification_source"] = VerificationSources.ClashTestStatusReread
             });
             WaitUntil(() => half.FinishedUtc.HasValue, 3000);
             _eq(JobManager.Partial, half.State, "un envelope 'partial' deja el trabajo en partial");
 
             // Progress must never be invented.
             JobManager.Reset();
-            var indeterminate = JobManager.Submit("atomic", j => { j.Phasing("corriendo"); return Ok(); });
+            var indeterminate = JobManager.Submit("workflow/run", j => { j.Phasing("corriendo"); return Ok(); });
             var shape = (Dictionary<string, object>)indeterminate.ToJson()["progress"];
             _eq("indeterminate", shape["kind"], "un paso atómico reporta progreso indeterminado");
             _check(!shape.ContainsKey("percent"), "…y NO inventa un porcentaje");
@@ -944,33 +992,20 @@ namespace NavisCoord.Tests
             clamped = (Dictionary<string, object>)torn.ToJson()["progress"];
             _eq(0.0, clamped["percent"], "…ni por debajo de 0");
 
-            // A retry that arrives WHILE the work runs must get the same job
-            // back. The ledger only records finished results, so before this
-            // the retry produced a second submission.
+            // The in-flight retry contract moved into TrySubmit, where it is
+            // decided under the same lock as the collision check instead of
+            // through a separate lookup the caller had to remember to make.
+            // AdmissionTests covers it.
             JobManager.Reset();
             var hold = new ManualResetEventSlim(false);
             var original = JobManager.Submit("workflow/run", _ => { hold.Wait(2000); return Ok(); },
                 idempotencyKey: "clave-repetida");
             WaitUntil(() => JobManager.Active() != null, 2000);
 
-            var found = JobManager.FindByIdempotencyKey("clave-repetida");
-            _check(found != null && found.Id == original.Id,
-                "una idempotency_key en vuelo devuelve EL MISMO trabajo, no uno nuevo");
-            _check(JobManager.FindByIdempotencyKey("otra-clave") == null,
-                "una clave distinta no acierta");
-            _check(JobManager.FindByIdempotencyKey("") == null,
-                "una clave vacía nunca acierta");
-            _check(JobManager.FindByIdempotencyKey(
-                    "clave-repetida", "workflow/configure", "fp-1") == null,
-                "una clave en vuelo no cruza a otra operación");
-            _check(JobManager.FindByIdempotencyKey(
-                    "clave-repetida", "workflow/run", "otro-documento") == null,
-                "una clave en vuelo no cruza a otro documento");
-
             hold.Set();
             WaitUntil(() => original.FinishedUtc.HasValue, 3000);
-            _check(JobManager.FindByIdempotencyKey("clave-repetida") == null,
-                "terminado el trabajo, la clave ya no está 'en vuelo': su resultado vive en el ledger");
+            _check(!JobManager.HeldDocumentReservations().Contains(original.Id),
+                "terminado el trabajo, la reserva del documento vuelve a estar libre");
 
             var listed = JobManager.All();
             _check(listed.Count >= 1, "job/list devuelve los trabajos conocidos");
@@ -980,8 +1015,27 @@ namespace NavisCoord.Tests
             JobManager.Reset();
         }
 
-        private static Dictionary<string, object> Ok()
-            => new Dictionary<string, object> { ["status"] = "completed" };
+        /// <summary>A minimal reply that satisfies the mutation contract.</summary>
+        /// <remarks>
+        /// It used to be <c>{"status": "completed"}</c> and nothing else,
+        /// which was enough while the job manager inferred success from the
+        /// absence of an error. It no longer does: a mutation now has to say
+        /// what it asked for, what it applied, what it verified and how, so
+        /// the fixture says all of it too.
+        /// </remarks>
+        private static Dictionary<string, object> Ok(int requested = 1, int verified = 1)
+            => new Dictionary<string, object>
+            {
+                ["status"] = verified >= requested ? "completed" : "partial",
+                ["dry_run"] = false,
+                ["requested"] = (double)requested,
+                ["applied"] = (double)requested,
+                ["verified"] = (double)verified,
+                ["failed"] = (double)(requested - verified),
+                ["verification_source"] = "document_reread",
+                ["document_fingerprint_before"] = "fp-1",
+                ["document_fingerprint_after"] = "fp-1"
+            };
 
         /// <summary>
         /// The cancellation contract for work that CAN stop once started.
@@ -1008,8 +1062,11 @@ namespace NavisCoord.Tests
                 gate.Wait(3000);
                 return new Dictionary<string, object>
                 {
-                    ["status"] = "completed",
-                    ["requested"] = 10.0, ["applied"] = 0.0, ["verified"] = 0.0
+                    ["status"] = "partial",
+                    ["dry_run"] = false,
+                    ["requested"] = 10.0, ["applied"] = 0.0, ["verified"] = 0.0,
+                    ["failed"] = 10.0,
+                    ["verification_source"] = "document_reread"
                 };
             }, cancellable: true);
             WaitUntil(() => JobManager.Active() != null, 2000);
@@ -1033,8 +1090,11 @@ namespace NavisCoord.Tests
                 gate2.Wait(3000);
                 return new Dictionary<string, object>
                 {
-                    ["status"] = "completed",
-                    ["requested"] = 100.0, ["applied"] = 40.0, ["verified"] = 40.0
+                    ["status"] = "partial",
+                    ["dry_run"] = false,
+                    ["requested"] = 100.0, ["applied"] = 40.0, ["verified"] = 40.0,
+                    ["failed"] = 60.0,
+                    ["verification_source"] = "document_reread"
                 };
             }, cancellable: true);
             WaitUntil(() => JobManager.Active() != null, 2000);
@@ -1055,7 +1115,12 @@ namespace NavisCoord.Tests
                 return new Dictionary<string, object>
                 {
                     ["status"] = "completed",
-                    ["requested"] = 10.0, ["applied"] = 10.0, ["verified"] = 10.0
+                    ["dry_run"] = false,
+                    ["requested"] = 10.0, ["applied"] = 10.0, ["verified"] = 10.0,
+                    ["failed"] = 0.0,
+                    ["verification_source"] = "document_reread",
+                    ["document_fingerprint_before"] = "fp-1",
+                    ["document_fingerprint_after"] = "fp-1"
                 };
             }, cancellable: true);
             WaitUntil(() => finished.FinishedUtc.HasValue, 3000);
@@ -1072,7 +1137,10 @@ namespace NavisCoord.Tests
                 return new Dictionary<string, object>
                 {
                     ["status"] = "failed",
-                    ["requested"] = 10.0, ["applied"] = 0.0, ["verified"] = 0.0
+                    ["dry_run"] = false,
+                    ["requested"] = 10.0, ["applied"] = 0.0, ["verified"] = 0.0,
+                    ["failed"] = 10.0,
+                    ["verification_source"] = "document_reread"
                 };
             }, cancellable: true);
             WaitUntil(() => broke.FinishedUtc.HasValue, 3000);

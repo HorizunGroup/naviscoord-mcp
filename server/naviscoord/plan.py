@@ -46,13 +46,57 @@ class Package:
     critical: int
     clashes: int
     action: str
-    issue_ids: list[str] = field(default_factory=list)
+    #: What somebody has to decide or execute. After folding, a systemic cause
+    #: can come down to a single representative — that is the leverage, not a
+    #: reason to drop the package.
+    decision_issue_ids: list[str] = field(default_factory=list)
+    #: Everything that decision closes, folded issues included. Different
+    #: semantics from the field above, and the difference is the whole value
+    #: of a systemic package: one decision, ten problems gone.
+    affected_issue_ids: list[str] = field(default_factory=list)
     rationale: str = ""
+    #: Every cause this package closes, never collapsed to one. A package that
+    #: merges several elevation findings answers for all of them, and losing
+    #: the originals loses the trail back to the evidence.
+    cause_ids: list[str] = field(default_factory=list)
+    #: For the title and the summary line only. It is NOT a claim that every
+    #: issue in the package carries this cause: an issue keeps the cause it
+    #: was detected under, and the plan has no business rewriting it.
+    primary_cause_id: str = ""
+    #: Which issues came from which cause, for a package that closes several.
+    issue_ids_by_cause: dict[str, list[str]] = field(default_factory=dict)
+    affected_clash_count: int = 0
+    #: Decisions this package closes but does NOT execute: another package
+    #: owns them. Listed so the coverage claim stays honest without the work
+    #: being scheduled twice.
+    shared_affected_issue_ids: list[str] = field(default_factory=list)
+    #: Issues here that another root cause also explains.
+    #:
+    #: Causes overlap — a crossing can be both a missing sleeve and one floor
+    #: of a repeated detail — and an issue records only the strongest claim.
+    #: So an issue can sit in this package and name a different cause, without
+    #: either being wrong. Declared rather than hidden, because the honest
+    #: alternative to surprising a reader is not rewriting the issue.
+    overlapping_issue_ids: list[str] = field(default_factory=list)
+
+    @property
+    def issue_ids(self) -> list[str]:
+        """The decisions. Kept under the old name for existing readers."""
+        return self.decision_issue_ids
+
+    @property
+    def affected_issue_count(self) -> int:
+        return len(self.affected_issue_ids)
 
     @property
     def leverage(self) -> float:
-        """Issues closed per decision taken — why this ordering exists."""
-        return float(self.issues)
+        """Problems closed per package — why this ordering exists.
+
+        Counted over everything the package closes, not over the
+        representatives that survived folding. Ranking by representatives put
+        a decision that clears ten issues below a session that clears four.
+        """
+        return float(max(self.affected_issue_count, self.issues))
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -67,8 +111,24 @@ class Package:
             "clashes": self.clashes,
             "action": self.action,
             "rationale": self.rationale,
-            "issue_ids": self.issue_ids[:40],
+            "decision_issue_ids": self.decision_issue_ids[:40],
+            "affected_issue_ids": self.affected_issue_ids[:80],
+            "affected_issue_count": self.affected_issue_count,
+            "affected_clash_count": self.affected_clash_count,
+            "cause_ids": list(self.cause_ids),
+            "primary_cause_id": self.primary_cause_id,
+            "issue_ids_by_cause": {
+                cause: list(ids) for cause, ids in self.issue_ids_by_cause.items()
+            },
+            "overlapping_issue_ids": list(self.overlapping_issue_ids),
+            "shared_affected_issue_ids": list(self.shared_affected_issue_ids),
+            "executable": self.executable,
         }
+
+    @property
+    def executable(self) -> bool:
+        """Whether this package is work somebody can be given."""
+        return bool(self.decision_issue_ids)
 
 
 @dataclass(slots=True)
@@ -78,11 +138,37 @@ class Plan:
     total_issues: int
     tail_issues: int
 
+    @property
+    def executable_packages(self) -> list[Package]:
+        return [p for p in self.packages if p.executable]
+
+    @property
+    def unique_affected_issues(self) -> int:
+        """Distinct problems the plan touches — a union, never a sum.
+
+        Packages may legitimately cover the same issue, because causes
+        overlap. Adding their counts and calling the total "coverage" would
+        report more problems than the model contains, which is how a plan
+        starts sounding better than the project it describes.
+        """
+        seen: set[str] = set()
+        for package in self.packages:
+            seen.update(package.affected_issue_ids)
+        return len(seen)
+
+    @property
+    def gross_affected_memberships(self) -> int:
+        """Every package-issue pairing, overlaps included. Not a coverage."""
+        return sum(len(p.affected_issue_ids) for p in self.packages)
+
     def to_json(self, limit: int = 20) -> dict[str, Any]:
         return {
             "packages": [p.to_json() for p in self.packages[:limit]],
             "package_count": len(self.packages),
+            "executable_package_count": len(self.executable_packages),
             "covered_issues": self.covered_issues,
+            "unique_affected_issues": self.unique_affected_issues,
+            "gross_affected_memberships": self.gross_affected_memberships,
             "total_issues": self.total_issues,
             "tail_issues": self.tail_issues,
             "summary": (
@@ -94,12 +180,13 @@ class Plan:
     def text(self, profile: Profile, limit: int = 12) -> str:
         lines = [
             f"PLAN DE COORDINACIÓN — {self.total_issues} decisiones en "
-            f"{len(self.packages)} paquetes",
+            f"{len(self.executable_packages)} paquetes de trabajo",
             "",
         ]
         for package in self.packages[:limit]:
+            marca = "" if package.executable else "  (solo contexto)"
             lines.append(
-                f"[{package.package_id}] {package.title}"
+                f"[{package.package_id}] {package.title}{marca}"
             )
             who = (
                 f"mueve {profile.label(package.owner)}"
@@ -108,8 +195,13 @@ class Plan:
             )
             if package.counterpart:
                 who += f" · con {profile.label(package.counterpart)}"
+            cierra = (
+                f" · cierra {package.affected_issue_count}"
+                if package.affected_issue_count > package.issues
+                else ""
+            )
             lines.append(
-                f"    {package.issues} decisiones ({package.critical} críticas) · "
+                f"    {package.issues} decisiones ({package.critical} críticas){cierra} · "
                 f"{who}" + (f" · {package.scope}" if package.scope else "")
             )
             lines.append(f"    → {package.action}")
@@ -133,9 +225,17 @@ def _merge_elevation_causes(causes: list[Any]) -> list[Any]:
     named = "; ".join(
         f"«{c.evidence.get('system', '?')}» ({c.clash_count})" for c in worst
     )
-    affected: list[int] = []
+    # Ids, not positions. The merged cause is consumed after the ranking, so
+    # carrying cluster indices here would reintroduce the very bug this file
+    # was the victim of.
+    affected_ids: list[str] = []
+    contributions: dict[str, list[str]] = {}
     for cause in causes:
-        affected.extend(cause.affected_clusters)
+        if cause.cause_id:
+            contributions[cause.cause_id] = list(cause.affected_issue_ids)
+        for issue_id in cause.affected_issue_ids:
+            if issue_id not in affected_ids:
+                affected_ids.append(issue_id)
 
     return [
         RootCause(
@@ -147,7 +247,10 @@ def _merge_elevation_causes(causes: list[Any]) -> list[Any]:
                 "es un criterio de alturas libres mal definido o mal comunicado."
             ),
             confidence=max(c.confidence for c in causes),
-            affected_clusters=sorted(set(affected)),
+            affected_clusters=[],
+            affected_issue_ids=affected_ids,
+            merged_from=[c.cause_id for c in causes if c.cause_id],
+            contributions=contributions,
             clash_count=sum(c.clash_count for c in causes),
             evidence={"systems": len(causes), "worst": named},
             suggested_action=(
@@ -157,6 +260,59 @@ def _merge_elevation_causes(causes: list[Any]) -> list[Any]:
             cause_id="RC-ALT",
         )
     ]
+
+
+def assign_decision_owners(
+    causes: list[Any],
+    issues_by_id: dict[str, Issue],
+    decision_ids: set[str],
+) -> dict[str, str]:
+    """One owning cause per decision, chosen the same way every time.
+
+    Three relationships are being kept apart here, and conflating them is
+    what makes plans either lie or duplicate work.
+
+    Causal membership is many-to-many: on a real export 51 issues are
+    explained by two causes at once, and both explanations are true. Package
+    coverage inherits that and may overlap — a package should be able to say
+    "this closes 176 problems" even if some of them are also closed by
+    another decision. Execution responsibility cannot: schedule the same
+    decision in two packages and two people do the same work, or each assumes
+    the other did.
+
+    So the owner is resolved before any package is built, by a rule that does
+    not depend on the order causes happen to be visited:
+
+    1. the cause the issue itself names, if one of the contenders is it;
+    2. then the most confident;
+    3. then the one closing the most;
+    4. then the id, so the answer is stable rather than merely deterministic.
+
+    A merged cause answers to any of the ids it absorbed, since the issue was
+    stamped with one of those before the merge existed.
+    """
+    claims: dict[str, list[Any]] = defaultdict(list)
+    for cause in causes:
+        for issue_id in cause.affected_issue_ids:
+            if issue_id in decision_ids:
+                claims[issue_id].append(cause)
+
+    owners: dict[str, str] = {}
+    for issue_id, contenders in claims.items():
+        issue = issues_by_id.get(issue_id)
+        headline = (issue.root_cause or {}).get("cause_id") if issue else None
+
+        def rank(cause: Any) -> tuple[Any, ...]:
+            names = {cause.cause_id, *cause.merged_from}
+            return (
+                headline not in names,
+                -cause.confidence,
+                -len(cause.affected_issue_ids),
+                cause.cause_id,
+            )
+
+        owners[issue_id] = min(contenders, key=rank).cause_id
+    return owners
 
 
 def build_plan(
@@ -179,7 +335,12 @@ def build_plan(
     single_decision_kinds = {"missing_penetration", "systemic_elevation", "repeated_typology"}
     decision_ids = {issue.issue_id for issue in decisions}
     by_id = {issue.issue_id: issue for issue in decisions}
-    index_by_position = {i: issue for i, issue in enumerate(result.issues)}
+    # Every issue in the analysis, by id. There is deliberately no map from
+    # position: `result.issues` is sorted by severity, and the previous
+    # version indexed it with cluster positions from before that sort, which
+    # is how a package about free heights filled with a congested zone's
+    # issues.
+    all_by_id = {issue.issue_id: issue for issue in result.issues}
 
     # Systemic elevation causes are merged into one package. A real model
     # produces dozens of them — 48 on this project — and emitting one package
@@ -192,26 +353,77 @@ def build_plan(
         c for c in result.root_causes if c.kind != "systemic_elevation"
     ]
 
+    # Who executes what, settled before a single package exists. Computed over
+    # the causes that will actually be packaged, so a merged cause competes as
+    # the one thing it has become.
+    packagable = [
+        c for c in ordered
+        if c.confidence >= 0.7 and c.kind in single_decision_kinds
+    ]
+    owner_of = assign_decision_owners(packagable, all_by_id, decision_ids)
+
     for cause in sorted(ordered, key=lambda c: -c.clash_count):
         if cause.confidence < 0.7 or cause.kind not in single_decision_kinds:
             continue
-        # Folded issues are closed by their representative and are not in
-        # `decisions`; counting them made coverage exceed the total and the
-        # tail come out negative.
+        # Everything the cause explains, and separately the representatives
+        # somebody still has to act on. Only the representatives are claimed
+        # and counted as coverage — folded issues are closed by them, and
+        # adding both made coverage exceed the total and the tail go negative.
+        affected = [i for i in cause.affected_issue_ids if i in all_by_id]
+        # Only the decisions this cause OWNS. A decision another cause owns
+        # stays in `affected` — the package really does close it — but it is
+        # not scheduled here, because it is already scheduled there.
         fresh = [
-            index_by_position[i].issue_id
-            for i in cause.affected_clusters
-            if i in index_by_position
-            and index_by_position[i].issue_id in decision_ids
-            and index_by_position[i].issue_id not in claimed
+            i for i in affected
+            if i in decision_ids and i not in claimed and owner_of.get(i) == cause.cause_id
         ]
-        if len(fresh) < SESSION_MIN:
+        shared_decisions = [
+            i for i in affected
+            if i in decision_ids and owner_of.get(i) not in (None, cause.cause_id)
+        ]
+
+        # Eligibility on impact, not on survivors.
+        #
+        # Folding collapses a cause's issues under one representative, so a
+        # finding that closes ten problems with one decision arrives here with
+        # a single decision — and testing `len(fresh) < SESSION_MIN` threw it
+        # away for being too small. That is backwards: one decision clearing
+        # ten issues is the highest-leverage thing in the plan.
+        if len(affected) < SESSION_MIN:
             continue
+
+        # Every decision it explains belongs to somebody else. The finding is
+        # real and worth reading, but it is not work: presenting it with an
+        # empty action list would put a package on the plan that nobody can
+        # execute and that double-counts what another package already covers.
+        advisory = not fresh
+
+        # Which cause contributed which issues. For a merged package this is
+        # the trail back to the original findings; collapsing them to one id
+        # would lose it, and re-stamping the issues to match would be the plan
+        # rewriting the analysis to agree with itself.
+        contributions: dict[str, list[str]] = {}
+        for origin, ids in (cause.contributions or {}).items():
+            kept = [i for i in ids if i in all_by_id]
+            if kept:
+                contributions[origin] = kept
+        if not contributions and cause.cause_id:
+            contributions[cause.cause_id] = list(affected)
+        sources = [c for c in cause.merged_from if c] or list(contributions)
+        mine = set(sources)
+        overlapping = [
+            issue_id
+            for issue_id in affected
+            if any(
+                other.cause_id not in mine and issue_id in other.affected_issue_ids
+                for other in result.root_causes
+            )
+        ]
 
         owners: dict[str, int] = defaultdict(int)
         criticals = 0
-        for issue_id in fresh:
-            issue = by_id[issue_id]
+        for issue_id in affected:
+            issue = all_by_id[issue_id]
             owners[issue.responsible] += 1
             if issue.priority == "critical":
                 criticals += 1
@@ -220,7 +432,7 @@ def build_plan(
         owner = ranked_owners[0][0] if ranked_owners else ""
         # A package spanning every trade has no single owner, and naming one
         # sends the whole thing to the wrong person.
-        spans = len([o for o, n in ranked_owners if n >= max(2, len(fresh) * 0.1)])
+        spans = len([o for o, n in ranked_owners if n >= max(2, len(affected) * 0.1)])
         counterpart = ranked_owners[1][0] if len(ranked_owners) > 1 else ""
 
         # Two causes of the same kind produce the same title — "Cruce
@@ -232,10 +444,10 @@ def build_plan(
         # package "Arquitectura × Eléctrica" and contradicted the owner line
         # printed directly underneath it.
         pairs = {
-            " × ".join(profile.label(d) for d in by_id[i].discipline_pair if d)
-            for i in fresh
+            " × ".join(profile.label(d) for d in all_by_id[i].discipline_pair if d)
+            for i in affected
         }
-        levels = sorted({by_id[i].level for i in fresh if by_id[i].level})
+        levels = sorted({all_by_id[i].level for i in affected if all_by_id[i].level})
         qualifier = ""
         if len(pairs) == 1:
             qualifier = " · " + next(iter(pairs))
@@ -250,7 +462,7 @@ def build_plan(
         packages.append(
             Package(
                 package_id=f"PQ-{counter:02d}",
-                kind="systemic",
+                kind="advisory" if advisory else "systemic",
                 title=cause.title + qualifier,
                 owner=owner if spans <= 2 else "",
                 counterpart=counterpart if spans <= 2 else "",
@@ -258,15 +470,32 @@ def build_plan(
                 issues=len(fresh),
                 critical=criticals,
                 clashes=cause.clash_count,
-                action=cause.suggested_action,
-                issue_ids=fresh,
+                action=(
+                    cause.suggested_action
+                    if not advisory
+                    else "Sin trabajo propio: sus decisiones se ejecutan en otros paquetes. "
+                    "Léelo como contexto de por qué aparecen."
+                ),
+                decision_issue_ids=fresh,
+                affected_issue_ids=affected,
+                shared_affected_issue_ids=shared_decisions,
+                affected_clash_count=cause.clash_count,
+                cause_ids=sources or ([cause.cause_id] if cause.cause_id else []),
+                primary_cause_id=cause.cause_id,
+                issue_ids_by_cause=contributions,
+                overlapping_issue_ids=overlapping,
                 rationale=(
-                    "Una sola decisión cierra todo el paquete; hacerla primero encoge "
-                    "el resto del plan."
+                    (
+                        f"Una sola decisión cierra {len(affected)} problemas; hacerla "
+                        "primero encoge el resto del plan."
+                        if not advisory
+                        else f"Explica {len(affected)} problemas, pero todos se deciden "
+                        "en otro paquete. No es trabajo aparte."
+                    )
                     + (
                         f" Toca a {spans} especialidades, así que la decisión es de "
                         "coordinación, no de una sola."
-                        if spans > 2
+                        if spans > 2 and not advisory
                         else ""
                     )
                 ),
@@ -321,7 +550,11 @@ def build_plan(
                         f"Mueve {profile.label(owner)}; llevar las {len(chunk)} decisiones "
                         "resueltas de una pasada."
                     ),
-                    issue_ids=[i.issue_id for i in chunk],
+                    # A session has no folding behind it: what you decide and
+                    # what you close are the same list.
+                    decision_issue_ids=[i.issue_id for i in chunk],
+                    affected_issue_ids=[i.issue_id for i in chunk],
+                    affected_clash_count=sum(i.clash_count for i in chunk),
                     rationale=(
                         "Una pareja de especialidades y una zona: alcance cerrado, "
                         "responsable único, cabe en una reunión."
@@ -330,7 +563,11 @@ def build_plan(
             )
             claimed.update(i.issue_id for i in chunk)
 
-    packages.sort(key=lambda p: (p.kind != "systemic", -p.critical, -p.issues))
+    # Work first, then advisories. A package nobody can execute must not sit
+    # above one somebody has to.
+    packages.sort(
+        key=lambda p: (not p.executable, p.kind != "systemic", -p.critical, -p.leverage)
+    )
     for position, package in enumerate(packages, start=1):
         package.package_id = f"PQ-{position:02d}"
 

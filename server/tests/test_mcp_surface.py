@@ -207,3 +207,35 @@ def test_initialize_reports_naviscoord_version_not_the_mcp_dependency():
     assert getattr(protocol, "version", None) == __version__
     options = protocol.create_initialization_options()
     assert options.server_version == __version__
+
+
+def test_every_tool_is_annotated(tools):
+    """A tool with no annotations is a tool the client cannot reason about.
+
+    `title` and the read-only/destructive hint are what a client uses to
+    decide what may run unattended and what has to be confirmed, and the
+    Anthropic directory rejects a server whose tools omit them. Asserted here
+    because the omission is invisible at runtime: an unannotated tool works
+    perfectly, right up to the review that turns it down.
+    """
+    for tool in tools:
+        annotations = getattr(tool, "annotations", None)
+        assert annotations is not None, f"{tool.name} no lleva anotaciones"
+        assert (annotations.title or "").strip(), f"{tool.name} no lleva título"
+        declared = annotations.readOnlyHint or annotations.destructiveHint is not None
+        assert declared, f"{tool.name} no declara readOnlyHint ni destructiveHint"
+
+
+def test_no_writing_tool_claims_to_be_read_only(tools):
+    """The annotation failure that actually costs something.
+
+    A write announced as read-only is a write the client is entitled to
+    perform without asking anyone. The witnesses are the two guards this
+    server puts on every mutation — `expected_document_fingerprint` and
+    `dry_run` — so the check follows whatever gets added later instead of a
+    list somebody has to remember to update.
+    """
+    for tool in tools:
+        properties = set(_schema(tool).get("properties") or {})
+        if {"expected_document_fingerprint", "dry_run"} & properties:
+            assert not tool.annotations.readOnlyHint, f"{tool.name} escribe y se declara de solo lectura"

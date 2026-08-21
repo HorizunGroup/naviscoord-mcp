@@ -55,8 +55,11 @@ $script:ForbiddenPatterns = [ordered]@{
     'ruta de usuario Windows' = '[A-Za-z]:\\+Users\\+[^\\/:*?"<>|\r\n]{1,64}'
     'ruta de usuario macOS'   = '/Users/[A-Za-z0-9._-]{1,64}/'
     'ruta de usuario Linux'   = '/home/[A-Za-z0-9._-]{1,64}/'
-    'raiz absoluta Windows'   = '[A-Za-z]:\\+(?:Program Files|ProgramData|Temp|Windows|Work|src|repos|dev)\\+'
+    'raiz absoluta Windows'   = '[A-Za-z]:\\+(?:Program Files(?: \(x86\))?|ProgramData|Temp|Windows|Work|src|repos|dev|build|obj|bin|projects|code|git|jenkins|workspace)\\+'
     'PDB con ruta absoluta'   = '(?:[A-Za-z]:\\+|/)[^\r\n"]{0,200}\.pdb'
+    'ruta UNC'                = '\\\\[A-Za-z0-9._-]{2,63}\\[^\\/:*?"<>|\r\n]{1,64}'
+    'ruta extendida Windows'  = '\\\\\?\\'
+    'raiz de agente CI'       = '(?:/github/workspace|/opt/(?:build|hostedtoolcache|actions-runner)|/var/lib/jenkins|/home/runner/work|[A-Za-z]:\\+a\\+|[A-Za-z]:\\+actions-runner|[A-Za-z]:\\+agent\\+_work)'
 }
 
 function Get-ArtifactText {
@@ -125,6 +128,16 @@ if ($SelfTest) {
         'ruta Linux'           = $enc.GetBytes('blah /home/ejemplo/work/repo/x')
         'pdb con ruta'         = $enc.GetBytes('D:\build\out\NavisCoord.pdb')
         'Program Files'        = $enc.GetBytes('ref C:\Program Files\Autodesk\x.dll')
+        # Lo que la lista de carpetas no veia: la raiz del agente Windows
+        # de GitHub Actions es D:\a\<repo>. Dos letras, ninguna palabra
+        # reconocible, y por eso pasaba limpia.
+        'agente CI Windows'    = $enc.GetBytes('at D:\a\NavisCoord\NavisCoord\obj\x.cs')
+        'agente CI Linux'      = $enc.GetBytes('/home/runner/work/NavisCoord/NavisCoord/x')
+        'workspace de GitHub'  = $enc.GetBytes('/github/workspace/addin/x.cs')
+        'raiz /opt/build'      = $enc.GetBytes('/opt/build/agent/_work/x')
+        'unidad no listada'    = $enc.GetBytes('E:\jenkins\workspace\NavisCoord\x')
+        'ruta UNC'             = $enc.GetBytes('en \\buildsrv\releases\NavisCoord\x.dll')
+        'ruta extendida'       = $enc.GetBytes('abre \\?\D:\muy\larga\x')
     }
     $mustPass = [ordered]@{
         'binario neutro'       = $enc.GetBytes('NavisCoord 0.2.2 MIT HorizunGroup')
@@ -132,6 +145,8 @@ if ($SelfTest) {
         'PathMap normalizado'  = $enc.GetBytes('/_/addin/NavisCoord.Addin/HttpBridge.cs')
         'version con sha'      = $enc.GetBytes('0.2.2+0000000000000000000000000000000000000000')
         'texto de licencia'    = $enc.GetBytes('Permission is hereby granted, free of charge')
+        'nombre con dos puntos'= $enc.GetBytes('Warning: no se encontro el perfil')
+        'barra doble en texto' = $enc.GetBytes('usa // para comentar')
     }
 
     foreach ($k in $mustFail.Keys) {

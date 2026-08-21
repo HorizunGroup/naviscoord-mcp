@@ -301,6 +301,17 @@ class Issue:
     centroid: Point
     bbox_min: Point
     bbox_max: Point
+    #: The cluster this issue was built from, carried on the issue instead of
+    #: implied by its place in a list.
+    #:
+    #: Root causes are detected against clusters and can only name them by
+    #: position, while issues are ranked by severity and take their public ids
+    #: from that ranking. Holding the cluster number here means the two are
+    #: matched by looking something up, rather than by both lists happening to
+    #: be in the same order at the same moment — which they only were for the
+    #: few lines between building the issues and sorting them, and which
+    #: nothing enforced.
+    cluster_id: int = -1
     severity: float = 0.0
     priority: str = "low"
     level: str = ""

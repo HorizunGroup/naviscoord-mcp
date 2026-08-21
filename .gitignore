@@ -59,3 +59,14 @@ Thumbs.db
 .DS_Store
 installer/stage/
 installer/Output/
+
+# Efímeros de CI y de las verificaciones locales. Cada uno nace y muere en un
+# run; si alguno aparece en `git status` es que un script terminó mal, y
+# versionarlo dejaría dentro un log con rutas de la máquina.
+degraded_driver.py
+degraded.jsonl
+*.staging-*
+.naviscoord-sandbox
+.naviscoord-selftest
+.naviscoord-repro
+.naviscoord-build-workspace

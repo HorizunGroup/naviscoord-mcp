@@ -1,0 +1,344 @@
+{
+  "_comment": "Corpus semántico compartido. Cada caso es un PARCHE que se aplica sobre el perfil por defecto; 'accepted' dice si el resultado debe instalarse. Para los rechazados, 'code' y 'path' deben coincidir en Python y en C# — el mensaje no, porque los idiomas y el estilo difieren.",
+  "cases": [
+    {
+      "name": "perfil por defecto sin cambios",
+      "patch": {},
+      "accepted": true
+    },
+    {
+      "name": "saturacion de tamano igual a 1",
+      "patch": {
+        "severity": {
+          "cluster_size_saturation": 1
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "severity.cluster_size_saturation"
+    },
+    {
+      "name": "saturacion de tamano menor que 1",
+      "patch": {
+        "severity": {
+          "cluster_size_saturation": 0.5
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "severity.cluster_size_saturation"
+    },
+    {
+      "name": "saturacion de congestion cero",
+      "patch": {
+        "severity": {
+          "congestion_saturation": 0
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "severity.congestion_saturation"
+    },
+    {
+      "name": "eps cero",
+      "patch": {
+        "clustering": {
+          "eps_m": 0
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "clustering.eps_m"
+    },
+    {
+      "name": "eps negativo",
+      "patch": {
+        "clustering": {
+          "eps_m": -0.4
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "clustering.eps_m"
+    },
+    {
+      "name": "span cero",
+      "patch": {
+        "clustering": {
+          "max_cluster_span_m": 0
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "clustering.max_cluster_span_m"
+    },
+    {
+      "name": "span negativo",
+      "patch": {
+        "clustering": {
+          "max_cluster_span_m": -6
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "clustering.max_cluster_span_m"
+    },
+    {
+      "name": "min_samples cero",
+      "patch": {
+        "clustering": {
+          "min_samples": 0
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "clustering.min_samples"
+    },
+    {
+      "name": "min_samples fraccionario",
+      "patch": {
+        "clustering": {
+          "min_samples": 2.5
+        }
+      },
+      "accepted": false,
+      "code": "profile_type",
+      "path": "clustering.min_samples"
+    },
+    {
+      "name": "eps mayor que el span",
+      "patch": {
+        "clustering": {
+          "eps_m": 40,
+          "max_cluster_span_m": 6
+        }
+      },
+      "accepted": false,
+      "code": "profile_relation",
+      "path": "clustering"
+    },
+    {
+      "name": "booleano como radio",
+      "patch": {
+        "clustering": {
+          "eps_m": true
+        }
+      },
+      "accepted": false,
+      "code": "profile_type",
+      "path": "clustering.eps_m"
+    },
+    {
+      "name": "cadena numerica como radio",
+      "patch": {
+        "clustering": {
+          "eps_m": "0.4"
+        }
+      },
+      "accepted": false,
+      "code": "profile_type",
+      "path": "clustering.eps_m"
+    },
+    {
+      "name": "nulo como radio",
+      "patch": {
+        "clustering": {
+          "eps_m": null
+        }
+      },
+      "accepted": false,
+      "code": "profile_type",
+      "path": "clustering.eps_m"
+    },
+    {
+      "name": "tolerancia negativa",
+      "patch": {
+        "clash_matrix": {
+          "default_tolerance_m": -0.01
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "clash_matrix.default_tolerance_m"
+    },
+    {
+      "name": "confianza mayor que uno",
+      "patch": {
+        "root_cause": {
+          "min_confidence": 1.5
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "root_cause.min_confidence"
+    },
+    {
+      "name": "confianza negativa",
+      "patch": {
+        "root_cause": {
+          "min_confidence": -0.1
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "root_cause.min_confidence"
+    },
+    {
+      "name": "muestra minima cero",
+      "patch": {
+        "root_cause": {
+          "min_clashes": 0
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "root_cause.min_clashes"
+    },
+    {
+      "name": "bandas de prioridad invertidas",
+      "patch": {
+        "severity": {
+          "priority_bands": {
+            "critical": 30,
+            "high": 50,
+            "medium": 70
+          }
+        }
+      },
+      "accepted": false,
+      "code": "profile_relation",
+      "path": "severity.priority_bands"
+    },
+    {
+      "name": "banda fuera de escala",
+      "patch": {
+        "severity": {
+          "priority_bands": {
+            "critical": 150,
+            "high": 55,
+            "medium": 35
+          }
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "severity.priority_bands.critical"
+    },
+    {
+      "name": "umbrales de ruido invertidos",
+      "patch": {
+        "noise_filter": {
+          "min_penetration_m": 0.5,
+          "max_penetration_m": 0.1
+        }
+      },
+      "accepted": false,
+      "code": "profile_relation",
+      "path": "noise_filter"
+    },
+    {
+      "name": "disciplina desconocida en la matriz de criticidad",
+      "patch": {
+        "criticality_matrix": {
+          "EST|INEXISTENTE": 0.5
+        }
+      },
+      "accepted": false,
+      "code": "profile_reference",
+      "path": "criticality_matrix.EST|INEXISTENTE"
+    },
+    {
+      "name": "clave de criticidad mal formada",
+      "patch": {
+        "criticality_matrix": {
+          "SOLOUNA": 0.5
+        }
+      },
+      "accepted": false,
+      "code": "profile_reference",
+      "path": "criticality_matrix.SOLOUNA"
+    },
+    {
+      "name": "criticidad negativa",
+      "patch": {
+        "criticality_matrix": {
+          "EST|ARQ": -0.5
+        }
+      },
+      "accepted": false,
+      "code": "profile_range",
+      "path": "criticality_matrix.EST|ARQ"
+    },
+    {
+      "name": "movilidad booleana",
+      "patch": {
+        "movability": {
+          "by_category": {
+            "Pipes": true
+          }
+        }
+      },
+      "accepted": false,
+      "code": "profile_type",
+      "path": "movability.by_category.Pipes"
+    },
+    {
+      "name": "alias circular",
+      "patch": {
+        "discipline_aliases": {
+          "AAA": "BBB",
+          "BBB": "AAA"
+        }
+      },
+      "accepted": false,
+      "code": "profile_relation",
+      "path": "discipline_aliases.AAA"
+    },
+    {
+      "name": "alias que apunta a si mismo",
+      "patch": {
+        "discipline_aliases": {
+          "CCC": "CCC"
+        }
+      },
+      "accepted": false,
+      "code": "profile_relation",
+      "path": "discipline_aliases.CCC"
+    },
+    {
+      "name": "una seccion desconocida en la raiz se rechaza",
+      "_why": "un typo (severty) parseaba, validaba y no hacia nada durante una semana",
+      "patch": {
+        "severty": {
+          "weights": {
+            "size": 1.0
+          }
+        }
+      },
+      "accepted": false,
+      "code": "profile_unknown",
+      "path": "severty"
+    },
+    {
+      "name": "una clave de comentario en la raiz se acepta",
+      "_why": "el guion bajo es comentario en cualquier nivel, tambien en la raiz",
+      "patch": {
+        "_nota": "esto es un comentario del autor del perfil"
+      },
+      "accepted": true
+    },
+    {
+      "name": "extensions es la zona libre y no se valida",
+      "_why": "datos propios del proyecto sin colisionar con secciones futuras",
+      "patch": {
+        "extensions": {
+          "mi_empresa": {
+            "umbral_interno": -99,
+            "loquesea": true
+          }
+        }
+      },
+      "accepted": true
+    }
+  ]
+}

@@ -28,7 +28,8 @@ namespace NavisCoord
                 TargetId = Json.Str(payload, "target_id"),
                 FingerprintBefore = DocumentContext.Fingerprint(doc),
                 Requested = 1,
-                DryRun = Json.Bool(payload, "dry_run", true)
+                DryRun = Json.Bool(payload, "dry_run", true),
+                VerificationSource = VerificationSources.DocumentClosedReread
             };
 
             var expected = Json.Str(payload, "expected_document_fingerprint");

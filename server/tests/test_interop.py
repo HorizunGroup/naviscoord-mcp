@@ -8,7 +8,9 @@ untraceable issues are declared rather than quietly dropped.
 
 from __future__ import annotations
 
+import codecs
 import json
+from pathlib import Path
 
 from naviscoord import samples as synth
 from naviscoord.analysis import analyze
@@ -106,13 +108,22 @@ def test_write_handoff_produces_every_artifact(profile, tmp_path):
     result, export = _analysed(synth.full_project_case(), profile)
     report = write_handoff(tmp_path, result, export, profile)
 
-    names = {p.name for p in tmp_path.iterdir()}
+    # The artifacts live inside one immutable generation, and `current.json`
+    # is the only file that ever moves. A consumer reading loose top-level
+    # files can read a mixture of two runs; one that follows the pointer
+    # cannot, which is the whole point of the change.
+    generation = Path(report["directory"])
+    names = {p.name for p in generation.iterdir()}
     assert "coordination_handoff.json" in names
     assert "revit_worklist.json" in names
     assert "fct_issues.csv" in names
+    assert "manifest.json" in names
     assert report["issues"] == len(result.issues)
 
-    payload = json.loads((tmp_path / "coordination_handoff.json").read_text(encoding="utf-8"))
+    current = json.loads((tmp_path / "current.json").read_text(encoding="utf-8"))
+    assert current["generation_id"] == report["generation_id"]
+
+    payload = json.loads((generation / "coordination_handoff.json").read_text(encoding="utf-8"))
     assert payload["source"]["tool"] == "naviscoord"
     assert payload["source"]["profile"] == profile.name
 
@@ -120,5 +131,6 @@ def test_write_handoff_produces_every_artifact(profile, tmp_path):
 def test_csv_is_written_with_bom_for_excel(profile, tmp_path):
     """Without the BOM, Power BI and Excel mangle every accented value."""
     result, export = _analysed(synth.noise_case(), profile)
-    write_handoff(tmp_path, result, export, profile)
-    assert (tmp_path / "fct_issues.csv").read_bytes().startswith(b"\xef\xbb\xbf")
+    report = write_handoff(tmp_path, result, export, profile)
+    csv_path = Path(report["directory"]) / "fct_issues.csv"
+    assert csv_path.read_bytes().startswith(codecs.BOM_UTF8)

@@ -19,6 +19,8 @@ import json
 import os
 from datetime import datetime
 from dataclasses import dataclass, field
+
+from .liveness import ALIVE, DEAD, UNKNOWN, Liveness, probe
 from pathlib import Path
 from typing import Any
 
@@ -42,8 +44,14 @@ def sessions_dir() -> Path:
     return runtime_root() / "sessions"
 
 
+# The pre-registry add-in wrote one shared file with this name and no
+# session_id. Named here so the reader that tolerates the omission can say
+# exactly which file it is tolerating it for.
+LEGACY_SESSION_NAME = "session.json"
+
+
 def legacy_session_file() -> Path:
-    return runtime_root() / "session.json"
+    return runtime_root() / LEGACY_SESSION_NAME
 
 
 @dataclass(slots=True)
@@ -175,7 +183,7 @@ def discover(include_dead: bool = False) -> list[SessionInfo]:
     # fresh client connect to a dead PID and report a bridge failure instead
     # of the truthful "no active session".  Keep it visible to
     # ``include_dead`` so navis_sessions can diagnose the stale record.
-    return [legacy] if include_dead or is_alive(legacy) else []
+    return [legacy] if include_dead or liveness_of(legacy).state != DEAD else []
 
 
 def _read_dir(directory: Path, include_dead: bool) -> list[SessionInfo]:
@@ -189,7 +197,11 @@ def _read_dir(directory: Path, include_dead: bool) -> list[SessionInfo]:
         session = _read_file(entry)
         if session is None:
             continue
-        if not include_dead and not is_alive(session):
+        if not include_dead and liveness_of(session).state == DEAD:
+            # Only a CONFIRMED absence is hidden. Filtering on `is_alive`
+            # dropped every unknown too, which is the elevated-Navisworks case:
+            # the process is right there and the client simply cannot query it,
+            # and hiding it turns a permissions problem into "no hay sesión".
             continue
         sessions.append(session)
 
@@ -197,74 +209,134 @@ def _read_dir(directory: Path, include_dead: bool) -> list[SessionInfo]:
     return sessions
 
 
+# Recorded so `navis_sessions` can explain a file it skipped instead of the
+# file simply not appearing. Bounded: a directory full of junk should not turn
+# into an unbounded diagnostic.
+_INVALID_LIMIT = 32
+_invalid_records: list[dict[str, Any]] = []
+
+
+def invalid_records() -> list[dict[str, Any]]:
+    """Session files that were skipped, and why. Never carries a token."""
+    return list(_invalid_records)
+
+
+def _note_invalid(path: Path, reason: str, detail: str = "") -> None:
+    if len(_invalid_records) >= _INVALID_LIMIT:
+        return
+    _invalid_records.append({
+        "file": path.name,          # the NAME, not the path: no home directories
+        "reason": reason,
+        "detail": detail,
+    })
+
+
 def _read_file(path: Path) -> SessionInfo | None:
+    """One session record, or nothing — never an exception.
+
+    The old version parsed the JSON inside a try and then built the
+    ``SessionInfo`` outside it, so `int(raw["port"])` on a record saying
+    ``"port": "ocho mil"`` raised straight out of discovery. One corrupt file
+    in the registry directory took down the enumeration of every healthy
+    instance beside it.
+
+    Every field is now validated before anything is constructed, and a record
+    that fails is skipped with a reason rather than propagating.
+    """
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        _note_invalid(path, "unreadable", exc.__class__.__name__)
         return None
-    if not isinstance(raw, dict) or not raw.get("port"):
+
+    try:
+        raw = json.loads(text)
+    except ValueError as exc:
+        _note_invalid(path, "invalid_json", str(exc)[:120])
         return None
-    return SessionInfo.from_json(raw, source=str(path))
+
+    if not isinstance(raw, dict):
+        _note_invalid(path, "not_an_object", "la raíz no es un objeto JSON")
+        return None
+
+    session_id = raw.get("session_id")
+    if not isinstance(session_id, str) or not session_id.strip():
+        # The pre-registry add-in wrote one shared `session.json` with no id.
+        # Refusing it would drop a working instance nobody has updated yet, so
+        # the legacy pointer is allowed through and the registry is not: a
+        # file IN the registry directory without an id is corrupt, and a file
+        # that IS the legacy pointer never had one.
+        if path.name != LEGACY_SESSION_NAME:
+            _note_invalid(path, "missing_session_id", "session_id ausente o vacío")
+            return None
+        raw = dict(raw)
+        raw["session_id"] = f"legacy-{raw.get('pid', 0)}-{raw.get('port', 0)}"
+
+    port = _as_port(raw.get("port"))
+    if port is None:
+        _note_invalid(path, "invalid_port", f"port no es un entero 1..65535: {raw.get('port')!r}")
+        return None
+
+    pid = _as_pid(raw.get("pid"))
+    if pid is None:
+        _note_invalid(path, "invalid_pid", f"pid no es un entero: {raw.get('pid')!r}")
+        return None
+
+    token = raw.get("token", "")
+    if not isinstance(token, str):
+        # Never echoed, here or anywhere: only its shape is reported.
+        _note_invalid(path, "invalid_token", "el token no es una cadena")
+        return None
+
+    document = raw.get("document", {})
+    if document is not None and not isinstance(document, dict):
+        _note_invalid(path, "invalid_document", "el bloque 'document' no es un objeto")
+        return None
+
+    try:
+        return SessionInfo.from_json(raw, source=str(path))
+    except (TypeError, ValueError) as exc:
+        # A field nobody anticipated. Skipped rather than allowed to escape:
+        # discovery answering "no sessions" is recoverable, discovery raising
+        # is not.
+        _note_invalid(path, "unconstructable", f"{exc.__class__.__name__}: {exc}"[:120])
+        return None
+
+
+def _as_port(value: Any) -> int | None:
+    """A TCP port, or nothing. No string coercion."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 1 <= value <= 65535 else None
+
+
+def _as_pid(value: Any) -> int | None:
+    """A process id, or nothing. Zero means "not recorded", which is legal."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if value >= 0 else None
+
+
+def liveness_of(session: SessionInfo) -> Liveness:
+    """Alive, dead or unknown — with the reason attached.
+
+    The bool this replaces conflated two opposite situations. ACCESS_DENIED
+    made ``OpenProcess`` return NULL, which read as "dead", so an elevated
+    Navisworks was pruned out of the registry and became invisible to a
+    non-elevated client. And a live PID read as "the same process", although
+    Windows recycles PIDs within minutes.
+    """
+    return probe(session.pid, session.process_started)
 
 
 def is_alive(session: SessionInfo) -> bool:
-    """Whether the owning process still exists.
+    """Kept for callers that only need the yes/no.
 
-    PID liveness rather than a heartbeat age: a healthy instance can spend
-    twenty minutes appending a federated model on the UI thread, and evicting
-    it for missing a heartbeat is exactly the moment you least want the
-    handshake to vanish. When the PID is unknown the session is assumed live —
-    an old add-in did not record one, and refusing to talk to it would be a
-    regression dressed as a safety check.
+    Note which way it rounds: unknown is NOT alive. A caller asking a boolean
+    question about a process it cannot see gets the cautious answer, and the
+    callers that need the difference use :func:`liveness_of`.
     """
-    if session.pid <= 0:
-        return True
-    if os.name != "nt":
-        try:
-            os.kill(session.pid, 0)
-            return True
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        except OSError:
-            return True
-
-    # Windows: no os.kill(0). OpenProcess via ctypes is the cheap check that
-    # does not need psutil.
-    try:
-        import ctypes
-
-        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        STILL_ACTIVE = 259
-        kernel32 = ctypes.windll.kernel32
-        kernel32.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
-        kernel32.OpenProcess.restype = ctypes.c_void_p
-        kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
-        kernel32.GetExitCodeProcess.restype = ctypes.c_int
-        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-        kernel32.CloseHandle.restype = ctypes.c_int
-        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, session.pid)
-        if not handle:
-            return False
-        try:
-            if session.process_started and not _same_windows_process(
-                kernel32, handle, session.process_started
-            ):
-                return False
-            code = ctypes.c_ulong()
-            if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)) == 0:
-                return True
-            return code.value == STILL_ACTIVE
-        finally:
-            kernel32.CloseHandle(handle)
-    except (OSError, AttributeError, ValueError):
-        # Unable to check is not evidence of death: a session whose liveness
-        # cannot be established is reported as alive, so a transient ctypes
-        # or permission failure never silently deletes a running instance
-        # from the registry. Narrow rather than bare, so a genuine bug in
-        # this function still surfaces instead of being read as "alive".
-        return True
+    return liveness_of(session).is_alive
 
 
 def _same_windows_process(kernel32: Any, handle: Any, recorded: str) -> bool:
@@ -365,11 +437,33 @@ def select(target_id: str = "", *, for_mutation: bool = False) -> SessionInfo:
 def summary() -> dict[str, Any]:
     """What `navis_sessions` returns."""
     live = discover()
-    dead = [s for s in discover(include_dead=True) if not is_alive(s)]
+    everything = discover(include_dead=True)
+
+    # Three buckets, not two. `not is_alive` swept unknowns in with the dead,
+    # so an elevated Navisworks — running, reachable, simply unqueryable from
+    # here — was reported as a stale record to clean up.
+    dead: list[SessionInfo] = []
+    unknown: list[dict[str, Any]] = []
+    for session in everything:
+        verdict = liveness_of(session)
+        if verdict.state == DEAD:
+            entry = session.to_json()
+            entry.update(verdict.to_json())
+            dead.append(entry)
+        elif verdict.state == UNKNOWN:
+            entry = session.to_json()
+            entry.update(verdict.to_json())
+            unknown.append(entry)
+
     return {
         "sessions": [s.to_json() for s in live],
         "count": len(live),
-        "stale": [s.to_json() for s in dead],
+        "stale": dead,
+        "unknown": unknown,
+        # Files that could not be read at all, with the reason and never the
+        # token. A corrupt record used to be invisible: it simply did not
+        # appear, so nobody knew there was anything to fix.
+        "invalid": invalid_records(),
         "registry": str(sessions_dir()),
         "override_env": SESSION_ENV,
         "override_active": bool(os.environ.get(SESSION_ENV, "").strip()),

@@ -412,7 +412,16 @@ class TestOutputPolicy:
     def test_handoff_artifacts_are_published_atomically(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A second handoff into the same directory is refused, not merged."""
+        """A second handoff produces a NEW generation and never merges.
+
+        The refusal this used to assert — `overwrite=False` making the second
+        run collide with the first — protected against a merge by preventing a
+        second run at all, which made the tool unusable twice in a row. The
+        generation model removes the collision instead: each run writes its own
+        immutable directory and `current.json` moves once, atomically, at the
+        end. Two runs cannot interleave because they never touch the same
+        files.
+        """
         from naviscoord.analysis.pipeline import AnalysisResult
         from naviscoord.interop import write_handoff
         from naviscoord.model import ClashExport
@@ -431,12 +440,22 @@ class TestOutputPolicy:
             for written in out["written"]:
                 assert Path(written).exists()
             assert not list((root / "entrega").glob("*.tmp"))
+            assert not list((root / "entrega").glob(".staging-*")), "sin staging huérfano"
 
-            with pytest.raises(PathPolicyError, match="ya existe"):
-                write_handoff(
-                    root / "entrega", AnalysisResult(profile_name="t"),
-                    ClashExport(), Profile.load(), overwrite=False,
-                )
+            first_generation = out["generation_id"]
+            second = write_handoff(
+                root / "entrega", AnalysisResult(profile_name="t"),
+                ClashExport(), Profile.load(), overwrite=False,
+            )
+            assert second["generation_id"] != first_generation, "cada corrida es su generación"
+            assert second["replaced_generation"] == first_generation
+
+            # The first generation survives the second, and `current` names
+            # exactly one of them.
+            from naviscoord.bundle import read_current, verify
+            assert (root / "entrega" / "generations" / first_generation).is_dir()
+            assert read_current(root / "entrega")["generation_id"] == second["generation_id"]
+            assert verify(root / "entrega")["ok"]
         finally:
             reset_policy()
 

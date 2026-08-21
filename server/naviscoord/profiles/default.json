@@ -249,7 +249,6 @@
   "noise_filter": {
     "_comment": "Lo que se descarta antes de agrupar. Cada descarte queda contado y auditable: nada desaparece en silencio.",
     "min_penetration_m": 0.002,
-    "drop_same_element": true,
     "drop_same_system_fittings": true,
     "drop_statuses": ["Approved", "Resolved"],
     "insulation_categories": ["Duct Insulations", "Pipe Insulations", "Duct Linings"],

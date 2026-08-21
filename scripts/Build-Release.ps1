@@ -36,6 +36,14 @@
 .PARAMETER NoZip
     Deja el árbol en dist\addin\<versión>\ sin comprimirlo.
 
+.PARAMETER Ref
+    Construye desde un ref de git (normalmente el tag de release) en vez de
+    desde el arbol de trabajo. El ref se resuelve a UN SHA una sola vez, se
+    clona ese commit desprendido en un temporal unico y todo se compila ahi:
+    lo que hay editado, sin commitear o a medias en este arbol no puede
+    viajar al artefacto. Los ZIP quedan en dist\addin\ de ESTE repositorio,
+    junto a un FROM-REF.txt que registra ref y SHA.
+
 .PARAMETER VerifyReproducible
     Construye DOS veces en carpetas temporales distintas a partir de este mismo
     repositorio y compara los hashes. Es la prueba de que la reproducibilidad
@@ -53,7 +61,9 @@ param(
     [string]$Version = 'all',
     [switch]$SkipBuild,
     [switch]$NoZip,
-    [switch]$VerifyReproducible
+    [string]$Ref,
+    [switch]$VerifyReproducible,
+    [switch]$SelfTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -150,25 +160,82 @@ function New-DeterministicZip {
     } finally { $stream.Dispose() }
 }
 
+# El orden importa: -VerifyReproducible se evalua ANTES que -Ref porque ya
+# honra el ref. Al reves, `-Ref <tag> -VerifyReproducible` entraba en el modo
+# desde-ref, hacia UN solo build, salia con codigo 0 y descartaba en silencio
+# la verificacion que se le habia pedido. Un operador que pide comprobar
+# reproducibilidad y recibe un exito sin haber comparado nada esta peor que
+# si el comando hubiera fallado.
 # ------------------------------------------------ modo verificar reproducible
 
+# Comprobaciones de ENRUTADO de flags. No construyen nada: solo demuestran a
+# que rama entra cada combinacion. Existen porque `-Ref X -VerifyReproducible`
+# entraba en el modo desde-ref, hacia un solo build y salia 0 descartando en
+# silencio la verificacion pedida.
+if ($SelfTest) {
+    $fails = 0
+    function Route([string]$name, [bool]$ok, [string]$detail = "") {
+        if ($ok) { Write-Output "  ok    $name" } else { Write-Output "  FALLA $name $detail"; $script:fails++ }
+    }
+    $me = $PSCommandPath
+    # Un ref inexistente: el mensaje dice QUE rama lo rechazo.
+    $out = (& pwsh -NoProfile -File $me -Ref "no-existe-este-ref" -VerifyReproducible 2>&1 | Out-String)
+    Route "-Ref + -VerifyReproducible entra en la verificacion, no en el build desde ref" `
+        ($out -match "no pude resolver el ref") "(mensaje: $($out.Trim()))"
+    Route "y no sale con exito silencioso" ($LASTEXITCODE -ne 0)
+    $out2 = (& pwsh -NoProfile -File $me -Ref "no-existe-este-ref" 2>&1 | Out-String)
+    Route "-Ref solo sigue entrando en el build desde ref" ($out2 -match "no resuelve a un commit")
+    Write-Output ""
+    Write-Output "Build-Release enrutado: $fails fallo(s)"
+    if ($fails) { exit 1 }
+    exit 0
+}
+
 if ($VerifyReproducible) {
-    $head = (& git -C $repoRoot rev-parse HEAD).Trim()
-    Write-Host "Verificando reproducibilidad de $head en dos rutas distintas."
+    # -Ref manda. Antes esto llamaba siempre a HEAD, asi que
+    # `-Ref <tag> -VerifyReproducible` verificaba OTRO commit que el que se
+    # le pedia y lo anunciaba como si fuera el correcto. El flag existia y no
+    # hacia nada, que es peor que no tenerlo.
+    $target = if ($Ref) { $Ref } else { 'HEAD' }
+    $head = (& git -C $repoRoot rev-parse --verify "$target^{commit}" 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $head) {
+        throw "no pude resolver el ref '$target' a un commit en $repoRoot"
+    }
+    $head = $head.Trim()
+    Write-Host "Verificando reproducibilidad de $target ($head) en dos rutas distintas."
 
     # Dos rutas deliberadamente desiguales en longitud y forma: la fuga que
     # esto persigue era precisamente una ruta absoluta incrustada, y dos
     # carpetas hermanas del mismo largo podrían ocultarla por casualidad.
-    $a = Join-Path ([System.IO.Path]::GetTempPath()) 'nvc-repro-a'
-    $b = Join-Path ([System.IO.Path]::GetTempPath()) 'nvc-repro-b-una-ruta-bastante-mas-larga\anidada'
+    # Nombres UNICOS por ejecucion. Con nombres fijos, dos verificaciones a la
+    # vez compartian directorio -y la primera linea del bucle era un borrado
+    # recursivo de esa ruta fija, que arrasaba el clon de la otra a mitad de
+    # build-. Ademas, un nombre fijo en %TEMP% es una ruta que cualquier otro
+    # proceso puede crear antes que nosotros.
+    $reproNonce = [guid]::NewGuid().ToString('N').Substring(0, 12)
+    $reproMarker = '.naviscoord-repro'
+    $tempRoot = [System.IO.Path]::GetTempPath()
+    $a = Join-Path $tempRoot "nvc-repro-$reproNonce-a"
+    $b = Join-Path $tempRoot "nvc-repro-$reproNonce-b-una-ruta-bastante-mas-larga\anidada"
 
     $results = @()
     foreach ($pair in @(@{ Path = $a; Tag = 'A' }, @{ Path = $b; Tag = 'B' })) {
         $dir = $pair.Path
-        if (Test-Path $dir) { Remove-Item -Recurse -Force -LiteralPath $dir }
+        if (Test-Path -LiteralPath $dir) {
+            # No se borra: el nombre lleva el nonce de esta corrida, asi que
+            # si ya existe es que algo va mal, no que sobro de la vez anterior.
+            throw "el directorio de verificacion ya existia: $dir"
+        }
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        # El clon va PRIMERO. Escribir el marcador antes dejaba el directorio
+        # no vacio, y `git clone` se niega a clonar ahi: fallaba siempre, en
+        # silencio, y la comprobacion de $LASTEXITCODE de mas abajo miraba el
+        # codigo del build -que nunca llegaba a correr- en vez del clon.
         & git clone --quiet --no-checkout $repoRoot $dir 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "[$($pair.Tag)] no se pudo clonar $repoRoot en $dir" }
         & git -C $dir checkout --quiet --detach $head 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "[$($pair.Tag)] no se pudo situar $head en $dir" }
+        Set-Content -LiteralPath (Join-Path $dir $reproMarker) -Value $reproNonce -Encoding UTF8
         Write-Host "[$($pair.Tag)] construyendo en $dir"
         # El mismo host que corre esto, no «powershell»: en una máquina con
         # PowerShell 7 esa palabra invoca al 5.1 del sistema, y comparar dos
@@ -185,27 +252,177 @@ if ($VerifyReproducible) {
     $rows = @()
     $rootA = (Join-Path $results[0].Root 'dist\addin')
     $rootB = (Join-Path $results[1].Root 'dist\addin')
-    foreach ($item in (Get-ChildItem $rootA -File | Sort-Object Name)) {
-        $other = Join-Path $rootB $item.Name
-        $ha = (Get-FileHash $item.FullName -Algorithm SHA256).Hash
-        $hb = if (Test-Path $other) { (Get-FileHash $other -Algorithm SHA256).Hash } else { '(ausente)' }
-        $rows += [pscustomobject]@{ Artefacto = $item.Name; A = $ha.Substring(0, 16); B = $hb.Substring(0, 16); Identico = ($ha -eq $hb) }
-    }
+
+    # Las DLL PRIMERO, y en su propia fila. Un ZIP identico con DLL distintas
+    # dentro no significa nada: querria decir que el empaquetado normalizo lo
+    # que el compilador no, y el binario que se instala seguiria variando.
+    # Comparar el contenedor antes que el contenido esconde exactamente eso.
     foreach ($v in @('2024', '2025', '2026')) {
         $da = Join-Path $rootA "$v\NavisCoord.dll"; $db = Join-Path $rootB "$v\NavisCoord.dll"
         if ((Test-Path $da) -and (Test-Path $db)) {
             $ha = (Get-FileHash $da -Algorithm SHA256).Hash; $hb = (Get-FileHash $db -Algorithm SHA256).Hash
             $rows += [pscustomobject]@{ Artefacto = "NW$v/NavisCoord.dll"; A = $ha.Substring(0, 16); B = $hb.Substring(0, 16); Identico = ($ha -eq $hb) }
         }
+        else {
+            $rows += [pscustomobject]@{ Artefacto = "NW$v/NavisCoord.dll"; A = '(ausente)'; B = '(ausente)'; Identico = $false }
+        }
+    }
+
+    # El paquete de Python es parte de la release, y hasta ahora este modo no
+    # lo miraba: se declaraba "reproducible" habiendo comparado solo el add-in.
+    foreach ($pair in @(@{ Tag = 'A'; Root = $results[0].Root }, @{ Tag = 'B'; Root = $results[1].Root })) {
+        $pyDist = Join-Path $pair.Root 'server\dist'
+        if (-not (Test-Path $pyDist)) {
+            & python (Join-Path $pair.Root 'scripts\build_artifacts.py') 2>&1 | Out-Null
+        }
+    }
+    $pyA = Join-Path $results[0].Root 'server\dist'
+    $pyB = Join-Path $results[1].Root 'server\dist'
+    if ((Test-Path $pyA) -and (Test-Path $pyB)) {
+        foreach ($item in (Get-ChildItem $pyA -File | Where-Object { $_.Extension -in '.whl', '.gz' } | Sort-Object Name)) {
+            $other = Join-Path $pyB $item.Name
+            $ha = (Get-FileHash $item.FullName -Algorithm SHA256).Hash
+            $hb = if (Test-Path $other) { (Get-FileHash $other -Algorithm SHA256).Hash } else { '(ausente)' }
+            $rows += [pscustomobject]@{ Artefacto = "python/$($item.Name)"; A = $ha.Substring(0, 16); B = $hb.Substring(0, [Math]::Min(16, $hb.Length)); Identico = ($ha -eq $hb) }
+        }
+    }
+
+    foreach ($item in (Get-ChildItem $rootA -File | Sort-Object Name)) {
+        $other = Join-Path $rootB $item.Name
+        $ha = (Get-FileHash $item.FullName -Algorithm SHA256).Hash
+        $hb = if (Test-Path $other) { (Get-FileHash $other -Algorithm SHA256).Hash } else { '(ausente)' }
+        $rows += [pscustomobject]@{ Artefacto = $item.Name; A = $ha.Substring(0, 16); B = $hb.Substring(0, 16); Identico = ($ha -eq $hb) }
     }
     $rows | Sort-Object Artefacto | Format-Table -AutoSize | Out-String | Write-Host
 
     $bad = @($rows | Where-Object { -not $_.Identico })
+
+    function Remove-ReproClone([string]$Dir) {
+        # Se borra la RAIZ del clon bajo %TEMP%, no la carpeta concreta.
+        # El clon B vive en `nvc-repro-<nonce>-b-...\anidada`, y la version
+        # anterior borraba solo `anidada`: cada verificacion exitosa dejaba el
+        # directorio padre vacio en %TEMP%, para siempre. Un cleanup que borra
+        # casi todo deja basura que nadie vuelve a mirar.
+        #
+        # La prueba de propiedad es doble: el nombre de la raiz lleva el nonce
+        # de ESTA corrida -que nadie mas puede haber escrito- y ademas el
+        # marcador esta dentro. Y el reparse se mira ANTES de resolver, porque
+        # resolver sigue el enlace.
+        $root = [System.IO.Path]::GetFullPath($tempRoot).TrimEnd('\')
+        $resolved = [System.IO.Path]::GetFullPath($Dir)
+        if (-not $resolved.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) { return }
+
+        # Primer segmento bajo el temporal: esa es la raiz del clon.
+        $rest = $resolved.Substring($root.Length + 1)
+        $top = ($rest -split '\\')[0]
+        if (-not $top) { return }
+        if (-not $top.StartsWith("nvc-repro-$reproNonce", [StringComparison]::Ordinal)) { return }
+
+        $target = Join-Path $root $top
+        if (-not (Test-Path -LiteralPath $target)) { return }
+        $item = Get-Item -LiteralPath $target -Force
+        if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return }
+
+        # El marcador tiene que estar en alguna parte del arbol que se borra.
+        $marker = Get-ChildItem -LiteralPath $target -Recurse -Force -File `
+            -Filter $reproMarker -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $marker) { return }
+        if ((Get-Content -LiteralPath $marker.FullName -Raw).Trim() -ne $reproNonce) { return }
+
+        # -Force tambien para los objetos de git, que vienen en solo lectura.
+        Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     if ($bad) {
+        # Se conservan a proposito: comparar dos artefactos que difieren
+        # requiere tenerlos delante.
+        Write-Host 'Los dos clones se conservan para diagnostico:'
+        Write-Host "  A: $a"
+        Write-Host "  B: $b"
         Write-Error "No reproducible: $($bad.Count) artefacto(s) difieren entre las dos rutas."
         exit 1
     }
-    Write-Host "Reproducible: $($rows.Count) artefacto(s) idénticos entre dos clones en rutas distintas."
+
+    Remove-ReproClone $a
+    Remove-ReproClone $b
+    Write-Host "Reproducible: $($rows.Count) artefacto(s) identicos entre dos clones en rutas distintas."
+    exit 0
+}
+
+# --------------------------------------------------------- modo desde un ref
+
+if ($Ref) {
+    # UNA resolucion, y todo lo demas usa el SHA. Resolver el ref dos veces
+    # -una para decidir y otra para construir- es la ventana en la que un
+    # `git tag -f` de otro proceso cambia lo que se publica.
+    $sha = (& git -C $repoRoot rev-parse --verify --quiet "$Ref^{commit}")
+    if ($LASTEXITCODE -ne 0 -or -not $sha) {
+        throw "el ref «$Ref» no resuelve a un commit en este repositorio"
+    }
+    $sha = $sha.Trim()
+    Write-Host "Ref «$Ref» -> $sha"
+
+    $nonce = [guid]::NewGuid().ToString('N').Substring(0, 12)
+    $marker = '.naviscoord-fromref'
+    $tempRoot = [System.IO.Path]::GetTempPath()
+    $clone = Join-Path $tempRoot "nvc-fromref-$nonce"
+    if (Test-Path -LiteralPath $clone) { throw "el temporal ya existia: $clone" }
+    New-Item -ItemType Directory -Force -Path $clone | Out-Null
+    Set-Content -LiteralPath (Join-Path $clone $marker) -Value $nonce -Encoding UTF8
+
+    try {
+        # En un SUBDIRECTORIO: git clone rehusa un destino no vacio, y el
+        # marcador de propiedad ya vive en la raiz del temporal.
+        $work = Join-Path $clone 'repo'
+        & git clone --quiet --no-checkout $repoRoot $work 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "git clone fallo hacia $work" }
+        & git -C $work checkout --quiet --detach $sha 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "git checkout --detach $sha fallo" }
+        $at = (& git -C $work rev-parse HEAD).Trim()
+        if ($at -ne $sha) { throw "el clon quedo en $at y no en $sha" }
+
+        # El build corre DENTRO del clon, con su propio script: el que este
+        # editado aqui no decide nada sobre lo que el tag publica.
+        $host_exe = (Get-Process -Id $PID).Path
+        & $host_exe -NoProfile -ExecutionPolicy Bypass `
+            -File (Join-Path $work 'scripts\Build-Release.ps1') -Version $Version
+        if ($LASTEXITCODE -ne 0) { throw "el build desde $sha fallo" }
+
+        $sourceDist = Join-Path $work 'dist\addin'
+        if (-not (Test-Path -LiteralPath $sourceDist)) {
+            throw "el build desde el ref no dejo artefactos en $sourceDist"
+        }
+        $destDist = Join-Path $repoRoot 'dist\addin'
+        if (Test-Path -LiteralPath $destDist) {
+            # Solo lo que este script produce, archivo a archivo, como abajo.
+            Get-ChildItem -LiteralPath $destDist -Recurse -File |
+                ForEach-Object { [System.IO.File]::Delete($_.FullName) }
+        }
+        New-Item -ItemType Directory -Force -Path $destDist | Out-Null
+        Copy-Item -Path (Join-Path $sourceDist '*') -Destination $destDist -Recurse -Force
+
+        @("ref: $Ref", "sha: $sha",
+          "generado: $(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ' -AsUTC)") |
+            Set-Content (Join-Path $destDist 'FROM-REF.txt') -Encoding UTF8
+        Write-Host ""
+        Write-Host "Artefactos construidos desde $Ref ($sha) en $destDist"
+    }
+    finally {
+        # El mismo protocolo de borrado que en el resto del repositorio:
+        # absoluto, dentro del temporal, con el marcador de ESTA corrida.
+        $resolved = [System.IO.Path]::GetFullPath($clone)
+        $root = [System.IO.Path]::GetFullPath($tempRoot)
+        $mk = Join-Path $resolved $marker
+        $owned = (Test-Path -LiteralPath $mk) -and
+                 ((Get-Content -LiteralPath $mk -Raw).Trim() -eq $nonce)
+        if ($owned -and $resolved.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and
+            $resolved -ne $root.TrimEnd('')) {
+            $item = Get-Item -LiteralPath $resolved -Force
+            if (-not ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+                Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
     exit 0
 }
 
@@ -213,13 +430,20 @@ if ($VerifyReproducible) {
 
 $wanted = if ($Version -eq 'all') { @('2024', '2025', '2026') } else { @($Version) }
 $found = @()
+# La deteccion vive en FindNavisworks.ps1 (registro de Autodesk primero,
+# despues las rutas convencionales en TODAS las unidades fijas), con su
+# propia autoprueba: pwsh -File scripts\FindNavisworks.ps1 -SelfTest.
+# Antes solo se miraba C:\Program Files, y una instalacion en D:\ 'no
+# existia' para el build.
+. (Join-Path $PSScriptRoot 'FindNavisworks.ps1')
 foreach ($v in $wanted) {
-    $productDir = "C:\Program Files\Autodesk\Navisworks Manage $v"
-    if (Test-Path (Join-Path $productDir 'Autodesk.Navisworks.Api.dll')) {
-        $found += [pscustomobject]@{ Version = $v; ProductDir = $productDir }
+    $probed = New-Object 'System.Collections.Generic.List[string]'
+    $hit = Find-NavisworksInstall -Version $v -Probed $probed
+    if ($hit) {
+        $found += $hit
     }
     elseif ($Version -ne 'all') {
-        throw "No encuentro Navisworks Manage $v en $productDir."
+        throw ("No encuentro Navisworks Manage $v. Se sondeo:`n  " + ($probed -join "`n  "))
     }
 }
 if (-not $found) {
@@ -330,6 +554,23 @@ foreach ($f in $found) {
     if (-not $NoZip) {
         New-DeterministicZip -SourceDir $packDir -Destination $zipPath -Epoch $epoch
         if (-not (Test-Path $zipPath)) { throw "[$v] no se genero $zipPath" }
+
+        # El ZIP se RELEE y su lista de entradas debe ser EXACTAMENTE la
+        # esperada: ni una de menos (la copia fallo), ni una de mas (algo
+        # ajeno viajo dentro). Verificar la carpeta y confiar en el
+        # compresor deja pasar justo el caso que importa.
+        $expected = @($allowed | Sort-Object)
+        $zipRead = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+        try {
+            $actual = @($zipRead.Entries | ForEach-Object { $_.FullName } | Sort-Object)
+        } finally { $zipRead.Dispose() }
+        $difference = Compare-Object -ReferenceObject $expected -DifferenceObject $actual
+        if ($difference) {
+            $detail = ($difference | ForEach-Object {
+                "$(if ($_.SideIndicator -eq '<=') { 'falta' } else { 'sobra' }): $($_.InputObject)"
+            }) -join '; '
+            throw "[$v] el contenido del ZIP no es el esperado: $detail"
+        }
     }
 
     $report += [pscustomobject]@{

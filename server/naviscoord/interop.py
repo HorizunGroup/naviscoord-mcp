@@ -28,7 +28,8 @@ from .analysis.pipeline import AnalysisResult
 from .model import ClashExport, ElementRef, Issue
 from .paths import OutputPolicy
 from .paths import policy as default_policy
-from .profile import Profile
+from .profile import Profile, checksum_of
+from .bundle import Artifact, publish
 from .safety import sanitize_csv, sanitize_row
 
 HANDOFF_SCHEMA = "naviscoord.coordination/1"
@@ -297,33 +298,67 @@ def write_handoff(
     worklist = revit_worklist(handoff)
     tables = powerbi_tables(handoff)
 
-    written: list[str] = []
-
-    def authorise(name: str):
-        return policy_in_use.resolve_file(directory / name, overwrite=overwrite)
-
-    # Every artifact is reserved atomically and published by rename. Writing
-    # straight to the destination would leave a truncated JSON behind if the
-    # run failed midway, and two concurrent handoffs into the same directory
-    # would interleave instead of one of them being refused.
-    for name, payload in (
-        ("coordination_handoff.json", handoff),
-        ("revit_worklist.json", worklist),
-    ):
-        slot = authorise(name)
-        slot.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
-        written.append(str(slot.path))
-
+    # Every artifact was already written atomically — staged beside its
+    # destination and renamed into place — so nobody could read a truncated
+    # CSV. What nothing protected was the SET. A failure on the third file left
+    # two artifacts from this run and four from the last, and Power BI joins
+    # fct_issues to brg_issue_elements on an issue id: a mixed generation is
+    # not a stale report, it is a report whose rows do not line up, and nothing
+    # in it says so.
+    #
+    # So the whole set is built in staging, verified, hashed and only then
+    # pointed at. Until `current.json` moves, the previous generation is what
+    # the world sees.
+    artifacts: list[Artifact] = [
+        Artifact(
+            name="coordination_handoff.json",
+            kind="json",
+            write=lambda path, payload=handoff: path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"),
+        ),
+        Artifact(
+            name="revit_worklist.json",
+            kind="json",
+            write=lambda path, payload=worklist: path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"),
+        ),
+    ]
     for name, rows in tables.items():
-        slot = authorise(f"{name}.csv")
-        with slot.staged_write() as temp:
-            _write_csv(temp, rows)
-        written.append(str(slot.path))
+        artifacts.append(Artifact(
+            name=f"{name}.csv",
+            kind="csv",
+            rows=len(rows),
+            write=lambda path, data=rows: _write_csv(path, data),
+        ))
+
+    published = publish(
+        directory,
+        artifacts,
+        metadata={
+            "document_title": export.document_title,
+            # The export carries the path, not a fingerprint — the fingerprint
+            # belongs to the live session. Naming what actually exists beats
+            # naming what would be nicer.
+            "document_path": export.document_path,
+            "profile_name": profile.name,
+            "profile_checksum": checksum_of(profile.raw),
+            "issues": len(handoff["issues"]),
+            "traceable_to_revit": handoff["totals"]["traceable_to_revit"],
+            "revit_models_with_work": len(worklist["models"]),
+            "caveats": handoff["caveats"],
+        },
+    )
 
     return {
-        "written": written,
-        "directory": str(directory),
+        "generation_id": published.generation_id,
+        "current": str(published.current),
+        "directory": str(published.directory),
+        # Kept so existing callers still find the file list they read; it now
+        # names files inside the generation rather than loose in the root.
+        "written": [str(published.directory / f["name"]) for f in published.manifest["files"]],
         "allowed_root": str(target_dir.root),
+        "manifest": published.manifest,
+        "replaced_generation": published.replaced,
         "issues": len(handoff["issues"]),
         "traceable_to_revit": handoff["totals"]["traceable_to_revit"],
         "revit_models_with_work": len(worklist["models"]),

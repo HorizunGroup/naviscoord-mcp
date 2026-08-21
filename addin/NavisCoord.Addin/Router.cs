@@ -86,36 +86,23 @@ namespace NavisCoord
         }
 
         /// <summary>
-        /// Job routes that check <c>CancelRequested</c> between units and can
-        /// therefore be stopped once started.
+        /// Whether a started job on this route can still be stopped.
         /// </summary>
         /// <remarks>
-        /// The list is short because only one mutating step is written as a
-        /// loop over independent units; everything else is a single
-        /// Navisworks call that either happens or does not. Keeping the set
-        /// here — beside the job routes — is what lets <c>job/cancel</c>
-        /// answer "cannot" instead of promising a stop nothing will deliver,
-        /// and it must grow only when a handler genuinely starts checking the
-        /// flag.
+        /// Read from <see cref="RouteContracts"/> rather than from a set kept
+        /// here. There used to be one list in this file, another in
+        /// <see cref="Capabilities"/> and a third assembled in the bridge, and
+        /// nothing kept them in step — a route added to one was advertised by
+        /// the others as something it was not.
         /// </remarks>
-        private static readonly HashSet<string> CancellableRoutes = new HashSet<string>(
-            StringComparer.OrdinalIgnoreCase)
-        {
-            "workflow/audit_models",
-            "workflow/group_levels"
-        };
+        public static bool IsCancellable(string route) => RouteContracts.IsCancellable(route);
+
+        /// <summary>The cancellable routes, for capability negotiation.</summary>
+        public static IEnumerable<string> Cancellable => RouteContracts.Cancellable;
 
         public IEnumerable<string> Routes => _routes.Keys;
 
         public bool CanRunAsJob(string route) => _jobRoutes.ContainsKey(route ?? string.Empty);
-
-        /// <summary>Whether a started job on this route can still be stopped.</summary>
-        public static bool IsCancellable(string route)
-            => CancellableRoutes.Contains(route ?? string.Empty);
-
-        /// <summary>The cancellable routes, for capability negotiation.</summary>
-        public static IEnumerable<string> Cancellable
-            => CancellableRoutes.OrderBy(r => r, StringComparer.OrdinalIgnoreCase);
 
         public Func<Dictionary<string, object>, JobManager.Job, Dictionary<string, object>> JobHandler(string route)
             => _jobRoutes.TryGetValue(route ?? string.Empty, out var handler) ? handler : null;

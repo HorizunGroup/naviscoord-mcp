@@ -25,8 +25,39 @@ import os
 import stat
 import subprocess
 import sys
+import shutil
+import secrets
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from runtime_identity import (  # noqa: E402
+    MANIFEST_NAME,
+    READY_NAME,
+    RUNTIME_FORMAT,
+    Requirement,
+    build_manifest,
+    check_versions,
+    interpreter_fingerprint,
+    lock_digest,
+    manifest_matches,
+    runtime_is_ready,
+    runtime_key,
+)
+from runtime_lock import LockUnavailable, RuntimeLock  # noqa: E402
+from runtime_lock_spec import LOCK_PATH as RUNTIME_LOCK_PATH  # noqa: E402
+from runtime_lock_spec import install_arguments as lock_install_arguments  # noqa: E402
+from runtime_lock_spec import load as load_runtime_lock  # noqa: E402
+from runtime_lock_spec import requirements_text as lock_requirements_text  # noqa: E402
+
+# Suffix of a staging directory. Checked before any recursive delete, so a
+# cleanup can never reach a path this process did not create.
+STAGING_SUFFIX = ".staging-"
+
+# How long to wait for another process to finish provisioning. A first build
+# on a slow machine legitimately takes minutes; past this the caller is told
+# who is holding it rather than left waiting.
+LOCK_TIMEOUT = 900.0
 
 ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "server"
@@ -35,6 +66,16 @@ SERVER = ROOT / "server"
 # the <3 bound stands because 2.0 showed a major can remove the entry point
 # this server imports.
 REQUIREMENTS = ["mcp>=1.9,<3", "reportlab>=4.0,<6", "pillow>=10.0"]
+
+# The same bounds, in a form a version can be checked against. `import mcp`
+# was the whole validation, and mcp 3.0 imports perfectly — it is a major the
+# server cannot use, which is why the requirement says `<3`, and the failure
+# arrived at the first real call instead of at startup.
+VERSION_CONTRACT = [
+    Requirement("mcp", "mcp", minimum=(1, 9), below=(3,)),
+    Requirement("reportlab", "reportlab", minimum=(4, 0), below=(6,)),
+    Requirement("pillow", "PIL", minimum=(10, 0)),
+]
 
 # Every module that must import for the server to actually work, mapped to
 # the distribution that provides it. Checking only `mcp` was the bug: an
@@ -56,14 +97,70 @@ PROTOCOL_VERSION = "2025-06-18"
 
 
 def runtime_dir() -> Path:
-    """Plugin-local runtime, keyed by interpreter version.
+    """Plugin-local runtime, keyed by everything that makes one incompatible.
 
-    Wheels built for 3.12 are not importable from 3.13, and a plugin shared
-    between two Python installs would otherwise poison itself.
+    The key used to be `py{major}{minor}` alone. Two interpreters can share a
+    major/minor and be incompatible in every way that matters — x86 and x64,
+    CPython and another implementation, two installs whose wheels are not
+    interchangeable — and they all resolved to one directory and poisoned each
+    other. The plugin version and the dependency set were not in it either, so
+    upgrading the plugin reused a venv built for the previous one.
+
+    The readable part is a courtesy; the digest is what makes it correct. It
+    is a hash because the interpreter PATH is part of the identity and a
+    personal path must never end up in a directory name that could be
+    published.
     """
-    tag = f"py{sys.version_info.major}{sys.version_info.minor}"
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.local/share")
-    return Path(base) / "NavisCoord" / "runtime" / tag
+    # Keyed by the LOCK, not by the public ranges. The ranges barely ever
+    # change; the pinned versions do, and a runtime built for one set of pins
+    # must not be reused for another.
+    try:
+        material = load_runtime_lock().digest_material()
+    except (OSError, ValueError):
+        # No readable lock: fall back to the ranges so the path stays
+        # computable and `ensure_runtime` can report the real problem.
+        material = REQUIREMENTS
+    key = runtime_key(plugin_version=_server_version(), requirements=material)
+    return Path(base) / "NavisCoord" / "runtime" / key
+
+
+def installed_versions(python: "Path | None" = None) -> dict:
+    """Distribution -> installed version, or None. Never raises.
+
+    `importlib.metadata` rather than `module.__version__`: the dunder is
+    optional, sometimes stale, and absent from exactly the packages whose
+    version matters here. When a different interpreter is being inspected the
+    question has to be asked inside it, which is why this shells out.
+    """
+    names = [r.distribution for r in VERSION_CONTRACT]
+    if python is None:
+        from importlib import metadata
+
+        found = {}
+        for name in names:
+            try:
+                found[name] = metadata.version(name)
+            except Exception:  # noqa: BLE001 - absent is an answer, not an error
+                found[name] = None
+        return found
+
+    probe = (
+        "import json\n"
+        "from importlib import metadata\n"
+        "out = {}\n"
+        f"for n in {names!r}:\n"
+        "    try: out[n] = metadata.version(n)\n"
+        "    except Exception: out[n] = None\n"
+        "print(json.dumps(out))\n"
+    )
+    code, detail = _run([str(python), "-c", probe], timeout=60)
+    if code != 0:
+        return {name: None for name in names}
+    try:
+        return json.loads(detail.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {name: None for name in names}
 
 
 def venv_dir() -> Path:
@@ -210,6 +307,19 @@ def ensure_runtime() -> tuple[Path | None, str]:
     system caches it as absent, and packages with post-install steps —
     pywin32 above all — never place their DLLs and die on `pywintypes`. A
     venv is what the packaging ecosystem actually supports.
+
+    What changed, and why it is not a refactor: this used to create the venv
+    directly on the final path and install floating ranges into it. Two MCP
+    clients starting together both saw a missing venv and both ran pip into
+    the same directory, and the loser wrote half a package tree over the
+    winner's — a runtime that imported well enough to look finished. And with
+    no lock file, every user got whatever the index held that morning.
+
+    So the sequence is: take an exclusive lock, look again in case the other
+    process already published, build in a staging directory nobody else can
+    see, verify it there, write READY last, and publish with a single rename.
+    A failure at any point leaves the previous runtime untouched and no READY
+    anywhere.
     """
     supported, why = python_is_supported()
     if not supported:
@@ -218,48 +328,228 @@ def ensure_runtime() -> tuple[Path | None, str]:
     if str(SERVER) not in sys.path:
         sys.path.insert(0, str(SERVER))
 
-    # Already viable in-process: every required module imports, not just mcp.
+    # Already viable in-process: every required module imports AND reports a
+    # version inside its range. Importability alone let mcp 3 through.
     if not missing_modules():
-        return Path(sys.executable), ""
+        wrong = check_versions(VERSION_CONTRACT, installed_versions())
+        if not wrong:
+            return Path(sys.executable), ""
 
-    base = runtime_dir()
-    private, problem = runtime_is_private(base)
-    if not private:
-        return None, problem
+    try:
+        lock_file = load_runtime_lock()
+    except (OSError, ValueError) as exc:
+        return None, (
+            "No se pudo leer el lock de dependencias "
+            f"({RUNTIME_LOCK_PATH}): {exc}.\n"
+            "El launcher no instala rangos flotantes: sin lock no aprovisiona."
+        )
 
-    venv = venv_dir()
+    final = runtime_dir()
+    plugin = _server_version()
+
+    # Already published and still valid? Nothing to build.
+    usable, _ = runtime_is_usable(final, plugin, lock_file)
+    if usable:
+        return venv_python(final / "venv"), ""
+
+    guard = RuntimeLock(final.parent / f"{final.name}.lock", final.name, plugin)
+    try:
+        guard.acquire(timeout=LOCK_TIMEOUT)
+    except LockUnavailable as exc:
+        return None, (
+            f"No se pudo aprovisionar el runtime: {exc.detail}\n"
+            f"Código: {exc.code}\nRuntime: {final}"
+        )
+
+    try:
+        # Looked at again INSIDE the lock. Between the check above and the
+        # acquisition, the process we queued behind may have finished the
+        # exact runtime we were about to build.
+        usable, _ = runtime_is_usable(final, plugin, lock_file)
+        if usable:
+            return venv_python(final / "venv"), ""
+
+        staging = final.parent / f"{final.name}{STAGING_SUFFIX}{secrets.token_hex(6)}"
+        try:
+            python, problem = _build_runtime(staging, final, plugin, lock_file)
+            if problem:
+                return None, problem
+            return python, ""
+        finally:
+            # Only our own staging, never a sibling belonging to another run.
+            _discard_staging(staging, final.parent)
+    finally:
+        guard.release()
+
+
+def _build_runtime(
+    staging: Path, final: Path, plugin: str, lock_file: Any
+) -> tuple[Path | None, str]:
+    """Builds, verifies and publishes one runtime. Lock already held."""
+    try:
+        staging.parent.mkdir(parents=True, exist_ok=True)
+        if staging.exists():
+            return None, f"El staging «{staging}» ya existía: se aborta en vez de reutilizarlo."
+        staging.mkdir(parents=True)
+    except OSError as exc:
+        return None, f"No se pudo crear «{staging}»: {exc}"
+    _harden(staging)
+
+    venv = staging / "venv"
+    code, detail = _run([sys.executable, "-m", "venv", str(venv)], timeout=300)
+    if code != 0:
+        return None, f"No se pudo crear el entorno virtual en «{venv}»:\n{detail}"
+
     python = venv_python(venv)
 
-    if not python.exists():
-        try:
-            base.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            return None, f"No se pudo crear «{base}»: {exc}"
-        _harden(base)
-        code, detail = _run([sys.executable, "-m", "venv", str(venv)], timeout=300)
-        if code != 0:
-            return None, f"No se pudo crear el entorno virtual en «{venv}»:\n{detail}"
-        _harden(venv)
+    # Exactly the lock, and nothing the lock does not name. `--no-deps`
+    # matters: the lock already carries the transitive closure, and letting
+    # pip resolve again would reintroduce the drift the lock removes.
+    requirements = staging / "requirements.txt"
+    requirements.write_text(lock_requirements_text(lock_file), encoding="utf-8")
+    code, detail = _run(
+        [str(python), "-m", "pip", "install", *lock_install_arguments(lock_file),
+         "-r", str(requirements)],
+        timeout=1800,
+    )
+    if code != 0:
+        return None, (
+            f"pip falló instalando el lock en «{venv}»:\n{detail}\n"
+            "El lock fija versiones exactas; si una no está disponible para este "
+            "Python, regenera el lock con scripts/refresh_runtime_lock.py."
+        )
 
     absent = missing_modules(python)
     if absent:
-        code, detail = _run(
-            [str(python), "-m", "pip", "install", "--disable-pip-version-check",
-             "--no-input", *REQUIREMENTS]
-        )
-        if code != 0:
-            return None, f"pip falló al instalar el runtime en «{venv}»:\n{detail}"
-
-    # Verified by importing, not by trusting pip's exit code.
-    still_absent = missing_modules(python)
-    if still_absent:
         return None, (
             "El runtime se instaló pero estos módulos siguen sin importar: "
-            + ", ".join(still_absent)
-            + f".\nIntérprete: {python}"
+            + ", ".join(absent) + f".\nIntérprete: {python}"
         )
 
-    return python, ""
+    installed = installed_versions(python)
+    wrong = check_versions(VERSION_CONTRACT, installed)
+    if wrong:
+        return None, (
+            "El runtime tiene versiones incompatibles:\n  - " + "\n  - ".join(wrong)
+            + f"\nIntérprete: {python}"
+        )
+
+    # READY last, and only now. A directory that exists proves somebody
+    # started; only this proves somebody finished.
+    # `digest_material()` and not `requirements()`: the material includes the
+    # accepted hashes, so adding a hash to a pin invalidates the runtime the
+    # way it should. Writing one formula here and comparing another on reuse
+    # made every published runtime fail its own validation.
+    manifest = build_manifest(
+        key=final.name,
+        plugin_version=plugin,
+        requirements=lock_file.digest_material(),
+        installed=installed,
+        interpreter=interpreter_fingerprint(executable=str(python)),
+    )
+    (staging / MANIFEST_NAME).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    (staging / READY_NAME).write_text(
+        json.dumps({"format": RUNTIME_FORMAT, "runtime_key": final.name},
+                   sort_keys=True), encoding="utf-8")
+
+    # One rename. Until it lands, nothing outside this process can see the
+    # runtime at all.
+    try:
+        os.replace(staging, final)
+    except OSError as exc:
+        if final.exists():
+            # Somebody published while we built. Theirs wins; ours is
+            # discarded rather than merged, because merging two package trees
+            # is how a half-installed runtime is made.
+            usable, why = runtime_is_usable(final, plugin, lock_file)
+            if usable:
+                return venv_python(final / "venv"), ""
+            return None, (
+                f"Otro proceso publicó un runtime en «{final}» que no es compatible "
+                f"({why}). No se mezclan los dos árboles."
+            )
+        return None, f"No se pudo publicar el runtime en «{final}»: {exc}"
+
+    # Re-read from its published location: the rename either produced a
+    # complete runtime or it did not, and asking is cheaper than assuming.
+    usable, why = runtime_is_usable(final, plugin, lock_file)
+    if not usable:
+        return None, f"El runtime publicado no valida: {why}"
+    return venv_python(final / "venv"), ""
+
+
+def runtime_is_usable(root: Path, plugin: str, lock_file: Any) -> tuple[bool, str]:
+    """Whether an existing runtime may be reused, with the reason when not."""
+    ready, why = runtime_is_ready(root)
+    if not ready:
+        return False, why
+
+    try:
+        manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return False, f"el manifest no se pudo leer: {exc}"
+
+    matches, why = manifest_matches(
+        manifest, key=root.name, plugin_version=plugin,
+        requirements=lock_file.digest_material())
+    if not matches:
+        return False, why
+
+    python = venv_python(root / "venv")
+    if not python.exists():
+        return False, "falta el intérprete del entorno virtual"
+
+    # Names importing is not enough, and never was.
+    wrong = check_versions(VERSION_CONTRACT, installed_versions(python))
+    if wrong:
+        return False, "; ".join(wrong)
+    return True, ""
+
+
+def _discard_staging(staging: Path, root: Path) -> None:
+    """Removes OUR staging directory, and refuses anything else.
+
+    Every condition is checked before a recursive delete: inside the runtime
+    root, named by our own scheme, and not a reparse point somebody redirected
+    somewhere else. A recursive delete on a path that fails any of them is how
+    a cleanup removes a user's directory.
+    """
+    # El reparse se mira en la ruta SIN resolver: `resolve()` sigue el
+    # junction y dejaría la comprobación mirando el destino del enlace.
+    if staging.is_symlink() or _is_reparse_point(staging):
+        return
+    try:
+        resolved = staging.resolve()
+        expected = root.resolve()
+    except OSError:
+        return
+    if not str(resolved).startswith(str(expected)):
+        return
+    if STAGING_SUFFIX not in resolved.name:
+        return
+    if resolved == expected:
+        return
+    try:
+        if resolved.is_symlink() or _is_reparse_point(resolved):
+            return
+    except OSError:
+        return
+    shutil.rmtree(resolved, ignore_errors=True)
+
+
+def _is_reparse_point(path: Path) -> bool:
+    """Whether a directory is a junction or symlink. Windows-aware."""
+    if path.is_symlink():
+        return True
+    if os.name != "nt":
+        return False
+    FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+    try:
+        return bool(os.stat(path, follow_symlinks=False).st_file_attributes
+                    & FILE_ATTRIBUTE_REPARSE_POINT)
+    except (OSError, AttributeError):
+        return False
 
 
 # ------------------------------------------------------- degraded fallback
@@ -286,11 +576,16 @@ def failure_report(reason: str) -> dict[str, Any]:
         "python": ".".join(str(p) for p in sys.version_info[:3]),
         "minimo_requerido": ".".join(str(p) for p in MIN_PYTHON),
         "runtime": str(venv_dir()),
-        "dependencias": REQUIREMENTS,
+        "dependencias_publicas": REQUIREMENTS,
+        "lock": str(RUNTIME_LOCK_PATH),
         "arreglo": (
-            "Crea el entorno a mano:\n"
+            # Desde el lock, no desde los rangos: instalar rangos es
+            # exactamente lo que el lock existe para evitar, y aconsejarlo
+            # aqui devolveria al usuario al problema original.
+            "Crea el entorno a mano, desde el lock de versiones exactas:\n"
             f'  "{sys.executable}" -m venv "{venv_dir()}"\n'
-            f'  "{venv_python()}" -m pip install ' + " ".join(f'"{r}"' for r in REQUIREMENTS)
+            "  python scripts/refresh_runtime_lock.py --help   # como regenerarlo\n"
+            f"  El lock vigente esta en: {RUNTIME_LOCK_PATH}"
         ),
         "nota": (
             "NavisCoord no instala un Python propio: crea un entorno virtual a partir del "

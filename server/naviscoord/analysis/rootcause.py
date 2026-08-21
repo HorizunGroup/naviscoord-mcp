@@ -29,24 +29,63 @@ class RootCause:
     title: str
     detail: str
     confidence: float
+    #: Positions in the cluster list, which is the only identity that exists
+    #: while causes are being detected. It stops being an identity the moment
+    #: the issues are ranked: `analyze` sorts them by severity and position 7
+    #: then means "the eighth worst", not "the thing cluster 7 became".
+    #: Nothing downstream of the ranking may read this — see
+    #: `affected_issue_ids`, which is what survives the sort.
     affected_clusters: list[int] = field(default_factory=list)
     clash_count: int = 0
     evidence: dict[str, Any] = field(default_factory=dict)
     suggested_action: str = ""
     cause_id: str = ""
+    #: The issues this cause actually explains, by their public id. Filled in
+    #: once, by `analyze`, at the only moment both facts are known: the
+    #: clusters have become issues and the issues have been given their ids.
+    affected_issue_ids: list[str] = field(default_factory=list)
+    #: Cluster positions that resolved to no issue. Kept rather than dropped
+    #: quietly: a cause pointing at nothing is a bug in the detector, and the
+    #: alternative — matching it to whatever sits at that position now — is
+    #: exactly the failure this field exists to make visible.
+    unresolved_clusters: list[int] = field(default_factory=list)
+    #: Causes folded into this one, when several are a single decision.
+    merged_from: list[str] = field(default_factory=list)
+    #: For a merged cause, which original contributed which issues. Kept so a
+    #: package built from it can name all of them instead of collapsing the
+    #: evidence to whichever id the merge happened to take.
+    contributions: dict[str, list[str]] = field(default_factory=dict)
+
+    @property
+    def affected_count(self) -> int:
+        """How many issues this cause explains.
+
+        Reads the resolved ids once they exist, so a cause that pointed at a
+        cluster nobody turned into an issue reports what it really covers
+        instead of what it hoped to.
+        """
+        if self.affected_issue_ids or self.unresolved_clusters:
+            return len(self.affected_issue_ids)
+        return len(self.affected_clusters)
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        payload = {
             "cause_id": self.cause_id,
             "kind": self.kind,
             "title": self.title,
             "detail": self.detail,
             "confidence": round(self.confidence, 2),
-            "affected_issues": len(self.affected_clusters),
+            "affected_issues": self.affected_count,
+            "affected_issue_ids": list(self.affected_issue_ids),
             "clash_count": self.clash_count,
             "evidence": self.evidence,
             "suggested_action": self.suggested_action,
         }
+        if self.unresolved_clusters:
+            payload["unresolved_clusters"] = list(self.unresolved_clusters)
+        if self.merged_from:
+            payload["merged_from"] = list(self.merged_from)
+        return payload
 
 
 class RootCauseDetector:

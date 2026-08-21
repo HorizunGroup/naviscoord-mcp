@@ -52,6 +52,17 @@ namespace NavisCoord.Tests
             LogicTests.Run(Section, Eq, Check, Fail);
             DispatcherTests.Run(Section, Eq, Check);
             FramingTests.Run(Section, Eq, Check);
+            PlanningTests.Run(Section, Eq, Check);
+            ConfigureTests.Run(Section, Eq, Check);
+            RunVerificationTests.Run(Section, Eq, Check);
+            AdmissionTests.Run(Section, Eq, Check);
+            EvidenceTests.Run(Section, Eq, Check);
+            JsonCorpusTests.Run(Section, Eq, Check);
+            BoundaryTests.Run(Section, Eq, Check);
+            AppearanceTests.Run(Section, Eq, Check);
+            ProfileSemanticsTests.Run(Section, Eq, Check);
+            ProfileContractTests.Run(Section, Eq, Check);
+            SaveVerificationTests.Run(Section, Eq, Check);
             VocabularyTests.Run(Section, Eq, Check);
             WorkflowTextTests.Run(Section, Eq, Check);
 

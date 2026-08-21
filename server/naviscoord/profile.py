@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -19,12 +20,120 @@ from typing import Any
 PROFILE_DIR = Path(__file__).resolve().parent / "profiles"
 DEFAULT_PROFILE = PROFILE_DIR / "default.json"
 
+from .profilerules import Problem, validate_semantics
+
 UNCLASSIFIED = "OTRO"
 
 # Largest profile the add-in will accept over the wire. A profile is a
 # hand-written settings file; anything past this is a mistake or an attempt to
 # make the add-in allocate on our behalf.
 MAX_PROFILE_BYTES = 1024 * 1024
+
+# Deepest nesting accepted, matching JsonStrict.MaxDepth in the add-in. Both
+# ends have to agree or a profile one accepts is a profile the other refuses.
+MAX_PROFILE_DEPTH = 128
+
+
+class ProfileRejected(ValueError):
+    """A profile that must not be installed, with a machine-readable code."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
+def _reject_constant(token: str) -> Any:
+    """Refuse the three tokens ``json`` accepts and JSON does not.
+
+    ``json.loads`` maps ``NaN``, ``Infinity`` and ``-Infinity`` to floats by
+    default. None of them is JSON, and none survives the round trip: the
+    canonicaliser used to write them out as ``null``, so a profile carrying
+    ``NaN`` produced the same checksum as one carrying ``null`` while the two
+    servers held genuinely different numbers in memory. Two profiles that hash
+    alike and behave differently is the exact failure a checksum exists to
+    prevent.
+    """
+    # `invalid_json` and not `profile_invalid`: this is a syntax refusal, and
+    # the add-in refuses the same three tokens at the same point in the grammar
+    # with the same code. The categories are part of the parity contract.
+    raise ProfileRejected(
+        "invalid_json", f"JSON no admite {token}; el perfil no se cargó"
+    )
+
+
+def _assert_finite(value: Any, path: str = "$") -> None:
+    """Every float in the tree is a real number, or nothing is loaded."""
+    if isinstance(value, bool):
+        return
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ProfileRejected(
+            "profile_invalid", f"{path} no es finito ({value!r})"
+        )
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _assert_finite(item, f"{path}.{key}")
+    elif isinstance(value, (list, tuple)):
+        for i, item in enumerate(value):
+            _assert_finite(item, f"{path}[{i}]")
+
+
+def _assert_depth(value: Any, limit: int = MAX_PROFILE_DEPTH, depth: int = 0) -> None:
+    """Count containers, not values.
+
+    A scalar sitting inside 128 nested objects is 128 deep, not 129 — and the
+    add-in's reader counts the same way. An off-by-one here means a profile one
+    end accepts and the other refuses, which is precisely the split this corpus
+    exists to rule out.
+    """
+    if isinstance(value, (dict, list, tuple)):
+        depth += 1
+        if depth > limit:
+            raise ProfileRejected(
+                "json_too_deep", f"el anidamiento supera {limit} niveles"
+            )
+        items = value.values() if isinstance(value, dict) else value
+        for item in items:
+            _assert_depth(item, limit, depth)
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Two parsers keep different values for a repeated key; refuse it."""
+    seen: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in seen:
+            raise ProfileRejected(
+                "json_duplicate_key", f"la clave '{key}' aparece dos veces"
+            )
+        seen[key] = value
+    return seen
+
+
+def loads_strict(text: str) -> Any:
+    """Parse JSON the way the add-in does: no NaN, no duplicates, bounded."""
+    if len(text.encode("utf-8")) > MAX_PROFILE_BYTES:
+        raise ProfileRejected(
+            "profile_too_large", f"el perfil supera {MAX_PROFILE_BYTES} bytes"
+        )
+    try:
+        value = json.loads(
+            text,
+            parse_constant=_reject_constant,
+            object_pairs_hook=_reject_duplicate_keys,
+        )
+    except ProfileRejected:
+        raise
+    except json.JSONDecodeError as exc:
+        # "Extra data" is the one decoder message that maps to a distinct
+        # category on both sides: the document itself parsed, and then there
+        # was more of it. Everything else is a malformed document.
+        code = "json_trailing_content" if exc.msg.startswith("Extra data") else "invalid_json"
+        raise ProfileRejected(code, f"{exc.msg} (línea {exc.lineno}, col {exc.colno})")
+    if not isinstance(value, dict):
+        raise ProfileRejected("json_not_an_object", "se esperaba un objeto JSON en la raíz")
+    _assert_depth(value)
+    _assert_finite(value)
+    return value
 
 
 # --------------------------------------------------------------- canonical form
@@ -58,7 +167,13 @@ def canonical_text(raw: Any) -> str:
 
 
 def checksum_of(raw: Any) -> str:
-    """Stable identity of the criteria a result was produced with."""
+    """Stable identity of the criteria a result was produced with.
+
+    Raises :class:`ProfileRejected` for anything that cannot be canonicalised,
+    including a non-finite float built in memory rather than parsed. A profile
+    that cannot be described cannot be identified, and returning a checksum
+    anyway would name two different things with one number.
+    """
     return hashlib.sha256(canonical_text(raw).encode("utf-8")).hexdigest()[:16]
 
 
@@ -106,9 +221,18 @@ def _canonical(value: Any, out: list[str]) -> None:
 
 
 def _canonical_float(value: float) -> str:
-    if value != value or value in (float("inf"), float("-inf")):
-        # JSON has no way to say these, and neither end should pretend.
-        return "null"
+    if not math.isfinite(value):
+        # Refused, not written as ``null``.
+        #
+        # Emitting ``null`` made two genuinely different profiles hash alike:
+        # one holding NaN and one holding null produced identical checksums
+        # while the servers kept different numbers, so the identity a result
+        # cites stopped identifying anything. A value that cannot be expressed
+        # cannot be canonicalised, and saying so is the only honest option.
+        raise ProfileRejected(
+            "profile_invalid",
+            f"un valor no finito ({value!r}) no tiene forma canónica en JSON",
+        )
     if value.is_integer() and abs(value) <= _EXACT_INT_LIMIT:
         return str(int(value))
     # repr gives the shortest string that round-trips; the add-in reaches the
@@ -175,7 +299,7 @@ class Profile:
                 target = candidate
         if not target.exists():
             raise FileNotFoundError(f"profile not found: {target}")
-        return cls.from_json(json.loads(target.read_text(encoding="utf-8")))
+        return cls.from_json(loads_strict(target.read_text(encoding="utf-8")))
 
     @classmethod
     def from_json(cls, raw: dict[str, Any]) -> "Profile":
@@ -354,22 +478,24 @@ class Profile:
         }
 
     def validate(self) -> list[str]:
-        """Return human-readable complaints about a hand-edited profile."""
-        problems: list[str] = []
-        total = sum((self.section("severity").get("weights") or {}).values())
-        if total and abs(total - 1.0) > 0.01:
-            problems.append(
-                f"Los pesos de severidad suman {total:.2f} y deberían sumar 1.00; "
-                "la puntuación quedará fuera del rango 0-100."
-            )
-        eps = float(self.cluster_param("eps_m", 0.0))
-        if eps <= 0.0:
-            problems.append("clustering.eps_m debe ser mayor que cero.")
-        bands = self.section("severity").get("priority_bands") or {}
-        ordered = [bands.get("critical", 75.0), bands.get("high", 55.0), bands.get("medium", 35.0)]
-        if ordered != sorted(ordered, reverse=True):
-            problems.append("priority_bands debe ir de mayor a menor: critical > high > medium.")
-        return problems
+        """Human-readable complaints about a hand-edited profile.
+
+        Three checks used to live inline here — the weight sum, a positive
+        epsilon and the band order — and everything else was trusted. The rest
+        of the engine's arithmetic was protected only by defaults, which apply
+        when a field is ABSENT and not when it is declared wrong: a profile
+        saying `cluster_size_saturation: 1` reached `math.log(1)` and divided
+        by zero on the first cluster with two clashes in it.
+
+        The rules now live in :mod:`profilerules` as a table, so the same
+        inventory can be mirrored by the add-in and audited as a list rather
+        than grepped for.
+        """
+        return [str(p) for p in self.semantic_problems()]
+
+    def semantic_problems(self) -> list["Problem"]:
+        """The structured version: code, path and detail per refusal."""
+        return validate_semantics(self.raw)
 
 
 # Values Navisworks publishes for its own node classes. They appear in the

@@ -240,7 +240,7 @@ def _closing(result: AnalysisResult, findings: list[Finding], readiness: str) ->
         text += (
             f"Primero lo que cierra en bloque: {first.suggested_action} "
             f"Eso solo resuelve {first.clash_count} cruces en "
-            f"{len(first.affected_clusters)} problemas. "
+            f"{first.affected_count} problemas. "
         )
 
     if top:
@@ -357,7 +357,7 @@ def _findings(
 
     zones = by_kind.get("congested_zone", [])
     if zones:
-        affected = sum(len(z.affected_clusters) for z in zones)
+        affected = sum(z.affected_count for z in zones)
         levels: dict[str, int] = {}
         for zone in zones:
             level = str(zone.evidence.get("level") or "sin nivel")
