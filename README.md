@@ -1,5 +1,7 @@
 # NavisCoord
 
+<!-- mcp-name: io.github.horizungroup/naviscoord -->
+
 Local MCP tools for Autodesk Navisworks coordination.
 
 NavisCoord combines a Navisworks add-in with a Python MCP server. It helps an
@@ -208,6 +210,31 @@ Navisworks document.
 Read [Security model](docs/SECURITY-MODEL.md) for boundaries and threat
 assumptions. Report vulnerabilities according to [SECURITY.md](SECURITY.md).
 
+## Privacy Policy
+
+NavisCoord runs on your machine. HorizunGroup operates no service for it and
+receives no data from it: no account, no licence check, no telemetry, no
+upload of models, clashes, or reports.
+
+Two flows do leave the process, and both are yours to control:
+
+- **Your AI client.** NavisCoord is an MCP server, so the summaries its tools
+  return — issue descriptions, element ids, model file names, coordinates,
+  report text — go to the MCP client you run it from, and through it to that
+  client's model provider under their privacy policy. The raw clash export is
+  never returned; large results are written to a file and answered with a
+  path.
+- **Your package index.** Launched as a plugin, NavisCoord provisions a
+  plugin-local virtual environment and downloads its locked dependencies from
+  PyPI. No model data is involved, and installing the server yourself skips
+  it.
+
+Files it writes — reports, handoffs, exports, session files — stay on your
+disk, unencrypted, until you delete them.
+
+The full policy, including what counts as personal data in a model and how
+long anything is kept, is in [Privacy policy](docs/PRIVACY.md).
+
 ## Development
 
 Run the Python test suite:
@@ -239,8 +266,10 @@ python scripts\build_artifacts.py
 - [Saving documents](docs/SAVING.md)
 - [Profiles](docs/PROFILES.md)
 - [Security model](docs/SECURITY-MODEL.md)
+- [Privacy policy](docs/PRIVACY.md)
 - [Testing](docs/TESTING.md)
 - [Release process](docs/RELEASING.md)
+- [Directory publishing](docs/PUBLISHING.md)
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute and
 [SUPPORT.md](SUPPORT.md) for help.
