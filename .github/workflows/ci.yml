@@ -607,8 +607,13 @@ jobs:
           # El guard de PowerShell mira DLL; a los archivos de Python los
           # revisa build_artifacts.py en la construcción. Aquí, la última
           # línea de defensa: ninguna ruta del runner en los textos.
+          # Las barras invertidas van dobladas: esto es una expresion
+          # regular, no un literal, y una barra suelta al final hace que
+          # PowerShell rechace el patron entero. El guardia no fallaba al
+          # encontrar algo: fallaba siempre, y por eso nunca llego a mirar
+          # la evidencia de ninguna release.
           $bad = Select-String -Path server/dist/SHA256SUMS, server/dist/provenance.json `
-            -Pattern '/home/runner|/opt/hostedtoolcache|C:\a\' -SimpleMatch:$false
+            -Pattern '/home/runner|/opt/hostedtoolcache|C:\\a\\' -SimpleMatch:$false
           if ($bad) { Write-Error "ruta del runner en la evidencia: $bad"; exit 1 }
           Write-Output "evidencia limpia"
 
