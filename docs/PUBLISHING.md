@@ -81,7 +81,7 @@ python scripts\build_artifacts.py
 ```
 
 ```powershell
-python -m twine upload server\dist\naviscoord-0.4.0*
+python -m twine upload server\dist\naviscoord-0.4.1*
 ```
 
 El token de la **primera** subida tiene que ser de alcance «Entire account»:

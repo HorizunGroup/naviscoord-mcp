@@ -5,6 +5,54 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-08-20
+
+Nada de esto cambia lo que el motor calcula: los conteos de 0.4.0 siguen
+valiendo y un informe de esa versión no hay que rehacerlo. Lo que cambia es
+que NavisCoord ya puede listarse donde alguien lo encuentre, y que las
+escrituras se anuncian como lo que son.
+
+### Added
+
+- **Anotaciones en las 50 tools**: cada una declara su `title` y su hint de
+  solo lectura o destructivo. No es metadato decorativo — el cliente decide
+  con ellos qué ejecuta sin preguntar y qué exige confirmación del usuario,
+  así que un hint optimista es una escritura que nadie confirmó. Dos pruebas
+  lo sostienen: una exige la anotación, y la otra falla si una tool que acepta
+  `expected_document_fingerprint` o `dry_run` se declara de solo lectura.
+- **Política de privacidad** (`docs/PRIVACY.md`, con su sección en el README),
+  escrita leyendo el código y no la intención. Por eso dice dos cosas que el
+  README no decía: los resúmenes que devuelven las tools viajan al proveedor
+  del modelo a través del cliente MCP, y el launcher abre una conexión a PyPI
+  cuando aprovisiona su entorno.
+- **`server.json`** para el registro oficial de MCP, y el marcador `mcp-name`
+  dentro del README, que es donde ese registro verifica la propiedad del
+  paquete — viaja en la descripción que PyPI publica.
+- **Empaquetado como bundle de escritorio** (`scripts/build_mcpb.py`), única
+  puerta de un servidor local al directorio de conectores, con la lista de
+  tools leída del servidor vivo en vez de escrita a mano. El icono se genera
+  con código (`scripts/make_icon.py`) sobre el `brandColor` ya declarado.
+- **Validación de argumentos por parámetro**: el rechazo ocurre antes de
+  llamar a nada, así que un argumento inválido no toca el puente ni el estado
+  en memoria, y el error dice cuál falló. Los perfiles se rechazan al leerlos
+  —truncado, NaN, clave duplicada, cuerpo enorme— en vez de convertirse en un
+  `Profile` del que ya nadie puede fiarse.
+- **Contrato y sincronización de perfil** entre servidor y complemento, para
+  que no discrepen en silencio sobre cuál está vigente.
+- **Aprovisionamiento del runtime del plugin** con lock e identidad, que es lo
+  que permite arrancar en una máquina que no preparó nadie.
+- **Add-in**: admisión de trabajos, contratos de ruta, verificación de la
+  corrida y del guardado, ledger de apariencia, planificación de configure y
+  de clash, JSON estricto y seguridad de la sesión, cada uno con sus pruebas.
+
+### Changed
+
+- La ficha que publican los directorios pasa a inglés, que es quien la lee;
+  las tools se siguen describiendo en español, que es el idioma de quien
+  trabaja con ellas.
+- `docs/PUBLISHING.md` documenta las tres puertas de publicación y lo que
+  exige cada una.
+
 ## [0.4.0] — 2026-08-19
 
 Menor, no parche: los conteos cambian. Sobre el modelo con el que se encontró
@@ -542,7 +590,8 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
-[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.4.1
 [0.4.0]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.4.0
 [0.3.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.1
 [0.3.0]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.0

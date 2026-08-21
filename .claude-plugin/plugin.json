@@ -1,7 +1,7 @@
 {
   "name": "naviscoord-mcp",
   "displayName": "NavisCoord",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Autodesk Navisworks from Claude: prioritized and explained clashes, root causes, a coordination matrix, a work plan, a written report and a PDF.",
   "author": {
     "name": "HorizunGroup",

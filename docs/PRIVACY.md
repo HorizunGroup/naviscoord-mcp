@@ -2,7 +2,7 @@
 
 **Applies to:** NavisCoord — the Navisworks add-in, the MCP server, and the
 plugin that packages them.
-**Last updated:** 2026-08-20 (NavisCoord 0.4.0).
+**Last updated:** 2026-08-20 (NavisCoord 0.4.1).
 
 ## Summary
 

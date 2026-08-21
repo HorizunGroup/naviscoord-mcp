@@ -3,7 +3,7 @@
   "name": "io.github.horizungroup/naviscoord",
   "title": "NavisCoord",
   "description": "Autodesk Navisworks coordination: clash triage, root causes, work plans and reports",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "websiteUrl": "https://github.com/HorizunGroup/naviscoord-mcp",
   "repository": {
     "url": "https://github.com/HorizunGroup/naviscoord-mcp",
@@ -15,7 +15,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "naviscoord",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "transport": {
         "type": "stdio"
       },
