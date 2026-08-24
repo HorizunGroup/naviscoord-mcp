@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -205,9 +206,30 @@ def stage(release: str) -> Path:
     return STAGE
 
 
-def pack() -> int:
+def _cli() -> str | None:
+    """El CLI oficial, incluyendo el shim que npm deja en Windows.
+
+    `shutil.which("mcpb")` no lo encuentra ahí: `npm install -g` escribe
+    `mcpb.cmd` en `%APPDATA%\npm`, y esa carpeta puede estar en el PATH de la
+    consola sin estarlo en el del proceso que lanza este script. Buscarlo por
+    un solo nombre decía "no está instalado" sobre una herramienta que sí lo
+    estaba.
+    """
+    for name in ("mcpb", "mcpb.cmd"):
+        found = shutil.which(name)
+        if found:
+            return found
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        shim = Path(appdata) / "npm" / "mcpb.cmd"
+        if shim.exists():
+            return str(shim)
+    return None
+
+
+def pack(release: str) -> int:
     """Empaqueta con el CLI oficial, si está. Si no, dice cuál falta."""
-    executable = shutil.which("mcpb")
+    executable = _cli()
     if executable is None:
         print(
             "El CLI `mcpb` no está en el PATH, así que el árbol quedó listo "
@@ -217,7 +239,14 @@ def pack() -> int:
             f"    mcpb pack {STAGE}",
         )
         return 1
-    return subprocess.call([executable, "pack", str(STAGE)])
+    # Con destino explícito: `mcpb pack` sin él escribe un
+    # `mcpb.mcpb` —el nombre de la carpeta— en el directorio actual,
+    # que aquí es la raíz del repositorio.
+    bundle = STAGE.parent / f"naviscoord-{release}.mcpb"
+    code = subprocess.call([executable, "pack", str(STAGE), str(bundle)])
+    if code == 0:
+        print(f"bundle: {bundle}")
+    return code
 
 
 def main() -> int:
@@ -231,7 +260,7 @@ def main() -> int:
     print(f"NavisCoord {release}: {len(listed['tools'])} tools en {staged}")
 
     if arguments.pack:
-        return pack()
+        return pack(release)
     print("Sin empaquetar (usa --pack cuando quieras el .mcpb).")
     return 0
 
