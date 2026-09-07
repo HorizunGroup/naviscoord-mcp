@@ -1,8 +1,8 @@
 # NavisCoord 1.0 release verification
 
-Status: final packages staged; no 1.0 release has been published. PR #19 was independently approved and merged. Immutable tag `v1.0.0` resolves to `a7804330f8ddd765dc781d839311331a6f739ca9`. Evidence below was collected on 2026-09-06/07. Local testing is distinct from marketplace approval.
+Status: [NavisCoord 1.0.0 is publicly released](https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v1.0.0), published 2026-09-07 at 03:56 UTC, with `draft=false` and `prerelease=false`. PRs #19 and #20 were independently approved and merged. Immutable tag `v1.0.0` resolves to `a7804330f8ddd765dc781d839311331a6f739ca9`. All eleven GitHub asset digests matched the verified local files; an unauthenticated download of the final MCPB matched its SHA256. Evidence below was collected on 2026-09-06/07. Local testing is distinct from marketplace approval.
 
-The initial tag workflow passed package and runtime checks but failed its evidence upload because the runner-path regex ended with an unescaped backslash. [PR #20](https://github.com/HorizunGroup/naviscoord-mcp/pull/20) replaces regex interpretation with literal path matching, adds positive detection fixtures and makes evidence generation a required PR check. It also supports rebuilding evidence for an existing immutable tag while recording the workflow commit separately. Publication awaits independent review of that correction.
+The initial tag workflow passed package and runtime checks but failed its evidence upload because the runner-path regex ended with an unescaped backslash. [PR #20](https://github.com/HorizunGroup/naviscoord-mcp/pull/20) replaces regex interpretation with literal path matching, adds positive detection fixtures and makes evidence generation a required PR check. It also supports rebuilding evidence for an existing immutable tag while recording the workflow commit separately. Its final CI passed and the independent review was approved before publication.
 
 The corrected evidence job [rebuilt the exact v1.0.0 source](https://github.com/HorizunGroup/naviscoord-mcp/actions/runs/34080119612), producing a 33-component CycloneDX SBOM, checksums and provenance. The final native DLLs were installed and acceptance passed again in Navisworks 2024, 2025 and 2026 (208 clashes and 68 issues each). Clean-clone native/Python builds matched across two builds. The final standalone runtime passed live MCP initialization, discovery of 53 annotated tools and health; Claude Code reported Connected. Work desktop and Claude Desktop retain their earlier user-confirmed health results and have been configured for the final runtime.
 
@@ -23,7 +23,7 @@ The corrected evidence job [rebuilt the exact v1.0.0 source](https://github.com/
 | Claude Desktop extension | User confirmed navis_health connects to add-in 1.0.0.0 after restarting Claude Desktop | Passed (user reported) |
 | Claude Code | Standalone 1.0 registration, repeated update and Claude CLI Connected status | Passed |
 | Directory submissions | Anthropic MCPB, Claude plugin directory and MCPFly confirmed receipt on 2026-09-07 UTC; Glama action recorded separately | Submitted; external evaluation pending |
-| Public stable release | PR #19 merged; final tag built and tested; evidence workflow correction in PR #20 requires independent review | Pending |
+| Public stable release | PRs #19 and #20 approved and merged; final tag built and tested; eleven assets publicly available with verified hashes | Published |
 
 ## Live acceptance
 
@@ -35,7 +35,7 @@ This DWG-derived sample provides generic categories and CAD layers, so it tests 
 
 Relationship-aware noise filtering; scoped host identities across source models; all folded occurrences retained in group writes and Revit handoffs; revision checks on reads and derived writes; computed vertical separation alternatives; hosted opening containment; complete inventory metadata; bounded spatial clustering; stable IDs under ranking changes; real matrix coverage in snapshots; malformed snapshot refusal; enforced read-only routes; correct fingerprint/idempotency forwarding; nested search-set lookup; and repairable standalone installation.
 
-The release requires a final artifact rebuild from the approved release commit and recorded distribution outcomes. An external directory's pending review is not described as verification.
+Final artifacts were rebuilt from the approved release tag and published. An external directory's pending review is not described as verification. The following paragraphs retain the chronological pre-publication audit history; current status appears above and in [PUBLISHING.md](PUBLISHING.md).
 
 CI on cc248d0 passed all 20 jobs, including the required ci-ok, Python 3.10–3.14 with MCP 1.x/2.x, clean Python packaging and the standalone Windows runtime. Client installer follow-up changes require a subsequent run.
 

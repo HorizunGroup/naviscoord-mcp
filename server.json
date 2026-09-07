@@ -12,27 +12,12 @@
   },
   "packages": [
     {
-      "registryType": "pypi",
-      "registryBaseUrl": "https://pypi.org",
-      "identifier": "naviscoord",
-      "version": "1.0.0",
+      "registryType": "mcpb",
+      "identifier": "https://github.com/HorizunGroup/naviscoord-mcp/releases/download/v1.0.0/naviscoord-1.0.0-win-x64.mcpb",
+      "fileSha256": "a94cd1dc2f5532f9830a4fd857f16cc5c36f761465b8aa5de67ab76b2971d01e",
       "transport": {
         "type": "stdio"
-      },
-      "environmentVariables": [
-        {
-          "name": "NAVISCOORD_OUTPUT_ROOTS",
-          "description": "Semicolon-separated folders the server may write reports and exports to. Defaults to %LOCALAPPDATA%\\NavisCoord\\exports.",
-          "isRequired": false,
-          "isSecret": false
-        },
-        {
-          "name": "NAVISCOORD_SESSION",
-          "description": "Pin the server to one Navisworks instance by session id, instead of discovering the running ones.",
-          "isRequired": false,
-          "isSecret": false
-        }
-      ]
+      }
     }
   ]
 }

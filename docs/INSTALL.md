@@ -38,6 +38,8 @@ Download the release **`.mcpb`** and verify its SHA-256. Double-click it, or cho
 
 Restart Claude Desktop and request `navis_health`. A local extension's directory verification status is separate from its artifact checksums. The release record reports actual external approval status.
 
+The optional `-installer.mcpb` is a smaller distribution of the same approved launcher, used by [Smithery](https://smithery.ai/servers/pabloalejandrozg/naviscoord-mcp). Verify it against its adjacent `.sha256` file. Its first launch downloads the complete versioned runtime from GitHub and checks the release SHA256; later launches verify and reuse the local cache. Internet access is needed for the first download or repair. All 53 tools remain available. The full `.mcpb` above already includes that runtime.
+
 ## 4. Claude Code
 
 Install the repository marketplace:

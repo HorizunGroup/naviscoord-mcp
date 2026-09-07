@@ -6,6 +6,8 @@
 
 [English](README.md) · [Instalación](docs/INSTALL.md) · [Evidencia de verificación](docs/RELEASE-1.0-VERIFICATION.md) · [Descargas](https://github.com/HorizunGroup/naviscoord-mcp/releases/latest)
 
+**La versión estable 1.0.0 ya es pública:** [descarga](https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v1.0.0) · [registro MCP oficial](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.HorizunGroup%2Fnaviscoord-mcp/versions/1.0.0) · [Smithery](https://smithery.ai/servers/pabloalejandrozg/naviscoord-mcp).
+
 ![De interferencias a decisiones](docs/assets/naviscoord-flow.svg)
 
 > «Analiza el modelo abierto, explica cuáles son los problemas prioritarios y prepara el plan de trabajo. Muéstrame los cambios propuestos antes de aplicarlos».

@@ -5,7 +5,7 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
-## [1.0.0] — release verification in progress
+## [1.0.0] — 2026-09-07
 
 - Require explicit host/contact evidence before suppressing category-based contacts.
 - Carry a live model revision through export and derived writes; expire stale analyses.
@@ -19,7 +19,7 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 - Fix installation and replacement under Windows PowerShell 5.1.
 - Ship a standalone Windows runtime and local desktop plugin installation.
 
-The release is not published until `docs/RELEASE-1.0-VERIFICATION.md` is complete.
+Published as a stable [GitHub release](https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v1.0.0), with eight distributables, a CycloneDX SBOM, provenance and SHA256 checksums. Technical verification and external directory review states are recorded separately in `docs/RELEASE-1.0-VERIFICATION.md` and `docs/PUBLISHING.md`.
 
 ## [0.4.1] — 2026-08-20
 
