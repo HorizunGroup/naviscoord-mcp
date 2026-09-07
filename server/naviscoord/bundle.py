@@ -29,13 +29,14 @@ the world sees.
 from __future__ import annotations
 
 import hashlib
+import errno
 import json
 import os
 import re
 import shutil
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -220,12 +221,18 @@ def publish(
             stage="generation_id")
 
     staging = root / f"{STAGING_PREFIX}{gen_id}"
-    previous = (read_current(root) or {}).get("generation_id", "")
+    stage_locks = ExitStack()
+    owns_staging = False
 
     try:
-        if staging.exists():
-            shutil.rmtree(staging)
-        staging.mkdir(parents=True)
+        # Register ownership before a concurrent collector can see the stage.
+        # An OS lock survives long builds and is released automatically on crash.
+        with _pointer_lock(root):
+            if staging.exists() or (generations / gen_id).exists():
+                raise BundleError("la generación ya existe", stage="generation_id")
+            staging.mkdir(parents=True)
+            owns_staging = True
+            stage_locks.enter_context(_file_lock(staging / ".writer.lock"))
 
         # --- 1. build
         planned = list(artifacts)
@@ -274,11 +281,9 @@ def publish(
                     f"{entry['name']} cambió entre el hash y la verificación",
                     stage="manifest_verify")
 
-        # --- 5. make it a generation. Still nothing points at it.
+        # Promotion and the pointer change share the collector's lock. Otherwise
+        # retention can remove a completed directory before its pointer lands.
         final = generations / gen_id
-        if final.exists():
-            shutil.rmtree(final)
-        os.replace(staging, final)
 
         # --- 6. the only visible change
         pointer = {
@@ -288,16 +293,14 @@ def publish(
             # path inside it naming somebody's home directory.
             "path": f"{GENERATIONS_DIR}/{gen_id}",
             "manifest": f"{GENERATIONS_DIR}/{gen_id}/{MANIFEST_NAME}",
-            "manifest_sha256": _sha256(final / MANIFEST_NAME),
+            "manifest_sha256": _sha256(staging / MANIFEST_NAME),
             "published_at": manifest["created_at"],
         }
-        # The ONLY contended step, and therefore the only locked one. Two
-        # generations can be built side by side without interfering — separate
-        # staging directories, separate destinations — but `os.replace` onto
-        # the same `current.json` fails with ACCESS_DENIED on Windows when two
-        # threads reach it together. Locking the whole run instead would
-        # serialise minutes of work to protect one rename.
         with _pointer_lock(root):
+            previous = (read_current(root) or {}).get("generation_id", "")
+            stage_locks.close()
+            (staging / ".writer.lock").unlink()
+            os.replace(staging, final)
             _write_atomic(root / CURRENT_NAME,
                           json.dumps(pointer, ensure_ascii=False, indent=2))
 
@@ -309,10 +312,14 @@ def publish(
             replaced=previous,
         )
     except BundleError:
-        _discard(staging)
+        stage_locks.close()
+        if owns_staging:
+            _discard(staging)
         raise
     except Exception as exc:  # noqa: BLE001 - any failure keeps the old generation
-        _discard(staging)
+        stage_locks.close()
+        if owns_staging:
+            _discard(staging)
         raise BundleError(
             f"la generación falló y no se publicó: {exc}", stage="build", detail=str(exc)
         ) from exc
@@ -321,64 +328,54 @@ def publish(
     # failure of the publication: the new generation is already current.
     try:
         prune(root, retention=retention)
-    except OSError:
+    except (OSError, BundleError):
         pass
     return published
 
 
 @contextmanager
 def _pointer_lock(root: Path, *, timeout: float = 30.0):
-    """A cross-process lock over `current.json`, held for one rename.
-
-    Exclusive create is the primitive that works the same for two threads and
-    two processes; `threading.Lock` would only cover the first. The wait is
-    bounded and a stale lock older than the timeout is broken, so a crashed
-    writer cannot leave the output permanently unpublishable.
-    """
-    lock = root / (CURRENT_NAME + ".lock")
-    deadline = time.monotonic() + timeout
-    handle = None
-    while True:
-        try:
-            handle = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            break
-        except PermissionError:
-            # Windows, not a permissions problem: opening a file that another
-            # thread has just marked for deletion gives ACCESS_DENIED rather
-            # than "already exists". Treated as contention, which is what it
-            # is — catching only FileExistsError made one writer in four fail
-            # under a four-way barrier.
-            if time.monotonic() > deadline:
-                raise BundleError(
-                    "no se pudo tomar el bloqueo de current.json",
-                    stage="pointer_lock")
-            time.sleep(0.005)
-            continue
-        except FileExistsError:
-            if time.monotonic() > deadline:
-                # Broken rather than waited on forever: a lock this old belongs
-                # to a process that is not coming back.
-                try:
-                    if time.time() - lock.stat().st_mtime > timeout:
-                        lock.unlink()
-                        continue
-                except OSError:
-                    pass
-                raise BundleError(
-                    "otra publicación mantiene el bloqueo de current.json",
-                    stage="pointer_lock")
-            time.sleep(0.01)
-    try:
+    """Serialize promotion, pointer replacement, retention and verification."""
+    with _file_lock(root / (CURRENT_NAME + ".lock"), timeout=timeout):
         yield
-    finally:
+
+
+@contextmanager
+def _file_lock(path: Path, *, timeout: float = 30.0):
+    """Cross-process OS lock; never delete or steal a live owner's lock file.
+
+    The persistent file is not evidence of ownership: the kernel lock is.
+    Process death releases it, including after a crash during publication.
+    """
+    if os.name == "nt":
+        import msvcrt
+    else:
+        import fcntl
+    deadline = time.monotonic() + timeout
+    with path.open("a+b") as handle:
+        while True:
+            try:
+                if os.name == "nt":
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise BundleError("otra operación mantiene el bloqueo",
+                                      stage="pointer_lock") from exc
+                time.sleep(0.01)
         try:
-            os.close(handle)
-        except OSError:
-            pass
-        try:
-            lock.unlink()
-        except OSError:
-            pass
+            yield
+        finally:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _discard(staging: Path) -> None:
@@ -395,6 +392,14 @@ def _discard(staging: Path) -> None:
 
 def prune(root: Path, *, retention: int = DEFAULT_RETENTION) -> list[str]:
     """Keep the newest N generations and the current one. Never the current one alone."""
+    root = Path(root)
+    if not (root / GENERATIONS_DIR).is_dir():
+        return []
+    with _pointer_lock(root):
+        return _prune_locked(root, retention=retention)
+
+
+def _prune_locked(root: Path, *, retention: int) -> list[str]:
     retention = max(2, int(retention))
     generations = Path(root) / GENERATIONS_DIR
     if not generations.is_dir():
@@ -432,9 +437,16 @@ def prune(root: Path, *, retention: int = DEFAULT_RETENTION) -> list[str]:
 
     # Orphaned staging directories from a crashed run.
     for entry in Path(root).iterdir():
-        if entry.is_dir() and entry.name.startswith(STAGING_PREFIX):
+        if (entry.is_dir() and entry.name.startswith(STAGING_PREFIX)
+                and is_generation_id(entry.name[len(STAGING_PREFIX):])):
+            try:
+                with _file_lock(entry / ".writer.lock", timeout=0):
+                    pass
+            except (BundleError, OSError):
+                continue  # A live writer owns it, regardless of its age.
             _discard(entry)
-            removed.append(entry.name)
+            if not entry.exists():
+                removed.append(entry.name)
     return removed
 
 
@@ -446,6 +458,13 @@ def verify(root: Path) -> dict[str, Any]:
     hash to what the manifest says.
     """
     root = Path(root)
+    if not root.is_dir():
+        return {"ok": False, "error": "no_current", "detail": "no hay current.json legible"}
+    with _pointer_lock(root):
+        return _verify_locked(root)
+
+
+def _verify_locked(root: Path) -> dict[str, Any]:
     pointer = read_current(root)
     if not pointer:
         return {"ok": False, "error": "no_current", "detail": "no hay current.json legible"}

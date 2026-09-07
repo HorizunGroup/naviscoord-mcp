@@ -58,7 +58,7 @@ $script:ForbiddenPatterns = [ordered]@{
     'raiz absoluta Windows'   = '[A-Za-z]:\\+(?:Program Files(?: \(x86\))?|ProgramData|Temp|Windows|Work|src|repos|dev|build|obj|bin|projects|code|git|jenkins|workspace)\\+'
     'PDB con ruta absoluta'   = '(?:[A-Za-z]:\\+|/)[^\r\n"]{0,200}\.pdb'
     'ruta UNC'                = '\\\\[A-Za-z0-9._-]{2,63}\\[^\\/:*?"<>|\r\n]{1,64}'
-    'ruta extendida Windows'  = '\\\\\?\\'
+    'ruta extendida Windows'  = '\\\\\?\\(?:[A-Za-z]:[\\/]|UNC\\[A-Za-z0-9._-]{2,63}\\[A-Za-z0-9._-])'
     'raiz de agente CI'       = '(?:/github/workspace|/opt/(?:build|hostedtoolcache|actions-runner)|/var/lib/jenkins|/home/runner/work|[A-Za-z]:\\+a\\+|[A-Za-z]:\\+actions-runner|[A-Za-z]:\\+agent\\+_work)'
 }
 
@@ -140,6 +140,7 @@ if ($SelfTest) {
         'ruta extendida'       = $enc.GetBytes('abre \\?\D:\muy\larga\x')
     }
     $mustPass = [ordered]@{
+        'prefijo de namespace' = $enc.GetBytes(('\' * 2) + '?' + '\')
         'binario neutro'       = $enc.GetBytes('NavisCoord 0.2.2 MIT HorizunGroup')
         'pdb sin ruta'         = $enc.GetBytes('NavisCoord.pdb')
         'PathMap normalizado'  = $enc.GetBytes('/_/addin/NavisCoord.Addin/HttpBridge.cs')

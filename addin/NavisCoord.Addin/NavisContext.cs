@@ -23,7 +23,7 @@ namespace NavisCoord
         /// </summary>
         public static readonly string[] BaseProperties =
         {
-            "Element Id", "Id", "Type", "Family", "Family and Type",
+            "Element Id", "UniqueId", "Unique Id", "IFC GUID", "Host Id", "Host Element Id", "NC:HostPath", "NC:DesignedContactWith", "Id", "Type", "Family", "Family and Type",
             "System Name", "System Type", "System Classification",
             "Level", "Reference Level", "Workset", "Size", "Diameter",
             "Category", "Material", "Comments", "Mark",

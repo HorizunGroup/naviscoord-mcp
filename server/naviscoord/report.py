@@ -334,7 +334,7 @@ def _cover(result, profile: Profile, document_title: str, st) -> list[Any]:
             "Descartados (ruido y por diseño)",
             f"{result.filtering.dropped_count:,}".replace(",", ".") if result.filtering else "0",
         ],
-        ["Problemas reales", f"{len(result.issues):,}".replace(",", ".")],
+        ["Incidencias agrupadas", f"{len(result.issues):,}".replace(",", ".")],
         ["Decisiones distintas", f"{len(result.decisions):,}".replace(",", ".")],
         ["Críticos", str(bands.get("critical", 0))],
         ["Altos", str(bands.get("high", 0))],
@@ -356,10 +356,17 @@ def _cover(result, profile: Profile, document_title: str, st) -> list[Any]:
     )
     flow.append(table)
 
+    if result.warnings:
+        flow.append(Spacer(1, 4 * mm))
+        flow.append(Paragraph("Condiciones del análisis", st["h2"]))
+        for warning in result.warnings:
+            flow.append(Paragraph(escape_markup(warning), st["small"]))
+            flow.append(Spacer(1, 1 * mm))
+
     if owners:
         flow.append(Spacer(1, 6 * mm))
         flow.append(Paragraph("Carga por responsable", st["h2"]))
-        rows = [["Disciplina", "Decisiones"]] + [
+        rows = [["Disciplina", "Incidencias"]] + [
             [_cell(profile.label(code)), str(count)] for code, count in owners.items()
         ]
         owner_table = Table(rows, colWidths=[85 * mm, 35 * mm])

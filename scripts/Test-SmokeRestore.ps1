@@ -100,6 +100,14 @@ try {
     Check 'y el plugin ajeno no cambio' `
         ((Get-FileHash -LiteralPath $ajeno -Algorithm SHA256).Hash -eq $before['OtroPlugin\Ajeno.dll'])
 
+    # Replacing an existing DLL must work on Windows PowerShell 5.1 too.
+    $newBinary = Join-Path $staged "$version\NavisCoord.dll"
+    Set-Content -LiteralPath $newBinary -Value "updated dll $nonce" -Encoding UTF8
+    $r = Invoke-InstallCore -Roots $roots -StagedDir $staged -Managed $managed
+    Check 'Update reemplaza el DLL existente' ($r.Outcome -eq 'completed') $r.Detail
+    Check 'Update publica exactamente el nuevo binario' `
+        ((Get-FileHash -LiteralPath $installed).Hash -eq (Get-FileHash -LiteralPath $newBinary).Hash)
+
     # --------------------------------------------------------------- Restore
     $r = Invoke-RestoreCore -BackupRoot $backupRoot -Roots $roots -Managed $managed
     Check 'Restore completa' ($r.Outcome -eq 'completed') $r.Detail

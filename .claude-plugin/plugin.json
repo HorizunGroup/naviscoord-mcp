@@ -1,7 +1,7 @@
 {
   "name": "naviscoord-mcp",
   "displayName": "NavisCoord",
-  "version": "0.4.1",
+  "version": "1.0.0",
   "description": "Autodesk Navisworks from Claude: prioritized and explained clashes, root causes, a coordination matrix, a work plan, a written report and a PDF.",
   "author": {
     "name": "HorizunGroup",
@@ -20,9 +20,13 @@
   "skills": "./skills/",
   "mcpServers": {
     "horizun-navis-mcp": {
-      "command": "python",
+      "command": "powershell.exe",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_launcher.py"
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/Start-Mcp.ps1"
       ]
     }
   }

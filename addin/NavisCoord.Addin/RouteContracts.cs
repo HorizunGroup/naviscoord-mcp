@@ -215,6 +215,7 @@ namespace NavisCoord
             // pointer. These wait rather than read a tree in motion.
             Read(table, "clash/tests", ReadClass.IncompatibleWithMutation);
             Read(table, "clash/export", ReadClass.IncompatibleWithMutation);
+            Read(table, "analysis/revision", ReadClass.IncompatibleWithMutation);
             Read(table, "clash/image", ReadClass.IncompatibleWithMutation);
 
             // Audit only measures; it changes nothing.
@@ -241,11 +242,11 @@ namespace NavisCoord
             Mutation(table, "selection/set", VerificationSources.CurrentSelectionReread, persistent: false);
 
             Mutation(table, "workflow/configure", VerificationSources.SavedItemReread,
-                job: true, profile: true);
-            Mutation(table, "workflow/run", VerificationSources.ClashTestStatusReread, job: true);
+                job: true, profile: true, dryRun: true);
+            Mutation(table, "workflow/run", VerificationSources.ClashTestStatusReread, job: true, dryRun: true);
             Mutation(table, "workflow/group_levels", VerificationSources.DocumentReread,
-                job: true, cancellable: true, profile: true);
-            Mutation(table, "workflow/rules", VerificationSources.DocumentReread, job: true, profile: true);
+                job: true, cancellable: true, profile: true, dryRun: true);
+            Mutation(table, "workflow/rules", VerificationSources.DocumentReread, job: true, profile: true, dryRun: true);
 
             Mutation(table, "document/save", VerificationSources.FilesystemAndDocumentReread, job: true, idempotency: false);
             Mutation(table, "document/save_as", VerificationSources.FilesystemAndDocumentReread, job: true, idempotency: false);

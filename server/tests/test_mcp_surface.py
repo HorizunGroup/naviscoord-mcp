@@ -85,6 +85,9 @@ EXPECTED_TOOLS = {
     # ecosystem
     "navis_handoff",
     "navis_save_export",
+    "navis_snapshot",
+    "navis_analysis_state",
+    "navis_compare_snapshot",
 }
 
 

@@ -180,6 +180,7 @@ class TestPenetrationEvidenceSurvivesFiltering:
     def test_filter_indexes_sleeves_it_drops(self, profile_with_sleeves: Profile) -> None:
         sleeve = element("2/1", "EST", "Generic Models", "Pasamuro DN100")
         pipe = element("1/1", "HID", "Pipes")
+        sleeve.props["NC:DesignedContactWith"] = pipe.path_id
         result = NoiseFilter(profile_with_sleeves).run([clash("g1", pipe, sleeve)])
 
         assert result.kept == [], "el cruce con el pasamuro se filtra, como debe"
@@ -193,6 +194,7 @@ class TestPenetrationEvidenceSurvivesFiltering:
         sleeve = element("2/1", "EST", "Generic Models", "Sleeve 200")
         wall = element("0/1", "ARQ", "Walls", size=(4.0, 0.2, 3.0))
         pipe = element("1/1", "HID", "Pipes")
+        sleeve.props["NC:DesignedContactWith"] = pipe.path_id
         result = NoiseFilter(profile_with_sleeves).run([
             clash("g1", pipe, sleeve),
             clash("g2", pipe, wall),
@@ -207,6 +209,7 @@ class TestPenetrationEvidenceSurvivesFiltering:
         pipe = element("1/1", "HID", "Pipes", at=(0.0, 0.0, 1.0))
         pipe_in_sleeve = element("1/2", "HID", "Pipes", at=(10.0, 0.0, 1.0))
 
+        sleeve.props["NC:DesignedContactWith"] = pipe_in_sleeve.path_id
         export = ClashExport(clashes=[
             # A real missing pass: pipe through a wall, nowhere near a sleeve.
             clash("g1", pipe, wall, point=(1.0, 0.0, 1.0)),
@@ -224,7 +227,7 @@ class TestPenetrationEvidenceSurvivesFiltering:
         # With sleeves present the claim is the narrower one: an omission,
         # not "nothing is defined anywhere".
         assert cause.confidence == pytest.approx(0.75)
-        assert "otras partes" in cause.detail
+        assert cause.evidence["claim_scope"] == "analyzed_inventory"
 
     def test_finding_no_sleeves_does_not_raise_the_confidence(
         self, profile_with_sleeves: Profile
@@ -246,11 +249,12 @@ class TestPenetrationEvidenceSurvivesFiltering:
         causes = [c for c in result.root_causes if c.kind == "missing_penetration"]
         assert causes
         assert causes[0].evidence["sleeves_found_in_model"] == 0
-        assert causes[0].confidence == pytest.approx(0.7)
+        assert causes[0].confidence == pytest.approx(0.5)
         assert causes[0].confidence < 0.75, (
             "no ver ninguno es menos concluyente que ver algunos, no más"
         )
-        assert "tampoco podían mostrarlo" in causes[0].detail
+        assert "ningún conjunto" not in causes[0].detail
+        assert "no tiene un solo" not in causes[0].detail
 
     def test_detector_accepts_sleeves_it_was_handed(self, profile_with_sleeves: Profile) -> None:
         """The plumbing, in isolation: no sleeves in `all_elements`, one passed in."""
@@ -326,6 +330,7 @@ class TestPenetrationEvidenceSurvivesFiltering:
         sleeve = side("2/1", "Generic Models", "Pasamuro DN100", "EST-TORRE.rvt", (10.0, 0.0, 1.0), (0.3, 0.3, 0.3))
         pipe_in_sleeve = side("1/2", "Pipes", "Tubería DN100", "HID-TORRE.rvt", (10.0, 0.0, 1.0), (12.0, 0.1, 0.1))
 
+        sleeve["props"]["NC:DesignedContactWith"] = pipe_in_sleeve["path_id"]
         payload = {
             "schema": "naviscoord.clashexport/1",
             "document": {"title": "federado.nwf", "models": 3, "units": "Meters"},
@@ -351,7 +356,7 @@ class TestPenetrationEvidenceSurvivesFiltering:
         cause = causes[0]
         assert cause.evidence["sleeves_found_in_model"] == 1
         assert cause.confidence == pytest.approx(0.75)
-        assert "otras partes" in cause.detail
+        assert cause.evidence["claim_scope"] == "analyzed_inventory"
 
 
 def _sleeve_count(causes: list[Any]) -> int:
@@ -382,6 +387,8 @@ def _wall_vs_wall_export(test_name: str, **test_fields: Any) -> ClashExport:
     ]
     for item in clashes:
         item.test = test_name
+        if test_name == "ARQ-MUROS VS ARQ-CIELOS":
+            item.a.props["NC:DesignedContactWith"] = item.b.path_id
     entry: dict[str, Any] = {"name": test_name, "status": "Old", "exported": len(clashes)}
     entry.update(test_fields)
     return ClashExport(clashes=clashes, tests=[entry])
@@ -458,6 +465,7 @@ class TestAdjacencyIsJudgedOnDepthNotOnCategories:
     def _pair(self, depth: float, cat_b: str = "Walls") -> ClashExport:
         a = element("str/1", "", category="Walls", name="Muro estructural")
         b = element("arq/1", "", category=cat_b, name="Tabique drywall")
+        a.props["NC:DesignedContactWith"] = b.path_id
         item = clash("g1", a, b, depth=depth)
         item.test = "STR-WAL VS ARCH-GB-WALL"
         return ClashExport(
@@ -494,6 +502,7 @@ class TestAdjacencyIsJudgedOnDepthNotOnCategories:
         """A window in ITS OWN wall is the opening, at any depth."""
         wall = element("arq/1", "", category="Walls", name="Muro divisorio")
         window = element("arq/2", "", category="Windows", name="V-01")
+        window.props["NC:HostPath"] = wall.path_id
         item = clash("g1", wall, window, depth=0.170)
         item.test = "ARQ-MUROS VS ARQ-VENTANAS"
         export = ClashExport(

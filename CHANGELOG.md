@@ -5,6 +5,22 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.0.0] — release verification in progress
+
+- Require explicit host/contact evidence before suppressing category-based contacts.
+- Carry a live model revision through export and derived writes; expire stale analyses.
+- Preserve all folded occurrences in grouping, viewpoints and Revit worklists.
+- Compare persistent issue identities between saved coordination deliveries.
+- Inventory openings across loaded models with host and geometry checks.
+- Compute vertical separation alternatives from element bounds.
+- Match repeated patterns by actual distance; accelerate coincident density clustering.
+- Add workflow previews and forward document guards in set/test creation tools.
+- Resolve selection sets in nested folders and reject ambiguous names.
+- Fix installation and replacement under Windows PowerShell 5.1.
+- Ship a standalone Windows runtime and local desktop plugin installation.
+
+The release is not published until `docs/RELEASE-1.0-VERIFICATION.md` is complete.
+
 ## [0.4.1] — 2026-08-20
 
 **Los conteos cambian.** Estos arreglos del motor se escribieron antes de
@@ -638,7 +654,7 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
-[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.0.0...HEAD
 [0.4.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.4.1
 [0.4.0]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.4.0
 [0.3.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.1
@@ -646,3 +662,5 @@ el PDF.
 [0.2.3]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.3
 [0.2.2]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.2
 [0.2.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.2.1
+
+[1.0.0]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v0.4.1...v1.0.0

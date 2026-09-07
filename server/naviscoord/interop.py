@@ -155,10 +155,6 @@ def revit_worklist(handoff: dict[str, Any]) -> dict[str, Any]:
     by_model: dict[str, dict[str, Any]] = {}
 
     for issue in handoff["issues"]:
-        if issue.get("folded_into"):
-            # The representative carries the fix; a folded issue would send
-            # someone to do the same edit twice.
-            continue
         for target in issue["targets"]:
             if not target["actionable_in_revit"]:
                 continue
@@ -173,6 +169,7 @@ def revit_worklist(handoff: dict[str, Any]) -> dict[str, Any]:
             bucket["items"].append(
                 {
                     "issue_id": issue["issue_id"],
+                    "decision_id": issue.get("folded_into") or issue["issue_id"],
                     "priority": issue["priority"],
                     "severity": issue["severity"],
                     "revit_element_id": target["revit_element_id"],

@@ -17,6 +17,7 @@ a single messy crossing does not read as a crowded zone.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+import hashlib
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -185,6 +186,11 @@ class AnalysisResult:
         """
         return [issue for issue in self.issues if not issue.folded_into]
 
+    def execution_issues(self, limit: int = 20) -> list[Issue]:
+        """Expand selected decisions without losing any executable member."""
+        selected = {i.issue_id for i in self.decisions[:limit]}
+        return [i for i in self.issues if i.issue_id in selected or i.folded_into in selected]
+
     def top(self, limit: int = 20) -> list[Issue]:
         return self.decisions[:limit]
 
@@ -266,10 +272,11 @@ def analyze(
     result.filtering = noise.run(export.clashes)
     result.warnings.extend(result.filtering.warnings())
     if not result.filtering.kept:
-        result.warnings.append(
-            "El filtro descartó todos los cruces. Revisa noise_filter en el perfil "
-            "antes de concluir que el modelo está limpio."
-        )
+        if export.clashes:
+            result.warnings.append(
+                "El filtro descartó todos los cruces. Revisa noise_filter en el perfil "
+                "antes de concluir que el modelo está limpio."
+            )
         return result
 
     clusters = build_clusters(result.filtering.kept, profile)
@@ -317,14 +324,24 @@ def analyze(
     # sleeve is filtered out of the ranking precisely BECAUSE it is doing its
     # job, so passing only `kept` here made the missing-penetration detector
     # confidently report zero sleeves on a model full of them.
-    result.root_causes = detector.run(clusters, elements, sleeves=result.filtering.sleeves)
+    inventory = export.penetration_inventory
+    inventory_elements = [ElementRef.from_json(e) for e in inventory.get("elements", [])]
+    inventory_sleeves = [e for e in inventory_elements if noise.is_penetration_element(e)]
+    result.root_causes = detector.run(clusters, elements, sleeves=result.filtering.sleeves + inventory_sleeves)
+    for cause in result.root_causes:
+        if cause.kind == "missing_penetration":
+            cause.evidence["inventory_scope"] = inventory.get("scope", "clash_export")
+            cause.evidence["inventory_complete"] = inventory.get("complete", False)
+    if inventory and not inventory.get("complete"):
+        result.warnings.append("Opening inventory could not read every item; inspect inventory errors before accepting missing openings.")
     _attach_root_causes(issues, result.root_causes)
 
     order = sorted(range(len(issues)), key=lambda i: (-issues[i].severity, -issues[i].clash_count))
     ranked: list[Issue] = []
     for rank, original_index in enumerate(order, start=1):
         issue = issues[original_index]
-        issue.issue_id = f"ISS-{rank:04d}"
+        identity = "|".join(sorted(fingerprint(c) for c in clusters[original_index].clashes))
+        issue.issue_id = "ISS-" + hashlib.sha256(identity.encode()).hexdigest()[:16]
         ranked.append(issue)
 
     # The last moment cluster position still means anything, and the first at
@@ -366,7 +383,7 @@ def _fold_shared_causes(issues: list[Issue], profile: Profile) -> None:
         representative.folds = len(rest)
         representative.why.append(
             f"Representa {len(rest)} problemas más con la misma causa: "
-            "una sola decisión los cierra todos."
+            "la propuesta debe verificarse en cada elemento afectado."
         )
         for other in rest:
             other.folded_into = representative.issue_id

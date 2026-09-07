@@ -38,6 +38,7 @@ namespace NavisCoord
                 ["model/schema"] = SchemaHandlers.ModelSchema,
                 ["clash/tests"] = ListTests,
                 ["clash/export"] = ExportClashes,
+                ["analysis/revision"] = p => new Dictionary<string, object> { ["analysis_revision"] = AnalysisRevision.Current(RequireDocument()) },
                 ["clash/image"] = ReportHandlers.ClashImage,
                 ["sets/build"] = WriteHandlers.BuildSearchSets,
                 ["sets/build_search"] = WriteHandlers.BuildCriteriaSets,
@@ -105,7 +106,8 @@ namespace NavisCoord
         public bool CanRunAsJob(string route) => _jobRoutes.ContainsKey(route ?? string.Empty);
 
         public Func<Dictionary<string, object>, JobManager.Job, Dictionary<string, object>> JobHandler(string route)
-            => _jobRoutes.TryGetValue(route ?? string.Empty, out var handler) ? handler : null;
+            => _jobRoutes.TryGetValue(route ?? string.Empty, out var handler)
+                ? (p, j) => AnalysisRevision.Validate(p) ?? handler(p, j) : (Func<Dictionary<string, object>, JobManager.Job, Dictionary<string, object>>)null;
 
         public Dictionary<string, object> Dispatch(string route, Dictionary<string, object> payload)
         {
@@ -123,7 +125,7 @@ namespace NavisCoord
                     ["available"] = _routes.Keys.OrderBy(k => k).ToList()
                 };
             }
-            return handler(payload ?? new Dictionary<string, object>());
+            return AnalysisRevision.Validate(payload ?? new Dictionary<string, object>()) ?? handler(payload ?? new Dictionary<string, object>());
         }
 
         /// <summary>Everything the caller needs to negotiate before calling.</summary>
@@ -354,6 +356,7 @@ namespace NavisCoord
         private static Dictionary<string, object> ExportClashes(Dictionary<string, object> payload)
         {
             var doc = RequireDocument();
+            var analysisRevision = AnalysisRevision.Current(doc);
             var scale = NavisContext.MetreScale(doc);
             NavisContext.ResetCaches();
 
@@ -413,6 +416,9 @@ namespace NavisCoord
             return new Dictionary<string, object>
             {
                 ["schema"] = NavisContext.Schema,
+                ["analysis_revision"] = analysisRevision,
+                ["penetration_inventory"] = PenetrationInventory.Read(doc, scale, wanted, payload),
+                ["document_fingerprint"] = DocumentContext.Fingerprint(doc),
                 ["document"] = new Dictionary<string, object>
                 {
                     ["title"] = doc.Title ?? string.Empty,

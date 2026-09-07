@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Autodesk.Navisworks.Api.Clash;
 
 namespace NavisCoord
 {
@@ -97,6 +98,26 @@ namespace NavisCoord
                                  ", activo " + fingerprint + "). No se tocó nada.",
                     ["hint"] = "Vuelve a leer 'health' o 'capabilities' y repite con la huella vigente."
                 };
+            }
+
+            if (Json.Bool(payload, "dry_run", true))
+            {
+                var planned = new MutationResult(operation) { DryRun = true,
+                    FingerprintBefore = fingerprint, FingerprintAfter = fingerprint };
+                var preview = planned.ToJson();
+                preview["tests"] = doc.GetClash().TestsData.Tests.OfType<Autodesk.Navisworks.Api.Clash.ClashTest>()
+                    .Select(t => new Dictionary<string, object> { ["name"] = t.DisplayName, ["guid"] = t.Guid.ToString() }).ToList();
+                preview["planned_scope"] = operation == "workflow/configure" ? "Create or reconcile sets and clash matrix from the active profile" :
+                    operation == "workflow/run" ? "Run every test listed; results are unknown until execution" :
+                    operation == "workflow/group_levels" ? "Group ungrouped results by level and preserve existing groups" : "Apply the active profile rules";
+                if (needsProfile)
+                {
+                    var plannedProfile = FrozenProfile(job);
+                    if (plannedProfile == null && !TryProfile(out plannedProfile, out var problem)) return problem;
+                    Attribute(preview, plannedProfile);
+                    preview["profile_plan"] = plannedProfile.Content;
+                }
+                return preview;
             }
 
             var key = Json.Str(payload, "idempotency_key");
