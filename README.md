@@ -15,6 +15,8 @@
 
 [**Get started**](docs/INSTALL.md) · [Release evidence](docs/RELEASE-1.0-VERIFICATION.md) · [Report a problem](https://github.com/HorizunGroup/naviscoord-mcp/issues)
 
+**1.0.0 is public:** [stable download](https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v1.0.0) · [official MCP Registry entry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.HorizunGroup%2Fnaviscoord-mcp/versions/1.0.0) · [Smithery](https://smithery.ai/servers/pabloalejandrozg/naviscoord-mcp).
+
 ![From clashes to coordination decisions](docs/assets/naviscoord-flow.svg)
 
 > “Analyze the open model. Show the most important coordination issues, explain their priority, and prepare the work plan. Show me the proposed changes before applying them.”
