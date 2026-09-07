@@ -1,6 +1,10 @@
 # NavisCoord 1.0 release verification
 
-Status: verification in progress; no 1.0 release has been published. Base: public main `2eddbc5`. Evidence below was collected on 2026-09-06/07. Local testing is distinct from marketplace approval.
+Status: final packages staged; no 1.0 release has been published. PR #19 was independently approved and merged. Immutable tag `v1.0.0` resolves to `a7804330f8ddd765dc781d839311331a6f739ca9`. Evidence below was collected on 2026-09-06/07. Local testing is distinct from marketplace approval.
+
+The initial tag workflow passed package and runtime checks but failed its evidence upload because the runner-path regex ended with an unescaped backslash. [PR #20](https://github.com/HorizunGroup/naviscoord-mcp/pull/20) replaces regex interpretation with literal path matching, adds positive detection fixtures and makes evidence generation a required PR check. It also supports rebuilding evidence for an existing immutable tag while recording the workflow commit separately. Publication awaits independent review of that correction.
+
+The corrected evidence job [rebuilt the exact v1.0.0 source](https://github.com/HorizunGroup/naviscoord-mcp/actions/runs/34080119612), producing a 33-component CycloneDX SBOM, checksums and provenance. The final native DLLs were installed and acceptance passed again in Navisworks 2024, 2025 and 2026 (208 clashes and 68 issues each). Clean-clone native/Python builds matched across two builds. The final standalone runtime passed live MCP initialization, discovery of 53 annotated tools and health; Claude Code reported Connected. Work desktop and Claude Desktop retain their earlier user-confirmed health results and have been configured for the final runtime.
 
 | Area | Evidence | State |
 |---|---|---|
@@ -19,7 +23,7 @@ Status: verification in progress; no 1.0 release has been published. Base: publi
 | Claude Desktop extension | User confirmed navis_health connects to add-in 1.0.0.0 after restarting Claude Desktop | Passed (user reported) |
 | Claude Code | Standalone 1.0 registration, repeated update and Claude CLI Connected status | Passed |
 | Directory submissions | Anthropic MCPB, Claude plugin directory and MCPFly confirmed receipt on 2026-09-07 UTC; Glama action recorded separately | Submitted; external evaluation pending |
-| Public stable release | Independent merge approval and final release publication remain outstanding | Pending |
+| Public stable release | PR #19 merged; final tag built and tested; evidence workflow correction in PR #20 requires independent review | Pending |
 
 ## Live acceptance
 

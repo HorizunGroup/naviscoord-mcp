@@ -37,6 +37,11 @@ on:
   # path that did not exist when a tag's CI needed to be inspected after the
   # fact.
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing immutable release tag to rebuild evidence for (optional)
+        required: false
+        type: string
 
 jobs:
   portable-runtime:
@@ -563,14 +568,14 @@ jobs:
           PY
 
   release-evidence:
-    # Solo en tags. Produce la evidencia que acompaña a una release —
+    # Se ejecuta también en PR para comprobar el flujo antes de crear el tag.
+    # Produce la evidencia que acompaña a una release —
     # checksums, SBOM y procedencia — construida desde el SHA exacto que el
     # tag nombra (actions/checkout trae github.sha, no la punta de una rama).
     # NO publica nada: sube los archivos como artifacts del run para que la
     # persona que hace la release los adjunte tras revisarlos. Crear la
     # release sigue siendo un acto humano y deliberado.
-    name: evidencia de release (solo tags)
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: evidencia de release
     runs-on: ubuntu-latest
     needs: [engine, packaging, manifests, public-hygiene]
     steps:
@@ -578,17 +583,31 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          ref: ${{ inputs.release_tag || github.sha }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
       - name: El tag apunta a este SHA
         # La regla F1 entera: lo que se empaqueta es lo que el tag nombra.
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          resolved=$(git rev-parse "refs/tags/${tag}^{commit}")
-          echo "tag=${tag} resuelve=${resolved} sha del run=${GITHUB_SHA}"
-          test "$resolved" = "$GITHUB_SHA"
+          set -euo pipefail
+          tag="$REQUESTED_TAG"
+          if [ -z "$tag" ] && [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          resolved=$(git rev-parse HEAD)
+          if [ -n "$tag" ]; then
+            [[ "$tag" == v* ]] && git check-ref-format "refs/tags/$tag"
+            test "$(git rev-parse "refs/tags/${tag}^{commit}")" = "$resolved"
+          else
+            test "$resolved" = "$GITHUB_SHA"
+          fi
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "RELEASE_COMMIT=$resolved" >> "$GITHUB_ENV"
+          echo "Verified source: $resolved (tag: $tag)"
 
       - name: Construir los artefactos de Python desde el SHA del tag
         run: |
@@ -615,8 +634,9 @@ jobs:
           import json, os, time
           json.dump({
               "schema": "naviscoord.provenance/1",
-              "tag": os.environ["GITHUB_REF"].removeprefix("refs/tags/"),
-              "commit": os.environ["GITHUB_SHA"],
+              "tag": os.environ["RELEASE_TAG"] or None,
+              "commit": os.environ["RELEASE_COMMIT"],
+              "workflow_commit": os.environ["GITHUB_SHA"],
               "repository": os.environ["GITHUB_REPOSITORY"],
               "workflow_run": os.environ["GITHUB_RUN_ID"],
               "runner": os.environ["RUNNER_OS"],
@@ -635,8 +655,15 @@ jobs:
           # El guard de PowerShell mira DLL; a los archivos de Python los
           # revisa build_artifacts.py en la construcción. Aquí, la última
           # línea de defensa: ninguna ruta del runner en los textos.
+          $patterns = @('/home/runner', '/opt/hostedtoolcache', 'C:\a\')
+          # Literal paths: backslashes must never be interpreted as regex.
+          foreach ($pattern in $patterns) {
+            if (-not ("prefix $pattern suffix" | Select-String -Pattern $patterns -SimpleMatch)) {
+              throw "El control no detecta una ruta de runner: $pattern"
+            }
+          }
           $bad = Select-String -Path server/dist/SHA256SUMS, server/dist/provenance.json `
-            -Pattern '/home/runner|/opt/hostedtoolcache|C:\a\' -SimpleMatch:$false
+            -Pattern $patterns -SimpleMatch
           if ($bad) { Write-Error "ruta del runner en la evidencia: $bad"; exit 1 }
           Write-Output "evidencia limpia"
 
@@ -679,6 +706,7 @@ jobs:
       - manifests
       - public-hygiene
       - launcher
+      - release-evidence
     steps:
       - name: Todos los jobs requeridos terminaron en success
         shell: bash
