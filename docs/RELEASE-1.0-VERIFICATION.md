@@ -15,7 +15,7 @@ Status: verification in progress; no 1.0 release has been published. Base: publi
 | Claude bundle | Official MCPB CLI validates and packs the binary bundle | Passed |
 | Local desktop plugin | Personal marketplace registration and Codex plugin installation; local launcher reaches Navisworks | Passed |
 | Work desktop conversation | User confirmed navis_health connects to add-in 1.0.0.0 from a new Work desktop conversation | Passed (user reported) |
-| Claude Desktop extension | MSIX configuration written; real app restart and tool invocation pending | Pending |
+| Claude Desktop extension | User confirmed navis_health connects to add-in 1.0.0.0 after restarting Claude Desktop | Passed (user reported) |
 | Claude Code | Standalone 1.0 registration, repeated update and Claude CLI Connected status | Passed |
 | Public release and directories | Not yet published or submitted as 1.0 | Pending |
 
@@ -29,8 +29,10 @@ This DWG-derived sample provides generic categories and CAD layers, so it tests 
 
 Relationship-aware noise filtering; scoped host identities across source models; all folded occurrences retained in group writes and Revit handoffs; revision checks on reads and derived writes; computed vertical separation alternatives; hosted opening containment; complete inventory metadata; bounded spatial clustering; stable IDs under ranking changes; real matrix coverage in snapshots; malformed snapshot refusal; enforced read-only routes; correct fingerprint/idempotency forwarding; nested search-set lookup; and repairable standalone installation.
 
-The release requires a final full test run, CI on the exact commit, final artifact rebuild, client checks and recorded distribution outcomes. An external directory's pending review is not described as verification.
+The release requires a final artifact rebuild from the approved release commit and recorded distribution outcomes. An external directory's pending review is not described as verification.
 
 CI on cc248d0 passed all 20 jobs, including the required ci-ok, Python 3.10–3.14 with MCP 1.x/2.x, clean Python packaging and the standalone Windows runtime. Client installer follow-up changes require a subsequent run.
 
 Final client-code CI on `e9add09` passed the required `ci-ok`. Live acceptance subsequently passed in 2024 and 2025 with 208 raw clashes and 68 issues in each. All QA document changes were discarded without saving; process exit was checked. The 2025 process exited after the bounded verification window, so the first exit response correctly reported incomplete verification, followed by confirmed absence of the process.
+
+Claude Desktop connection to add-in 1.0.0.0 was confirmed by the user after restart. The four client paths now have verification records: Work desktop and Claude Desktop by user confirmation; Codex installation/protocol and Claude Code connection by tool observation. Required ci-ok passed on 981c0e4. Release merge still requires an independent approval.

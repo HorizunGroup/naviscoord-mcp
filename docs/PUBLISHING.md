@@ -7,7 +7,7 @@ The source changes for 1.0 are public in [PR #19](https://github.com/HorizunGrou
 | GitHub Releases | Stable tag, three Navisworks add-in ZIPs, runtime ZIP, desktop ZIP, MCPB, wheel/sdist, SHA256SUMS.txt | Built locally; merge and final release pending |
 | ChatGPT Work desktop / Codex | Local Personal marketplace and standalone runtime | Installed locally; Codex CLI installation and MCP protocol passed; Work connection to add-in 1.0.0.0 confirmed by the user |
 | Claude Code | Repository plugin or direct stdio registration | Direct 1.0 connection and repeated registration verified |
-| Claude Desktop | Standalone MCPB or local stdio configuration | Official bundle validation passed; app-level check pending |
+| Claude Desktop | Standalone MCPB or local stdio configuration | Official bundle validation passed; connection to add-in 1.0.0.0 confirmed by the user |
 | Claude desktop extension directory | [Official submission instructions](https://claude.com/docs/connectors/building/submission) | Technical form draft prepared; contact disclosure and directory terms confirmation pending; not submitted |
 | Claude plugin directory | [Plugin submission portal](https://platform.claude.com/plugins/submit) | Not submitted as 1.0 |
 | PyPI | Versioned wheel and sdist, then authenticated upload or configured Trusted Publisher | Artifacts built; publication credentials/setup not established |
