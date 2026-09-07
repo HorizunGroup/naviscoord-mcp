@@ -18,7 +18,8 @@ Status: verification in progress; no 1.0 release has been published. Base: publi
 | Work desktop conversation | User confirmed navis_health connects to add-in 1.0.0.0 from a new Work desktop conversation | Passed (user reported) |
 | Claude Desktop extension | User confirmed navis_health connects to add-in 1.0.0.0 after restarting Claude Desktop | Passed (user reported) |
 | Claude Code | Standalone 1.0 registration, repeated update and Claude CLI Connected status | Passed |
-| Public release and directories | Not yet published or submitted as 1.0 | Pending |
+| Directory submissions | Anthropic MCPB form and MCPFly repository form confirmed receipt on 2026-09-07 UTC | Submitted; external evaluation pending |
+| Public stable release | Independent merge approval and final release publication remain outstanding | Pending |
 
 ## Live acceptance
 
@@ -41,3 +42,5 @@ Claude Desktop connection to add-in 1.0.0.0 was confirmed by the user after rest
 A later CI run on `bf2fd10` exposed a concurrent export cleanup race. The collector could delete another writer's staging directory or a promoted generation before its pointer landed. Publication now uses OS ownership locks, serializes promotion with retention, protects verification from collection, and refuses reused generation IDs. Three deterministic regression cases and the full local suite passed; the rebuilt standalone runtime passed live MCP health. The subsequent CI run must pass before release.
 
 An in-use desktop update exposed PowerShell Move-Item's partial-directory behavior. The interrupted local copy was restored and passed live MCP health. The installer now uses a directory rename and installs a complete sibling copy when active clients prevent replacement; the Personal catalog points at that copy. The isolated regression exercises held-open files. The corrected installer was applied locally, and Claude Desktop, Claude Code and the Codex Personal plugin were configured for the rebuilt runtime without terminating active client conversations. Existing desktop processes adopt it after restart.
+
+Required CI passed on `0a10f4f`, including the declared-minimum dependency job that exposed the export race and all other 19 jobs. The desktop installer follow-up also passed its local held-file regression and live stdio health; its CI run is subsequent. Actual directory receipts are recorded in [PUBLISHING.md](PUBLISHING.md).

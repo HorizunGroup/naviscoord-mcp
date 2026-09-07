@@ -8,12 +8,22 @@ The source changes for 1.0 are public in [PR #19](https://github.com/HorizunGrou
 | ChatGPT Work desktop / Codex | Local Personal marketplace and standalone runtime | Installed locally; Codex CLI installation and MCP protocol passed; Work connection to add-in 1.0.0.0 confirmed by the user |
 | Claude Code | Repository plugin or direct stdio registration | Direct 1.0 connection and repeated registration verified |
 | Claude Desktop | Standalone MCPB or local stdio configuration | Official bundle validation passed; connection to add-in 1.0.0.0 confirmed by the user |
-| Claude desktop extension directory | [Official submission instructions](https://claude.com/docs/connectors/building/submission) | Technical form draft prepared; contact disclosure and directory terms confirmation pending; not submitted |
+| Claude desktop extension directory | [Official submission instructions](https://claude.com/docs/connectors/building/submission) | Submitted 2026-09-07 UTC; form confirmed receipt; awaiting Anthropic evaluation |
 | Claude plugin directory | [Plugin submission portal](https://platform.claude.com/plugins/submit) | Not submitted as 1.0 |
 | PyPI | Versioned wheel and sdist, then authenticated upload or configured Trusted Publisher | Artifacts built; publication credentials/setup not established |
 | Official MCP Registry | `server.json`, published Python package, GitHub namespace authentication | Metadata prepared; depends on PyPI publication |
-| Glama | [Repository indexing and ownership verification](https://glama.ai/mcp/methodology) | Not submitted; listing ownership and local-runtime suitability to verify |
-| Additional community directories | Assess current submission requirements and avoid duplicate listings | No 1.0 submission claimed |
+| Glama | [Repository indexing and ownership verification](https://glama.ai/mcp/methodology) | No existing listing found; submission requires interactive GitHub sign-in, not completed |
+| MCPFly | [Repository submission](https://mcpserver.so/submit) | Submitted 2026-09-07 UTC; ID `HorizunGroup/naviscoord-mcp`; pending approval |
+| MCP.so | [Paid submission](https://mcp.so/submit?type=server) | Current form requires a $39 payment; no purchase made |
+| Additional community directories | Assess current submission requirements and avoid duplicate listings | No other submission claimed |
+
+## Submission receipts
+
+**Anthropic desktop extensions — 2026-09-07 UTC.** After the publisher authorized the review contact and directory terms, the official MCPB form accepted `naviscoord-1.0.0-win-x64.mcpb` and displayed **“Your response has been recorded.”** The form stated that a response copy would be emailed to the authorized contact. The submission identifies the bundled Python runtime, the independent relationship to Autodesk, the public source PR, the privacy policy and the pending independent merge review. It does not claim that stable release publication or directory approval has occurred.
+
+Submitted runtime source: `0a10f4fc5f0fd3398800f6dfd6d32d415ddeaddc`. MCPB SHA256: `bb99934a31490eb5d1751d8b45fbc6c109752036fcb68bf4de0d02978b58a6eb`. The subsequent desktop-installer change does not alter this MCPB, which contains the standalone runtime. The personal contact and editable-response link are intentionally excluded from public documentation.
+
+**MCPFly — 2026-09-07 UTC.** The form accepted the public GitHub repository as an MCP server and displayed **“Submission received and pending approval”**, with submission ID `HorizunGroup/naviscoord-mcp`. This is a repository-listing request, not a claim that a 1.0 package is already publicly downloadable.
 
 ## Ready-to-use listing information
 
