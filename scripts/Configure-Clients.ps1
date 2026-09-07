@@ -13,7 +13,20 @@ $name = 'horizun-navis-mcp'
 $mode = if ($ReadOnly) { '1' } else { '0' }
 $outcomes = @()
 if ($Client -in @('All','ClaudeDesktop')) {
-    if (-not $DesktopConfig) { $DesktopConfig = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json' }
+    if (-not $DesktopConfig) {
+        $DesktopConfig = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
+        # MSIX redirects Roaming AppData into its package's LocalCache.
+        $appxCommand = Get-Command Get-AppxPackage -ErrorAction SilentlyContinue
+        if ($appxCommand) {
+            $packages = @(Get-AppxPackage -Name Claude -ErrorAction SilentlyContinue)
+            if ($packages.Count -eq 1) {
+                $packagedConfig = Join-Path $env:LOCALAPPDATA ('Packages\' + $packages[0].PackageFamilyName + '\LocalCache\Roaming\Claude\claude_desktop_config.json')
+                if ((Test-Path -LiteralPath $packagedConfig) -or -not (Test-Path -LiteralPath $DesktopConfig)) {
+                    $DesktopConfig = $packagedConfig
+                }
+            }
+        }
+    }
     $DesktopConfig = [IO.Path]::GetFullPath($DesktopConfig)
     $config = if (Test-Path -LiteralPath $DesktopConfig) {
         Get-Content -LiteralPath $DesktopConfig -Raw | ConvertFrom-Json
@@ -38,7 +51,24 @@ if ($Client -in @('All','ClaudeDesktop')) {
 if ($Client -in @('All','ClaudeCode')) {
     $cli = Get-Command claude -ErrorAction SilentlyContinue
     if (-not $cli) { throw 'Claude Code CLI is not installed.' }
-    & $cli.Source mcp add --transport stdio --scope user --env "NAVISCOORD_READ_ONLY=$mode" $name -- $exe
+    $userConfig = Join-Path $env:USERPROFILE '.claude.json'
+    $previousConfig = $null
+    if (Test-Path -LiteralPath $userConfig) {
+        $settings = Get-Content -LiteralPath $userConfig -Raw | ConvertFrom-Json
+        if ($settings.mcpServers -and $settings.mcpServers.PSObject.Properties[$name]) {
+            $previousConfig = $userConfig + '.naviscoord-backup-' + [guid]::NewGuid().ToString('N')
+            Copy-Item -LiteralPath $userConfig -Destination $previousConfig
+            & $cli.Source mcp remove --scope user $name
+            if ($LASTEXITCODE -ne 0) { throw 'Could not update the existing user-scoped server; configuration backup retained.' }
+        }
+    }
+    & $cli.Source mcp add --transport stdio --scope user $name --env "NAVISCOORD_READ_ONLY=$mode" -- $exe
+    if ($LASTEXITCODE -ne 0 -and $previousConfig) {
+        # Only restore the removed MCP entry through the client, preserving unrelated concurrent edits.
+        $entryJson = $settings.mcpServers.$name | ConvertTo-Json -Depth 100 -Compress
+        & $cli.Source mcp add-json --scope user $name $entryJson
+        throw 'Claude Code update failed; attempted to restore the previous entry. Backup retained.'
+    }
     if ($LASTEXITCODE -ne 0) { throw 'Claude Code registration failed; existing configuration was preserved.' }
     $outcomes += [pscustomobject]@{client='Claude Code';status='configured';next='claude mcp get horizun-navis-mcp'}
 }

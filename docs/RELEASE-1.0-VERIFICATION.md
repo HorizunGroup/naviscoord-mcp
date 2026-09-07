@@ -15,8 +15,8 @@ Status: verification in progress; no 1.0 release has been published. Base: publi
 | Claude bundle | Official MCPB CLI validates and packs the binary bundle | Passed |
 | Local desktop plugin | Personal marketplace registration and Codex plugin installation; local launcher reaches Navisworks | Passed |
 | Work desktop conversation | Needs a new desktop conversation to load and call the installed plugin | Pending |
-| Claude Desktop extension | Real app import and tool invocation | Pending |
-| Claude Code | Existing plugin connection observed; final 1.0 registration still to verify | Pending |
+| Claude Desktop extension | MSIX configuration written; real app restart and tool invocation pending | Pending |
+| Claude Code | Standalone 1.0 registration, repeated update and Claude CLI Connected status | Passed |
 | Public release and directories | Not yet published or submitted as 1.0 | Pending |
 
 ## Live acceptance
@@ -30,3 +30,5 @@ This DWG-derived sample provides generic categories and CAD layers, so it tests 
 Relationship-aware noise filtering; scoped host identities across source models; all folded occurrences retained in group writes and Revit handoffs; revision checks on reads and derived writes; computed vertical separation alternatives; hosted opening containment; complete inventory metadata; bounded spatial clustering; stable IDs under ranking changes; real matrix coverage in snapshots; malformed snapshot refusal; enforced read-only routes; correct fingerprint/idempotency forwarding; nested search-set lookup; and repairable standalone installation.
 
 The release requires a final full test run, CI on the exact commit, final artifact rebuild, client checks and recorded distribution outcomes. An external directory's pending review is not described as verification.
+
+CI on cc248d0 passed all 20 jobs, including the required ci-ok, Python 3.10–3.14 with MCP 1.x/2.x, clean Python packaging and the standalone Windows runtime. Client installer follow-up changes require a subsequent run.
