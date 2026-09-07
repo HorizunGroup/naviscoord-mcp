@@ -190,7 +190,21 @@ function Invoke-InstallCore {
                 return New-SwapResult -Outcome 'failed' `
                     -Detail "la copia de $($m.File) no reprodujo el binario; no se publica nada"
             }
-            [System.IO.File]::Move($temp, $target, $true)
+            # File.Move(source, destination, overwrite) is absent in Windows
+            # PowerShell 5.1/.NET Framework. Both operations below publish a
+            # complete file atomically on the destination volume.
+            try {
+                if ([System.IO.File]::Exists($target)) {
+                    $previous = "$temp.previous"
+                    [System.IO.File]::Replace($temp, $target, $previous)
+                    Remove-Item -LiteralPath $previous -Force
+                } else {
+                    [System.IO.File]::Move($temp, $target)
+                }
+            } catch {
+                if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
+                return New-SwapResult -Outcome 'failed' -Detail "no se pudo publicar $($m.File): $($_.Exception.Message)"
+            }
             $written += [pscustomobject]@{ Version = $version; Path = $target; Sha256 = $actual }
         }
     }

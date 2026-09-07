@@ -13,6 +13,7 @@ anywhere Python does.
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -278,7 +279,14 @@ class Bridge:
         once with the fresh session. Unchanged, the error stands: retrying
         against the same dead endpoint would only mask a real outage.
         """
-        body_payload = payload or {}
+        payload = dict(payload or {})
+        derived_routes = {"clash/group", "clash/status", "viewpoints/save", "appearance/color", "selection/set"}
+        revision = getattr(self, "analysis_revision", "")
+        if route in derived_routes and revision:
+            payload["expected_analysis_revision"] = revision
+        if route == "job/submit" and revision and payload.get("route") in derived_routes:
+            payload["payload"] = {**payload.get("payload", {}), "expected_analysis_revision": revision}
+        body_payload = payload
         if mutating is None:
             # A payload that carries a fingerprint or an idempotency key is a
             # mutation by construction; the caller can still say so explicitly.
@@ -286,6 +294,16 @@ class Bridge:
                 body_payload.get("expected_document_fingerprint")
                 or body_payload.get("idempotency_key")
             )
+        inner = body_payload.get("payload", body_payload) if route == "job/submit" else body_payload
+        readonly = os.environ.get("NAVISCOORD_READ_ONLY", "").lower() in {"1", "true", "yes"}
+        write_routes = derived_routes | {"sets/build", "sets/build_search", "clash/matrix", "clash/run",
+            "clash/apply_rules", "appearance/reset", "workflow/configure", "workflow/run",
+            "workflow/group_levels", "workflow/rules", "document/save", "document/save_as",
+            "document/close", "application/exit"}
+        operation = body_payload.get("route", "") if route == "job/submit" else route
+        writes = mutating or operation in write_routes or (route == "job/submit" and operation != "workflow/audit_models")
+        if readonly and writes and inner.get("dry_run") is not True:
+            raise BridgeError("Read-only mode refuses this write.", code="read_only")
         self._retry_key = str(body_payload.get("idempotency_key") or "")
         self._retry_fingerprint = str(body_payload.get("expected_document_fingerprint") or "")
 
@@ -579,22 +597,32 @@ class Bridge:
     def list_tests(self) -> dict[str, Any]:
         return self.call("clash/tests")
 
+    def analysis_state(self) -> dict[str, Any]:
+        return self.call("analysis/revision")
+
     def export_clashes(
         self,
         properties: list[str] | None = None,
         tests: list[str] | None = None,
         statuses: list[str] | None = None,
         limit: int = 0,
+        penetration_categories: list[str] | None = None,
+        penetration_keywords: list[str] | None = None,
     ) -> dict[str, Any]:
-        return self.call(
+        result = self.call(
             "clash/export",
             {
                 "properties": properties or [],
                 "tests": tests or [],
                 "statuses": statuses or [],
                 "limit": limit,
+                "penetration_categories": penetration_categories or [],
+                "penetration_keywords": penetration_keywords or [],
             },
         )
+        if not result.get("analysis_revision"):
+            raise BridgeError("The add-in cannot track analysis freshness. Update the NavisCoord add-in.", code="analysis_revision_required")
+        return result
 
     def clash_image(
         self,
@@ -621,23 +649,25 @@ class Bridge:
         payload.update(options or {})
         return self.call("clash/image", payload)
 
-    def build_sets(self, disciplines: list[dict[str, Any]], prefix: str, dry_run: bool) -> dict[str, Any]:
+    def build_sets(self, disciplines: list[dict[str, Any]], prefix: str, dry_run: bool,
+                   fingerprint: str = "", idempotency_key: str = "") -> dict[str, Any]:
         return self.call(
             "sets/build",
-            {"disciplines": disciplines, "prefix": prefix, "dry_run": dry_run},
+            _guarded({"disciplines": disciplines, "prefix": prefix, "dry_run": dry_run}, fingerprint, idempotency_key),
         )
 
     def build_matrix(
-        self, pairs: list[dict[str, Any]], prefix: str, dry_run: bool, replace_existing: bool = False
+        self, pairs: list[dict[str, Any]], prefix: str, dry_run: bool, replace_existing: bool = False,
+        fingerprint: str = "", idempotency_key: str = ""
     ) -> dict[str, Any]:
         return self.call(
             "clash/matrix",
-            {
+            _guarded({
                 "pairs": pairs,
                 "prefix": prefix,
                 "dry_run": dry_run,
                 "replace_existing": replace_existing,
-            },
+            }, fingerprint, idempotency_key),
         )
 
     def list_sets(self) -> dict[str, Any]:
@@ -662,8 +692,8 @@ class Bridge:
             return self.submit_job(route, payload)
         return self.call(route, payload)
 
-    def run_tests(self, tests: list[str] | None = None) -> dict[str, Any]:
-        return self.call("clash/run", {"tests": tests or []})
+    def run_tests(self, tests: list[str] | None = None, fingerprint: str = "", idempotency_key: str = "") -> dict[str, Any]:
+        return self.call("clash/run", _guarded({"tests": tests or []}, fingerprint, idempotency_key))
 
     def apply_groups(
         self,

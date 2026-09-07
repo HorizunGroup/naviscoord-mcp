@@ -324,7 +324,14 @@ def _dbscan(clashes: list[Clash], eps: float, min_samples: int) -> list[list[Cla
     if len(clashes) == 1:
         return [list(clashes)]
 
-    points = [c.point for c in clashes]
+    # Coincident results share one neighbourhood. Weight their representative
+    # instead of enumerating the same dense neighbourhood for every clash.
+    # This preserves DBSCAN density (including min_samples) and every result.
+    members: dict[Point, list[Clash]] = {}
+    for clash in clashes:
+        members.setdefault(clash.point, []).append(clash)
+    points = list(members)
+    weights = [len(members[p]) for p in points]
     grid = _Grid(points, eps)
     labels = [None] * len(points)  # type: list[int | None]
     cluster_id = 0
@@ -333,7 +340,7 @@ def _dbscan(clashes: list[Clash], eps: float, min_samples: int) -> list[list[Cla
         if labels[index] is not None:
             continue
         neighbours = grid.neighbours(points, index)
-        if len(neighbours) < min_samples:
+        if sum(weights[n] for n in neighbours) < min_samples:
             labels[index] = NOISE
             continue
 
@@ -349,7 +356,7 @@ def _dbscan(clashes: list[Clash], eps: float, min_samples: int) -> list[list[Cla
                 continue
             labels[current] = cluster_id
             expansion = grid.neighbours(points, current)
-            if len(expansion) >= min_samples:
+            if sum(weights[n] for n in expansion) >= min_samples:
                 for candidate in expansion:
                     if candidate not in seen:
                         seen.add(candidate)
@@ -360,7 +367,7 @@ def _dbscan(clashes: list[Clash], eps: float, min_samples: int) -> list[list[Cla
     singletons: list[list[Clash]] = []
     for index, label in enumerate(labels):
         if label is None or label == NOISE:
-            singletons.append([clashes[index]])
+            singletons.extend([clash] for clash in members[points[index]])
         else:
-            grouped[label].append(clashes[index])
+            grouped[label].extend(members[points[index]])
     return list(grouped.values()) + singletons

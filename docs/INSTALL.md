@@ -1,175 +1,76 @@
-# Instalación
+# Install NavisCoord in your desktop AI client
 
-NavisCoord tiene **dos piezas**, y casi todos los problemas vienen de
-confundirlas.
+The live product has two components: the native Navisworks add-in and the MCP runtime. The release runtime includes Python and its dependencies. It needs no API key. Windows and a licensed Navisworks **Manage** 2024, 2025 or 2026 are required.
 
-| Pieza | Qué es | Quién la instala |
-|---|---|---|
-| Servidor MCP | Python: `mcp`, `reportlab`, `pillow` | El launcher, solo, al arrancar |
-| Complemento de Navisworks | Un DLL .NET dentro de Navisworks | **Requiere Navisworks cerrado** |
+## 1. Install the Navisworks add-in
 
-## Requisitos
-
-- **Python 3.10 o superior.** Es el suelo real: el código usa uniones PEP 604
-  (`X | None`) en anotaciones evaluadas en runtime, y 3.9 lanza.
-- **Autodesk Navisworks Manage 2024, 2025 o 2026**, con licencia. El
-  complemento compila contra el API de la instalación local; no se
-  redistribuye ningún ensamblado de Autodesk.
-- **.NET SDK 8 o superior** solo si vas a compilar el complemento tú. Los
-  proyectos apuntan a .NET Framework 4.8 y restauran
-  `Microsoft.NETFramework.ReferenceAssemblies`; no dependen de que Visual
-  Studio haya instalado casualmente el Developer Pack. Sí necesitan el API de
-  la versión local de Navisworks.
-
-### Qué NO hace el launcher
-
-**No instala un Python.** Crea un entorno virtual a partir del intérprete con
-el que el cliente lo arrancó, en
-`%LOCALAPPDATA%\NavisCoord\runtime\py3XX-<identidad>\venv`, e instala ahí las tres
-dependencias. Si ese intérprete es demasiado antiguo, lo dice y se detiene —
-no hay nada más que honestamente pueda hacer.
-
-La identidad incluye ejecutable, arquitectura, ABI, versión del plugin y
-contrato de dependencias. El entorno se construye en una carpeta hermana bajo
-lock y solo se publica cuando imports **y versiones** son válidos; dos hosts no
-ejecutan `venv`/`pip` simultáneamente sobre la misma carpeta.
-
-Si el runtime no se puede provisionar, el servidor **no muere**: arranca en
-modo degradado con una sola herramienta, `navis_install_status`, que dice qué
-falló, con qué intérprete, y el comando exacto para arreglarlo a mano.
-
-## Instalar el complemento
-
-Requiere **Navisworks cerrado**. Para una instalación normal no necesitas
-Visual Studio, Git ni el SDK de .NET. Descarga
-[`Install-NavisCoord.ps1`](../Install-NavisCoord.ps1) y ejecútalo desde la
-carpeta donde quedó guardado:
+Close Navisworks, download `Install-NavisCoord.ps1` from the repository and run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Install-NavisCoord.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-NavisCoord.ps1
 ```
 
-El instalador detecta Navisworks Manage 2024–2026, descarga el ZIP de la
-[última versión publicada](https://github.com/HorizunGroup/naviscoord-mcp/releases/latest),
-verifica su SHA-256, rechaza rutas inesperadas y publica los archivos con
-rollback. Se niega a continuar si Navisworks está abierto.
+The installer checks the release SHA-256 manifest, selects the installed Navisworks versions and backs up managed files. It preserves unrelated add-ins. Open Navisworks after installation.
 
-- `-Version 2025` limita la instalación a una versión.
-- `-ReleaseTag v0.3.1` fija una versión publicada concreta.
-- `-WhatIf` muestra qué haría sin copiar nada.
-- `-SelfTest` prueba el instalador sin descargar ni instalar el add-in.
+## 2. ChatGPT Desktop — Work, and Codex
 
-### Instalar compilando desde el código fuente
-
-Esta vía es para desarrolladores. Requiere Git, .NET SDK 8+ y el API de cada
-Navisworks local. Desde la raíz del repositorio:
+Download the **desktop plugin ZIP** from the release, verify it against `SHA256SUMS.txt`, and extract it. In the extracted directory run:
 
 ```powershell
-.\install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-DesktopPlugin.ps1
 ```
 
-Detecta cada Navisworks Manage 2024–2026 instalado, compila el complemento
-contra el API de **cada uno** —cada versión trae su propio ensamblado, un DLL
-no sirve para todas— e instala por versión verificando cada copia.
+Restart the desktop app. Open **Plugins → Personal → NavisCoord → Install**, then start a new Work conversation. The package runs locally and uses the same Navisworks bridge as the other clients. No OpenAI Platform account, tunnel or API key is needed for this local plugin.
 
-- `.\install.ps1 -Version 2025` limita la compilación a una versión.
-- `.\install.ps1 -Uninstall` desinstala de todas las versiones detectadas.
+The installer keeps existing personal marketplace entries and backs up changed files. Its plugin lives in `%USERPROFILE%\plugins\naviscoord-mcp`; the personal catalog is `%USERPROFILE%\.agents\plugins\marketplace.json`.
 
-### Sin herramientas de compilación
+For Codex CLI, the installed personal plugin can also be enabled with:
 
-Descomprime el paquete del complemento de tu versión en:
-
-```
-%APPDATA%\Autodesk\Navisworks Manage <versión>\Plugins\NavisCoord\
+```text
+codex plugin add naviscoord-mcp@personal
 ```
 
-> Cada [release](https://github.com/HorizunGroup/naviscoord-mcp/releases) trae
-> un ZIP por versión de Navisworks. Descarga el tuyo, compruébalo contra
-> `SHA256SUMS.txt` y descomprímelo en esa carpeta. `install.ps1` compila desde
-> el código en vez de descargar, y para eso necesita el SDK de .NET y una
-> instalación local de Navisworks.
+The marketplace name is reported by the installer if your existing personal catalog uses another name.
 
-## Registrar el servidor MCP
+## 3. Claude Desktop
 
-### Como plugin (Claude Code)
+Download the release **`.mcpb`** and verify its SHA-256. Double-click it, or choose **Settings → Extensions → Advanced settings → Install Extension**. The bundle includes the executable and its runtime; Claude Code and a separate Python installation are unnecessary.
 
-```
+Restart Claude Desktop and request `navis_health`. A local extension's directory verification status is separate from its artifact checksums. The release record reports actual external approval status.
+
+## 4. Claude Code
+
+Install the repository marketplace:
+
+```text
 /plugin marketplace add HorizunGroup/naviscoord-mcp
 /plugin install naviscoord-mcp@horizun-navis
 ```
 
-El manifiesto usa `${CLAUDE_PLUGIN_ROOT}` para localizar el launcher.
+The plugin starts the pinned standalone runtime. Alternatively, register an extracted runtime directly:
 
-### Como plugin (Codex)
-
-Agrega este repositorio como marketplace y habilita el plugin
-`naviscoord-mcp@horizun-navis`. Codex instala el paquete en su caché y sustituye
-`${CLAUDE_PLUGIN_ROOT}` por la raíz real del plugin; usar una ruta relativa
-sería incorrecto porque el directorio de trabajo del proceso no está
-garantizado. Este flujo se verificó contra una instalación real de Codex.
-
-### A mano
-
-Copia `.mcp.json.example` a `.mcp.json` y ajusta las rutas:
-
-```json
-{
-  "mcpServers": {
-    "horizun-navis-mcp": {
-      "command": "python",
-      "args": ["-m", "naviscoord.mcp_server"],
-      "env": {
-        "PYTHONPATH": "RUTA/AL/REPO/server",
-        "PYTHONIOENCODING": "utf-8",
-        "NAVISCOORD_OUTPUT_ROOTS": "D:\\Coordinacion\\salidas"
-      }
-    }
-  }
-}
+```powershell
+claude mcp add --transport stdio --scope user horizun-navis-mcp -- 'C:\path\to\naviscoord-mcp.exe'
 ```
 
-Con `pip install -e .` desde `server/`, el `PYTHONPATH` sobra.
+For direct registration in Codex:
 
-En Windows, si `python` abre la Microsoft Store en vez de ejecutar, usa la
-ruta absoluta del intérprete real:
-`python -c "import sys; print(sys.executable)"`.
+```powershell
+codex mcp add horizun-navis-mcp -- 'C:\path\to\naviscoord-mcp.exe'
+```
 
-## Variables de entorno
+Use your actual extracted executable path. `scripts/Configure-Clients.ps1` can register the same executable in Claude Desktop, Claude Code and Codex while preserving unrelated settings.
 
-| Variable | Para qué |
-|---|---|
-| `NAVISCOORD_OUTPUT_ROOTS` | Carpetas donde se autoriza escribir (separadas por `;` en Windows). Ver [SECURITY-MODEL.md](SECURITY-MODEL.md) |
-| `NAVISCOORD_SESSION` | Apunta al archivo o carpeta de sesión. Ver [SESSIONS.md](SESSIONS.md) |
-| `LOCALAPPDATA` | Raíz del runtime, sesiones y log. La leen ambos lados |
+## First verification
 
-## Verificar
+Ask: **“Call navis_health, identify the active document, then analyze its clashes without modifying or saving the model.”** Use `navis_sessions` and `navis_target` when several Navisworks instances are open.
 
-1. `navis_health` → versión de Navisworks y documento.
-2. `navis_capabilities` → rutas y operaciones que ofrece el complemento.
-3. `navis_sessions` → instancias activas.
-4. Con un modelo abierto: `navis_discover`, luego `navis_analyze`.
+For an enforced document-read-only connection, set `NAVISCOORD_READ_ONLY=1` in the MCP server's environment. Reports may still be generated in the authorized output directory.
 
-## Problemas frecuentes
+## Updates and recovery
 
-**Solo aparece `navis_install_status`.** Falló el runtime de Python. Llámala:
-dice el intérprete, la versión, el destino y el comando de `pip`.
+Close Navisworks before replacing the add-in. Install the new client package, restart the client, then call `navis_health`. The plugin installer retains prior plugin directories and marketplace backups; the add-in installer retains its managed-file backups. Keep them until the new installation has been verified.
 
-**«No encuentro ninguna sesión activa».** Navisworks está cerrado, o el
-servidor MCP corre como otro usuario. En ese caso apunta `NAVISCOORD_SESSION`
-al `session.json` real.
+The executable's protocol can be tested without an AI subscription using `scripts/verify_stdio.py` from a development environment. The [release record](RELEASE-1.0-VERIFICATION.md) lists the checks performed on the distributed artifacts.
 
-**«El complemento no expone esta ruta».** El add-in instalado es anterior al
-servidor. Cierra Navisworks y ejecuta `install.ps1`. `navis_capabilities`
-lista lo que sí ofrece.
-
-**Dos versiones abiertas a la vez.** Conviven, cada una con su puerto y su
-sesión. Elige con `navis_target`; una mutación sin elegir se rechaza.
-
-**Cambié código Python y no se refleja.** El servidor MCP es un subproceso
-que cargó el código al arrancar. `navis_health` lo reporta en
-`server.code_newer_on_disk`; reinicia el cliente.
-
-**El complemento no aparece en Navisworks.** Comprueba que el DLL esté en
-`%APPDATA%\Autodesk\Navisworks Manage <versión>\Plugins\NavisCoord\NavisCoord.dll`
-y revisa `%LOCALAPPDATA%\NavisCoord\bridge.log`: el complemento nunca abre
-diálogos desde el puente, todo lo escribe ahí.
+For source-based Python development, see [development installation](INSTALL-DEVELOPMENT.md). Those Python prerequisites apply to development, not to the standalone desktop package.

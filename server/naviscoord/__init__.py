@@ -8,7 +8,7 @@ server are transport around it.
 from .model import SCHEMA, Clash, ClashExport, ElementRef, Issue, ModelSource
 from .profile import Profile
 
-__version__ = "0.4.1"
+__version__ = "1.0.0"
 
 __all__ = [
     "SCHEMA",

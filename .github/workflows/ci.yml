@@ -39,6 +39,32 @@ on:
   workflow_dispatch:
 
 jobs:
+  portable-runtime:
+    name: portable Windows runtime
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.14"
+      - name: Install the tested dependency lock
+        shell: pwsh
+        run: |
+          python -c "import sys,pathlib; sys.path.insert(0,'scripts'); from runtime_lock_spec import load,requirements_text; pathlib.Path('runtime-ci.txt').write_text(requirements_text(load()),encoding='utf-8')"
+          python -m pip install --require-hashes -r runtime-ci.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install pyinstaller==6.22.2
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and verify real stdio transport
+        shell: pwsh
+        run: |
+          python scripts/build_portable.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/verify_stdio.py dist/portable/naviscoord-mcp/naviscoord-mcp.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-PortableInstall.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   engine:
     name: motor (py${{ matrix.python }}, mcp${{ matrix.mcp }})
     runs-on: ubuntu-latest
@@ -642,6 +668,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - portable-runtime
       - engine
       - engine-minimums
       - windows-engine

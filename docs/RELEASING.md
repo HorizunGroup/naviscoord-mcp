@@ -358,3 +358,22 @@ rango de `mcp`, el check requerido deja de existir, nadie lo reporta nunca y
 `ci-ok` depende de todos ellos con `needs:` y corre con `if: always()`, así que
 falla si cualquiera falla, se cancela, se salta o desaparece. Es un solo nombre
 estable y la matriz queda libre de cambiar sin tocar Settings.
+
+## Desktop runtime release gate (1.0 and later)
+
+Build the Windows runtime in a clean Python 3.14 virtual environment. Export requirements with `runtime_lock_spec.requirements_text(load())`, install them with `pip --require-hashes`, then install PyInstaller 6.22.2 and run `pip check`. Do not regenerate the runtime lock during packaging.
+
+```powershell
+python scripts/build_portable.py
+python scripts/verify_stdio.py dist/portable/naviscoord-mcp/naviscoord-mcp.exe
+python scripts/build_mcpb.py
+npm exec --yes --package=@anthropic-ai/mcpb -- mcpb pack dist/mcpb dist/naviscoord-1.0.0-win-x64.mcpb
+python scripts/package_desktop.py
+powershell -File scripts/Test-PortableInstall.ps1
+```
+
+Use the declared release version for the MCPB filename. `package_desktop.py` reads that version and requires all three add-in ZIPs. It creates the standalone runtime ZIP, the local desktop plugin ZIP, and `dist/SHA256SUMS.txt`. Add the Python wheel/sdist and their hashes when preparing the complete release upload.
+
+Run `scripts/live_acceptance.py --pid <dedicated sample PID> --allow-sample-writes --evidence <local evidence path>` against an unmodified Autodesk gatehouse sample session. It verifies nested search sets, invalid matrix refusal, a real clash run, snapshots, group write-back, revision invalidation and a PDF with images. Close the QA document with discard afterwards. Do not publish raw local evidence containing user paths; record sanitized outcomes in `RELEASE-1.0-VERIFICATION.md`.
+
+The `portable-runtime` CI job independently installs the lock, builds the executable and exercises the real MCP stdio protocol plus interrupted-install repair. It is required by `ci-ok`.

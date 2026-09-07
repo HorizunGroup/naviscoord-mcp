@@ -13,10 +13,10 @@ megabytes; it is fetched, analysed and cached in this process, and only a
 ranked summary crosses into the conversation. Tools that would return
 thousands of rows return a path to a file instead.
 
-**Writes are two-step.** Every tool that modifies the document defaults to
-`dry_run=True`, returning what it would touch. Committing is a separate,
-explicit call, and the response reports what was verified by re-reading the
-document — not what was attempted.
+**Writes identify their target.** Document mutations require its fingerprint.
+Tools exposing dry_run provide a preview; execution and view operations state
+their effects in their individual contracts. Responses distinguish attempted
+changes from changes verified by re-reading the document.
 """
 
 from __future__ import annotations
@@ -946,6 +946,7 @@ def navis_run_rules_workflow(
     run_async: bool = True,
     expected_document_fingerprint: str = "",
     idempotency_key: str = "",
+    dry_run: bool = True,
 ) -> dict[str, Any]:
     """Paso 4 — aplica las reglas residuales que declara el PERFIL.
 
@@ -978,6 +979,7 @@ def navis_run_rules_workflow(
         {
             "expected_document_fingerprint": fingerprint,
             "idempotency_key": idempotency_key,
+            "dry_run": dry_run,
         },
     )
     return out
@@ -986,7 +988,8 @@ def navis_run_rules_workflow(
 @mcp.tool(annotations=_additive("Crear conjuntos por disciplina"))
 @_guard
 def navis_build_sets(
-    dry_run: bool = True, prefix: str = "NC", expected_document_fingerprint: str = ""
+    dry_run: bool = True, prefix: str = "NC", expected_document_fingerprint: str = "",
+    idempotency_key: str = "",
 ) -> dict[str, Any]:
     """Crea un conjunto de selección explícito por disciplina.
 
@@ -1011,7 +1014,7 @@ def navis_build_sets(
                 "source_files": sources,
             }
         )
-    payload = STATE.bridge.build_sets(disciplines, prefix, dry_run)
+    payload = STATE.bridge.build_sets(disciplines, prefix, dry_run, fingerprint, idempotency_key)
     payload.setdefault("document_fingerprint_before", fingerprint)
     return payload
 
@@ -1023,6 +1026,7 @@ def navis_build_clash_matrix(
     prefix: str = "NC",
     replace_existing: bool = False,
     expected_document_fingerprint: str = "",
+    idempotency_key: str = "",
 ) -> dict[str, Any]:
     """Genera la suite completa de tests disciplina contra disciplina.
 
@@ -1065,7 +1069,7 @@ def navis_build_clash_matrix(
             "skipped": skipped,
         }
 
-    payload = STATE.bridge.build_matrix(buildable, prefix, dry_run, replace_existing)
+    payload = STATE.bridge.build_matrix(buildable, prefix, dry_run, replace_existing, fingerprint, idempotency_key)
     payload.setdefault("document_fingerprint_before", fingerprint)
     payload["set_mapping"] = mapping.to_json()
     payload["skipped_pairs"] = skipped
@@ -1082,7 +1086,7 @@ def navis_list_tests() -> dict[str, Any]:
 @mcp.tool(annotations=_destructive("Correr tests de clash"))
 @_guard
 def navis_run_tests(
-    tests: list[str] | None = None, expected_document_fingerprint: str = ""
+    tests: list[str] | None = None, expected_document_fingerprint: str = "", idempotency_key: str = ""
 ) -> dict[str, Any]:
     """Corre los tests indicados, o todos si no se especifica ninguno.
 
@@ -1094,7 +1098,7 @@ def navis_run_tests(
     dry_run: no hay ensayo posible de una corrida de clash.
     """
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
-    payload = STATE.bridge.run_tests(tests)
+    payload = STATE.bridge.run_tests(tests, fingerprint, idempotency_key)
     payload.setdefault("document_fingerprint_before", fingerprint)
     return payload
 
@@ -1134,7 +1138,9 @@ def navis_analyze(tests: list[str] | None = None, limit: int = 0, top: int = 15)
     fingerprint, title = STATE.live_fingerprint()
     STATE.bind(fingerprint, title)
 
-    raw = STATE.bridge.export_clashes(properties=properties, tests=tests, limit=limit)
+    raw = STATE.bridge.export_clashes(properties=properties, tests=tests, limit=limit,
+        penetration_categories=STATE.profile.noise_param("pass_through_categories", []),
+        penetration_keywords=STATE.profile.noise_param("pass_through_keywords", []))
 
     export = ClashExport.from_json(raw)
     result = analyze(
@@ -1145,6 +1151,9 @@ def navis_analyze(tests: list[str] | None = None, limit: int = 0, top: int = 15)
         group_roles=STATE.group_roles,
     )
 
+    STATE.bind(str(raw.get("document_fingerprint") or fingerprint), title)
+    STATE.analysis_revision = str(raw.get("analysis_revision") or "")
+    STATE.bridge.analysis_revision = STATE.analysis_revision
     STATE.export = export
     STATE.result = result
 
@@ -1718,7 +1727,7 @@ def navis_apply_groups(
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
     result = STATE.require_fresh_result()
     groups = []
-    for issue in result.decisions[:limit]:
+    for issue in result.execution_issues(limit):
         pair = "×".join(d for d in issue.discipline_pair if d)
         groups.append(
             {
@@ -1767,12 +1776,12 @@ def navis_save_viewpoints(
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
     result = STATE.require_fresh_result()
     viewpoints = []
-    for issue in result.decisions[:limit]:
+    for issue in result.execution_issues(limit):
         if not issue.clash_ids:
             continue
         viewpoints.append(
             {
-                "clash_guid": issue.clash_ids[0],
+                "clash_guid": issue.representative_clash_id or issue.clash_ids[0],
                 "name": f"{issue.issue_id} [{issue.priority}] {issue.responsible}",
             }
         )
@@ -1808,7 +1817,7 @@ def navis_color_by_priority(limit: int = 50, expected_document_fingerprint: str 
     unresolved: list[str] = []
     skipped: Counter[str] = Counter()
 
-    for issue in result.decisions[:limit]:
+    for issue in result.execution_issues(limit):
         if issue.priority not in palette:
             skipped[issue.priority] += 1
             continue
@@ -1951,6 +1960,7 @@ def navis_configure(
     run_async: bool = False,
     expected_document_fingerprint: str = "",
     idempotency_key: str = "",
+    dry_run: bool = True,
 ) -> dict[str, Any]:
     """Paso 1 — crea los search sets por disciplina y la matriz de clash.
 
@@ -1967,6 +1977,7 @@ def navis_configure(
         {
             "expected_document_fingerprint": fingerprint,
             "idempotency_key": idempotency_key,
+            "dry_run": dry_run,
         },
     )
 
@@ -1977,6 +1988,7 @@ def navis_run(
     run_async: bool = True,
     expected_document_fingerprint: str = "",
     idempotency_key: str = "",
+    dry_run: bool = True,
 ) -> dict[str, Any]:
     """Paso 2 — corre todos los clash tests (equivale a Run All).
 
@@ -1994,6 +2006,7 @@ def navis_run(
         {
             "expected_document_fingerprint": fingerprint,
             "idempotency_key": idempotency_key,
+            "dry_run": dry_run,
         },
     )
 
@@ -2004,6 +2017,7 @@ def navis_group_levels(
     run_async: bool = True,
     expected_document_fingerprint: str = "",
     idempotency_key: str = "",
+    dry_run: bool = True,
 ) -> dict[str, Any]:
     """Paso 3 — agrupa los resultados de cada test por nivel.
 
@@ -2023,6 +2037,7 @@ def navis_group_levels(
         {
             "expected_document_fingerprint": fingerprint,
             "idempotency_key": idempotency_key,
+            "dry_run": dry_run,
         },
     )
 
@@ -2281,7 +2296,9 @@ def navis_save_export(path: str, overwrite: bool = False) -> dict[str, Any]:
         raise RuntimeError("No hay export en memoria. Corre navis_analyze primero.")
     authorised = output_policy().resolve_file(path, overwrite=overwrite)
     raw = STATE.bridge.export_clashes(
-        properties=STATE.profile.section("interop").get("harvest_properties", [])
+        properties=STATE.profile.section("interop").get("harvest_properties", []),
+        penetration_categories=STATE.profile.noise_param("pass_through_categories", []),
+        penetration_keywords=STATE.profile.noise_param("pass_through_keywords", []),
     )
     # Reserved atomically and published by rename: an export is tens of MB and
     # a run that dies halfway must not leave a truncated file that looks
@@ -2303,6 +2320,37 @@ def navis_output_policy() -> dict[str, Any]:
     motivo, en vez de escribirse en cualquier sitio que pida quien llama.
     """
     return output_policy().describe()
+
+
+@mcp.tool(annotations=_read_only("Revisión del modelo y frescura del análisis"))
+@_guard
+def navis_analysis_state() -> dict[str, Any]:
+    """Lee la revisión del documento; identifica si el análisis cacheado necesita repetirse."""
+    current = STATE.bridge.analysis_state()
+    return {**current, "analyzed_revision": STATE.analysis_revision,
+            "fresh": bool(STATE.analysis_revision and current.get("analysis_revision") == STATE.analysis_revision)}
+
+
+@mcp.tool(annotations=_additive("Guardar una revisión de análisis"))
+@_guard
+def navis_snapshot(path: str, overwrite: bool = False) -> dict[str, Any]:
+    """Guarda todas las incidencias con IDs persistentes, perfil y revisión del modelo."""
+    from .history import snapshot
+    result = STATE.require_fresh_result()
+    data = snapshot(result, STATE.stamp())
+    target = output_policy().resolve_file(path, overwrite=overwrite)
+    with target.staged_write() as staging:
+        staging.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"path": str(target.path), "issues": len(data["issues"]), "provenance": data["provenance"]}
+
+
+@mcp.tool(annotations=_read_only("Comparar entregas de coordinación"))
+@_guard
+def navis_compare_snapshot(path: str) -> dict[str, Any]:
+    """Compara una revisión guardada con el análisis vigente: nuevos, persistentes y cambios."""
+    from .history import snapshot, compare, load_snapshot
+    previous = load_snapshot(path)
+    return compare(previous, snapshot(STATE.require_fresh_result(), STATE.stamp()))
 
 
 def main() -> None:

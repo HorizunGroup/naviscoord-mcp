@@ -21,6 +21,7 @@ from typing import Any, Iterable
 from ..model import Clash, ElementRef, Point, centroid_of
 from ..profile import Profile
 from .cluster import ClashCluster
+from .relations import hosted_by
 
 
 @dataclass(slots=True)
@@ -168,7 +169,9 @@ class RootCauseDetector:
             if confidence < min_confidence:
                 continue
 
-            shift_mm = math.ceil(mean * 1000.0 / 50.0) * 50.0
+            separations = [_separation(clash) for _, clash in entries]
+            down = max(v["down_m"] for v in separations)
+            up = max(v["up_m"] for v in separations)
             affected = sorted({index for index, _ in entries})
             causes.append(
                 RootCause(
@@ -178,9 +181,8 @@ class RootCauseDetector:
                         f"{len(overlaps)} cruces del sistema '{system}' penetran "
                         f"{mean * 1000.0:.0f} mm en promedio contra elementos de "
                         f"{self.profile.label(hard_discipline)}, con una dispersión de solo "
-                        f"{std * 1000.0:.0f} mm. Una penetración tan pareja no viene de "
-                        f"{len(overlaps)} errores independientes: el recorrido completo está "
-                        "a la altura equivocada."
+                        f"{std * 1000.0:.0f} mm. El patrón es compatible con un problema de cota; "
+                        "la continuidad del recorrido y su solución requieren comprobación."
                     ),
                     confidence=confidence,
                     affected_clusters=affected,
@@ -191,11 +193,12 @@ class RootCauseDetector:
                         "mean_overlap_mm": round(mean * 1000.0, 1),
                         "stddev_mm": round(std * 1000.0, 1),
                         "sample_size": len(overlaps),
+                        "vertical_separation": {"down_m": down, "up_m": up, "method": "axis_aligned_bbox", "checked_pairs": len(separations)},
                     },
                     suggested_action=(
-                        f"Bajar el recorrido de '{system}' unos {shift_mm:.0f} mm y volver a "
-                        f"correr el test: si la teoría es correcta, cierra {len(entries)} cruces "
-                        "de una sola vez."
+                        f"Evaluar bajar {down * 1000:.0f} mm o subir {up * 1000:.0f} mm: "
+                        "ambas distancias separan las cajas de los pares analizados. "
+                        "Comprobar pendientes, gálibos y todas las disciplinas con una nueva corrida antes de aplicar."
                     ),
                 )
             )
@@ -270,7 +273,7 @@ class RootCauseDetector:
                     continue
                 if not other.is_linear:
                     continue
-                if _has_sleeve_near(clash.point, sleeves, radius):
+                if _has_sleeve_near(clash.point, sleeves, radius, host=host):
                     continue
                 candidates.append(index)
                 clash_total += 1
@@ -289,49 +292,19 @@ class RootCauseDetector:
 
         affected = sorted(set(candidates))
 
-        # No sleeves anywhere is the stronger signal, not the weaker one: it
-        # means the passes are not being defined at all, so every one of these
-        # crossings becomes a field decision. When sleeves do exist, a missing
-        # one is an omission — real, but a narrower claim.
-        if sleeves:
-            confidence = 0.75
-            context = (
-                "El modelo sí tiene pasos definidos en otras partes, así que estos quedaron por fuera."
-            )
-        else:
-            # Finding nothing used to RAISE the confidence to 0.9 and licence
-            # the sentence "the model has not one pass defined". It cannot.
-            #
-            # A sleeve only reaches this export by clashing with something
-            # inside one of the configured tests. On a matrix whose selection
-            # sets hold structure, ducts and pipes, no sleeve was ever
-            # eligible to appear — so zero is what this export would report
-            # whether the project models passes beautifully or not at all.
-            # That is a statement about the tests, not about the model.
-            #
-            # The crossings themselves are unaffected and still reported. What
-            # goes is the certainty about WHY, which is now lower than the
-            # case where sleeves were actually seen, not higher.
-            confidence = 0.7
-            context = (
-                "No apareció ningún paso definido en este export — pero los tests corridos "
-                "tampoco podían mostrarlo, porque ningún conjunto de selección incluye "
-                "elementos de paso. Antes de darlo por hecho, confírmalo contra el modelo."
-            )
+        confidence = 0.75 if sleeves else 0.5
+        context = (
+            "No se encontró un paso asociado a estos cruces en el inventario analizado. "
+            "La ausencia de una asociación requiere revisar su anfitrión y geometría."
+        )
 
         return [
             RootCause(
                 kind="missing_penetration",
-                title="Pasos de instalaciones sin definir",
+                title="Pasos de instalaciones por verificar",
                 detail=(
-                    f"{clash_total} cruces son de instalaciones atravesando muros o losas sin un "
-                    f"paso definido. {context} "
-                    "Lo que ocurre después es conocido: el primero que llega perfora donde le "
-                    "sirve. Si es mampostería, se pierde el acabado y se repara; si es una losa o "
-                    "una viga, ya no es una perforación cualquiera — un paso en viga solo se "
-                    "admite dentro del tercio central y con un diámetro acotado por el peralte, y "
-                    "esa aprobación no existe después de vaciado. El costo no es el hueco: es la "
-                    "orden de cambio y el tiempo parado esperando el visto bueno del calculista."
+                    f"{clash_total} cruces de instalaciones con muros o losas necesitan verificar su paso. "
+                    f"{context} Obtener la aprobación específica de estructura antes de perforar."
                 ),
                 confidence=confidence,
                 affected_clusters=affected,
@@ -339,6 +312,7 @@ class RootCauseDetector:
                 evidence={
                     "samples": samples,
                     "sleeves_found_in_model": len(sleeves),
+                    "claim_scope": "analyzed_inventory",
                     # Named so the number can be argued with: it counts every
                     # penetration element seen anywhere in the export,
                     # including the ones the noise filter removed for doing
@@ -366,19 +340,31 @@ class RootCauseDetector:
             self.profile.root_cause_param("repeated_typology", "xy_tolerance_m", 0.5)
         )
 
-        buckets: dict[tuple[str, str, int, int], list[int]] = defaultdict(list)
+        buckets: dict[tuple[str, str, int, int], list[int]] = {}
         levels: dict[tuple[str, str, int, int], set[str]] = defaultdict(set)
-        for index, cluster in enumerate(clusters):
-            centroid = cluster.centroid
-            key = (
-                cluster.discipline_pair[0],
-                cluster.discipline_pair[1],
-                int(centroid[0] / tolerance),
-                int(centroid[1] / tolerance),
-            )
+        anchors: dict[tuple[str, str, int, int], tuple[float, float]] = {}
+        cells: dict[tuple[str, str, int, int], list[tuple]] = defaultdict(list)
+        for index in sorted(range(len(clusters)), key=lambda i: (clusters[i].discipline_pair, clusters[i].centroid)):
+            cluster = clusters[index]
+            if not cluster.dominant("level"):
+                # Different clash elevations do not establish different floors.
+                continue
+            x, y, _ = cluster.centroid
+            pair = cluster.discipline_pair
+            cx, cy = math.floor(x / tolerance), math.floor(y / tolerance)
+            candidates = [key for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                          for key in cells.get((*pair, cx + dx, cy + dy), [])
+                          if all(math.hypot(x-clusters[j].centroid[0], y-clusters[j].centroid[1]) <= tolerance
+                                 for j in buckets[key])]
+            if candidates:
+                key = min(candidates, key=lambda k: (math.dist((x, y), anchors[k]), k))
+            else:
+                key = (*pair, index, 0)
+                anchors[key] = (x, y)
+                buckets[key] = []
+                cells[(*pair, cx, cy)].append(key)
             buckets[key].append(index)
-            level = cluster.dominant("level") or f"z={centroid[2]:.1f}"
-            levels[key].add(level)
+            levels[key].add(cluster.dominant("level"))
 
         # How many families the clashes actually involve.
         #
@@ -424,7 +410,7 @@ class RootCauseDetector:
                     f"El mismo cruce {self.profile.label(key[0])} × {self.profile.label(key[1])} "
                     f"aparece en la misma posición en planta en {len(distinct_levels)} niveles "
                     f"({where}), y siempre entre los mismos {len(families)} tipos de elemento. "
-                    f"Es un detalle tipo, no {len(indices)} problemas distintos."
+                    f"Son {len(indices)} ubicaciones que deben verificarse al propagar la solución."
                 )
                 action = (
                     "Resolver el detalle una vez y propagarlo a todos los niveles; "
@@ -458,7 +444,7 @@ class RootCauseDetector:
                     clash_count=clash_total,
                     evidence={
                         "levels": sorted(distinct_levels),
-                        "plan_position": [round(key[2] * tolerance, 1), round(key[3] * tolerance, 1)],
+                        "plan_position": [round(v, 3) for v in anchors[key]],
                         "distinct_families": len(families),
                         "families": sorted(families)[:8],
                     },
@@ -655,13 +641,22 @@ def _side_with_category(clash: Clash, categories: set[str]) -> ElementRef | None
     return None
 
 
-def _has_sleeve_near(point: Point, sleeves: list[ElementRef], radius: float) -> bool:
+def _has_sleeve_near(point: Point, sleeves: list[ElementRef], radius: float, host: ElementRef | None = None) -> bool:
     for sleeve in sleeves:
-        centre = (
-            (sleeve.bbox_min[0] + sleeve.bbox_max[0]) / 2.0,
-            (sleeve.bbox_min[1] + sleeve.bbox_max[1]) / 2.0,
-            (sleeve.bbox_min[2] + sleeve.bbox_max[2]) / 2.0,
-        )
-        if math.dist(point, centre) <= radius:
-            return True
+        if host is not None and not hosted_by(sleeve, host):
+            continue
+        if not all(sleeve.bbox_min[i] - .001 <= point[i] <= sleeve.bbox_max[i] + .001 for i in range(3)):
+            continue
+        # A large hosted opening can contain the clash far from its centre.
+        # Containment identifies a candidate; it does not certify a clear passage.
+        return True
     return False
+
+
+def _separation(clash: Clash) -> dict[str, float]:
+    """Exact vertical AABB separation of the movable side, with 1mm clearance."""
+    hard, soft = _hard_and_soft(clash)
+    return {
+        "down_m": max(0., soft.bbox_max[2] - hard.bbox_min[2]) + .001,
+        "up_m": max(0., hard.bbox_max[2] - soft.bbox_min[2]) + .001,
+    }

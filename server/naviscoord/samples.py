@@ -319,6 +319,8 @@ def noise_case() -> dict[str, Any]:
         **{"System Name": "AA-SUMINISTRO-02"},
     )
 
+    sleeve["props"]["NC:DesignedContactWith"] = sprinkler["path_id"]
+
     return export(
         [
             # 1. connected fitting inside one system

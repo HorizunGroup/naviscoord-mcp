@@ -420,7 +420,7 @@ class TestCodexManifest:
     def test_codex_manifest_anchors_the_launcher_to_the_plugin_root(self) -> None:
         servers = read_json_file(ROOT / ".codex-plugin" / "plugin.json")["mcpServers"]
         args = servers["horizun-navis-mcp"]["args"]
-        script = [a for a in args if a.endswith(".py")]
+        script = [a for a in args if a.endswith(".ps1")]
         assert script, "el manifiesto de Codex debe nombrar el launcher"
         assert script[0].startswith("${CLAUDE_PLUGIN_ROOT}/"), (
             "sin el marcador de raíz la ruta se resuelve contra el cwd del proceso, "

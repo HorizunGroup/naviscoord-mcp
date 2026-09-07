@@ -1,6 +1,6 @@
 {
   "name": "naviscoord-mcp",
-  "version": "0.4.1",
+  "version": "1.0.0",
   "description": "Navisworks desde Codex: interferencias priorizadas y explicadas, causas raíz, matriz de coordinación, plan de trabajo, informe redactado y PDF.",
   "author": {
     "name": "HorizunGroup",
@@ -19,9 +19,13 @@
   "skills": "./skills/",
   "mcpServers": {
     "horizun-navis-mcp": {
-      "command": "python",
+      "command": "powershell.exe",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_launcher.py"
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/Start-Mcp.ps1"
       ]
     }
   },

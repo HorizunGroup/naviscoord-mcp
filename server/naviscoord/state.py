@@ -66,6 +66,7 @@ class SessionState:
     # Provenance of everything above.
     target_id: str = ""
     document_fingerprint: str = ""
+    analysis_revision: str = ""
     document_title: str = ""
     profile_id: str = ""
 
@@ -81,6 +82,7 @@ class SessionState:
             "target_id": self.target_id,
             "document_fingerprint": self.document_fingerprint,
             "document_title": self.document_title,
+            "analysis_revision": self.analysis_revision,
             "profile": self.profile.name,
             "profile_checksum": self.profile_id,
         }
@@ -115,6 +117,8 @@ class SessionState:
 
     def forget_derived(self) -> None:
         """Drops everything computed from a document or profile."""
+        self.analysis_revision = ""
+        self.bridge.analysis_revision = ""
         self.export = None
         self.result = None
         self.discovery = None
@@ -161,6 +165,11 @@ class SessionState:
     def require_fresh_result(self) -> AnalysisResult:
         """The analysis, but only if it still describes the open document."""
         result = self.require_result()
+        if self.analysis_revision:
+            actual = self.bridge.analysis_state().get("analysis_revision")
+            if actual != self.analysis_revision:
+                self.forget_derived()
+                raise StateError("Geometry or clash results changed. Run navis_analyze again.")
         live, title = self.live_fingerprint()
         if live and self.document_fingerprint and live != self.document_fingerprint:
             self.forget_derived()

@@ -42,7 +42,14 @@ def _level_from_sides(a: "ElementRef", b: "ElementRef") -> str:
         # empty and the property survived in `props` anyway. Measured on the
         # export that prompted it: recovered zero, which is the honest note to
         # leave rather than a comment claiming a fix it did not make.
-        value = side.prop("Layer", "Capa", "Nivel", "Level", "Reference Level")
+        value = side.prop("Nivel", "Level", "Reference Level")
+        if not value:
+            layer = side.prop("Layer", "Capa")
+            # A CAD layer commonly names a trade, material or object. Only
+            # recognisable storey labels are admissible as this fallback.
+            import re
+            if re.search(r"(?:^|[_\s-])(?:NIVEL|LEVEL|FLOOR|PISO|PLANTA|N)[_\s-]*\d+(?:$|[_\s-])|^\d+(?:ST|ND|RD|TH)?\s+FLOOR$|^(?:ORG_)?(?:CUBIERTA|CUB|ROOF|SOTANO|BASEMENT)$", layer, re.I):
+                value = layer
         cleaned = clean_level(value)
         # A layer that is not a storey is worse than no storey at all: it
         # would split the plan into meaningless zones.
@@ -263,6 +270,7 @@ class ClashExport:
     models: list[ModelSource] = field(default_factory=list)
     clashes: list[Clash] = field(default_factory=list)
     tests: list[dict[str, Any]] = field(default_factory=list)
+    penetration_inventory: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_json(cls, raw: dict[str, Any]) -> "ClashExport":
@@ -276,6 +284,7 @@ class ClashExport:
             models=[ModelSource.from_json(m) for m in raw.get("models", [])],
             clashes=[Clash.from_json(c) for c in raw.get("clashes", [])],
             tests=list(raw.get("tests", [])),
+            penetration_inventory=dict(raw.get("penetration_inventory") or {}),
         )
 
     def model_for(self, index: int) -> ModelSource | None:

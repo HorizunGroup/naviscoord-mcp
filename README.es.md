@@ -1,117 +1,53 @@
 # NavisCoord
 
-[English](README.md) · **Español**
+### Empieza la reunión de coordinación con decisiones, no con 10.000 filas de cruces.
 
-**Convierte miles de interferencias de Autodesk Navisworks en decisiones
-explicables y verificadas que el equipo de coordinación puede ejecutar.**
+**Conecta Autodesk Navisworks con ChatGPT Desktop Work, Claude Desktop, Claude Code y Codex.** Analiza interferencias, revisa la evidencia y prepara un plan de coordinación.
 
-[![CI](https://github.com/HorizunGroup/naviscoord-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/HorizunGroup/naviscoord-mcp/actions/workflows/ci.yml)
-[![Último release](https://img.shields.io/github/v/release/HorizunGroup/naviscoord-mcp?display_name=tag&sort=semver)](https://github.com/HorizunGroup/naviscoord-mcp/releases/latest)
-[![Licencia MIT](https://img.shields.io/badge/licencia-MIT-22c55e.svg)](LICENSE)
-[![Navisworks 2024–2026](https://img.shields.io/badge/Navisworks%20Manage-2024%E2%80%932026-0696d7.svg)](docs/INSTALL.md)
+[English](README.md) · [Instalación](docs/INSTALL.md) · [Evidencia de verificación](docs/RELEASE-1.0-VERIFICATION.md) · [Descargas](https://github.com/HorizunGroup/naviscoord-mcp/releases/latest)
 
-[Instalar en cinco minutos](docs/QUICKSTART.es.md) ·
-[Último release](https://github.com/HorizunGroup/naviscoord-mcp/releases/latest) ·
-[Evidencia de pruebas](docs/TESTING.md) ·
-[Preguntar](https://github.com/HorizunGroup/naviscoord-mcp/discussions)
+![De interferencias a decisiones](docs/assets/naviscoord-flow.svg)
 
-![Flujo de NavisCoord](docs/assets/naviscoord-flow.svg)
+> «Analiza el modelo abierto, explica cuáles son los problemas prioritarios y prepara el plan de trabajo. Muéstrame los cambios propuestos antes de aplicarlos».
 
-NavisCoord es un servidor MCP local de código abierto más un complemento
-nativo para Navisworks. Está hecho para coordinación BIM/VDC, no para mover la
-interfaz a ciegas. Los datos del modelo permanecen en la estación de trabajo.
+**53 herramientas, un servidor y cuatro clientes.** El paquete de escritorio incluye su runtime: no necesitas instalar Python ni proporcionar una clave de API para ejecutar el MCP local. Navisworks y el cliente de IA mantienen sus propios requisitos de licencia y cuenta.
 
-> No está afiliado con Autodesk. El uso en vivo requiere Autodesk Navisworks
-> **Manage** con licencia.
-
-## Qué problema resuelve
-
-Un federado puede producir entre 5.000 y 50.000 clashes, pero eso no significa
-que existan 50.000 decisiones independientes. NavisCoord:
-
-- filtra contactos esperados y declara por qué descartó cada uno;
-- colapsa duplicados y cruces repetidos;
-- reconcilia niveles inconsistentes desde la geometría;
-- prioriza con una severidad determinista y configurable;
-- detecta causas raíz sistémicas y zonas congestionadas;
-- arma paquetes por disciplina, zona y responsable;
-- genera PDF, CSV y datos de entrega vinculados con los elementos de autoría.
-
-## Instalación fácil
-
-Necesitas Windows, Python 3.10+ y Navisworks Manage 2024, 2025 o 2026. No
-necesitas Visual Studio ni el SDK .NET al instalar un release.
-
-### 1. Complemento de Navisworks
-
-Cierra Navisworks. Descarga
-[`Install-NavisCoord.ps1`](Install-NavisCoord.ps1) y ejecuta:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Install-NavisCoord.ps1
-```
-
-El instalador detecta las versiones instaladas, descarga los ZIP correctos,
-verifica SHA-256, valida el contenido y publica únicamente los archivos de
-NavisCoord con rollback. No toca perfiles personales ni otros complementos.
-
-### 2. Plugin MCP
-
-En Claude Code:
-
-```text
-/plugin marketplace add HorizunGroup/naviscoord-mcp
-/plugin install naviscoord-mcp@horizun-navis
-```
-
-En Codex, agrega este repositorio como marketplace e instala
-`naviscoord-mcp@horizun-navis`.
-
-### 3. Primera instrucción segura
-
-> Verifica NavisCoord sin modificar ni guardar el modelo. Después descubre y
-> analiza el documento abierto, identifica causas raíz y arma el plan de
-> coordinación en modo de solo lectura.
-
-## Por qué es diferente
-
-- **Inteligencia de coordinación, no control remoto.** El motor comprime miles
-  de filas antes de pedir razonamiento al LLM.
-- **Explicable.** Pesos, tolerancias, prioridades y reglas viven en un perfil;
-  el puntaje se puede discutir y reproducir.
-- **Escrituras honestas.** Sesión, documento y destino son explícitos; una
-  mutación no se declara terminada sin releer su efecto cuando la API lo
-  permite.
-- **Local y acotado.** Puente loopback con token por sesión, DACL explícita,
-  cola limitada y política de rutas de salida.
-- **Evidencia pública.** CI, pruebas sin licencia, builds reproducibles y un
-  registro separado de las pruebas que sí requieren Navisworks vivo.
-
-## Compatibilidad
-
-| Componente | Soporte |
+| Cliente | Instalación |
 |---|---|
-| Sistema | Windows |
-| Navisworks | Manage 2024, 2025 y 2026 |
-| Python | 3.10–3.14 |
-| MCP SDK | 1.9.x y 2.x |
-| Add-in | .NET Framework 4.8, x64 |
+| **ChatGPT Desktop — Work** | Instalador del plugin local; después **Plugins → Personal → NavisCoord → Install** |
+| **Codex** | El mismo plugin personal o registro del ejecutable mediante su CLI |
+| **Claude Desktop** | Extensión `.mcpb` con el servidor incluido |
+| **Claude Code** | Plugin `naviscoord-mcp@horizun-navis` o registro del ejecutable |
 
-## Recursos
+Para ChatGPT de escritorio se utiliza el plugin local. No requiere OpenAI Platform, túneles ni claves de API. [Documentación oficial](https://learn.chatgpt.com/docs/enterprise/plugin-management).
 
-- [Inicio rápido](docs/QUICKSTART.es.md)
-- [Instalación y solución de problemas](docs/INSTALL.md)
-- [Perfiles de proyecto](docs/PROFILES.md)
-- [Arquitectura](docs/ARCHITECTURE.md)
-- [Modelo de seguridad](docs/SECURITY-MODEL.md)
-- [Pruebas y límites de evidencia](docs/TESTING.md)
-- [Benchmark público](docs/BENCHMARK.md)
-- [Plan de lanzamiento](docs/LAUNCH-PLAYBOOK.md)
+## Qué entrega
 
-Preguntas de uso: [Discussions](https://github.com/HorizunGroup/naviscoord-mcp/discussions).
-Vulnerabilidades: [reporte privado](SECURITY.md). Contribuciones:
-[CONTRIBUTING.md](CONTRIBUTING.md).
+- Problemas priorizados con puntuaciones explicables y trazabilidad a los cruces originales.
+- Grupos espaciales acotados, causas raíz propuestas y todos los elementos afectados.
+- Inventario de pasos del modelo y comprobaciones de anfitrión y geometría.
+- Revisiones guardadas e identificación de incidencias nuevas, persistentes y modificadas.
+- Plan por especialidad, narrativa, PDF con imágenes y archivos para Revit y Power BI.
+- Escrituras dirigidas al documento revisado, con controles de vigencia y comprobación posterior.
 
-## Licencia
+El motor exige evidencia para descartar contactos por diseño. No elimina un cruce solo porque un elemento pertenezca a una categoría. Una incidencia ausente en otra entrega tampoco se declara resuelta automáticamente.
 
-MIT. No se redistribuyen ensamblados de Autodesk, modelos ni datos de clientes.
+## Primer uso
+
+1. Cierra Navisworks y ejecuta [`Install-NavisCoord.ps1`](Install-NavisCoord.ps1) para instalar el complemento correspondiente.
+2. Instala el paquete de tu cliente siguiendo [estas instrucciones](docs/INSTALL.md).
+3. Abre la federación en Navisworks Manage y pide: **«Comprueba NavisCoord e identifica el documento activo antes de analizarlo»**.
+
+El complemento funciona en Windows con **Navisworks Manage 2024, 2025 o 2026**. El motor también analiza exportaciones guardadas. Puedes adaptar disciplinas, tolerancias y criterios mediante el [perfil de ejemplo](profiles/example-profile.json).
+
+## Verificación y privacidad
+
+Consulta [el registro de pruebas del lanzamiento](docs/RELEASE-1.0-VERIFICATION.md): separa pruebas automatizadas, pruebas en Navisworks y comprobaciones en clientes. Las revisiones de directorios externos se registran por separado.
+
+El servidor procesa el modelo localmente. Las respuestas solicitadas pueden incluir propiedades, coordenadas, nombres e imágenes que recibe tu cliente de IA. No se envía telemetría a Horizun. [Privacidad](docs/PRIVACY.md).
+
+Los resultados apoyan la coordinación; las decisiones de ingeniería se revisan dentro del proyecto. Los archivos de entrega permiten continuar con [Horizun Revit MCP](https://github.com/HorizunGroup/horizun-revit-mcp) y [Horizun PBI MCP](https://github.com/HorizunGroup/horizun-pbi-mcp).
+
+Si te resulta útil, comparte un caso reproducible sin datos confidenciales y añade una estrella al repositorio para que otros coordinadores lo encuentren.
+
+MIT · [HorizunGroup](https://github.com/HorizunGroup) · Proyecto independiente de Autodesk, OpenAI y Anthropic.

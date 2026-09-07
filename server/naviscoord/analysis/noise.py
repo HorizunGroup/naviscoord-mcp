@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 from ..model import Clash, ElementRef
 from ..profile import Profile
+from .relations import hosted_by, designed_contact
 
 
 @dataclass(slots=True)
@@ -368,6 +369,7 @@ class NoiseFilter:
             if (
                 device.category.strip().lower() in devices
                 and host.category.strip().lower() in hosts
+                and hosted_by(device, host)
             ):
                 return True
         return False
@@ -409,16 +411,20 @@ class NoiseFilter:
                 # wall, may not be permissible at all. Skipping the trade
                 # check discarded exactly those: on the reference model, 28
                 # windows between 100 and 170 mm into structure, silently.
-                if same_trade:
+                if same_trade and (hosted_by(clash.a, clash.b) or hosted_by(clash.b, clash.a)):
                     return "architectural_hosting"
                 break
 
-        if cat_a in host_to_host and cat_b in host_to_host and same_trade:
+        if (cat_a in host_to_host and cat_b in host_to_host and same_trade
+                and clash.a.discipline == "ARQ"
+                and designed_contact(clash.a, clash.b)):
             return "architectural_self_overlap"
 
         return None
 
     def _is_designed_adjacency(self, clash: Clash) -> bool:
+        if not designed_contact(clash.a, clash.b):
+            return False
         """Two host elements of different trades meeting, as buildings do.
 
         A gypsum partition dies against a concrete wall; a window frame sits
@@ -481,7 +487,8 @@ class NoiseFilter:
 
     def _is_designed_pass_through(self, clash: Clash) -> bool:
         """A sleeve or shaft doing its job is the opposite of a problem."""
-        return any(self.is_penetration_element(side) for side in (clash.a, clash.b))
+        return any(self.is_penetration_element(side) and (hosted_by(side, other) or designed_contact(side, other))
+                   for side, other in ((clash.a, clash.b), (clash.b, clash.a)))
 
 
 def _identity(element: ElementRef) -> str:
@@ -536,6 +543,9 @@ def fingerprint(clash: Clash) -> str:
     pair plus a coarse location survives a rerun while still separating two
     genuinely different crossings of the same two elements.
     """
-    left, right = clash.pair_key
+    def stable(element):
+        authoring_id = element.prop("UniqueId", "Unique Id", "IFC GUID", "Element Id")
+        return f"{element.source_file.casefold()}:{authoring_id}" if authoring_id and element.source_file else element.group_key
+    left, right = sorted((stable(clash.a), stable(clash.b)))
     cell = tuple(round(coord, 1) for coord in clash.point)
     return f"{left}~{right}@{cell[0]},{cell[1]},{cell[2]}"

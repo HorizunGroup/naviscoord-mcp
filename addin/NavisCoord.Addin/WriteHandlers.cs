@@ -219,11 +219,13 @@ namespace NavisCoord
         {
             var doc = Router.RequireDocument();
             var sets = new List<object>();
-            foreach (var saved in doc.SelectionSets.RootItem.Children)
+            foreach (var entry in WalkSets(doc.SelectionSets.RootItem))
             {
+                var saved = entry.Item1;
                 sets.Add(new Dictionary<string, object>
                 {
-                    ["name"] = saved.DisplayName ?? string.Empty,
+                    ["name"] = entry.Item2,
+                    ["display_name"] = saved.DisplayName ?? string.Empty,
                     ["guid"] = saved.Guid.ToString(),
                     ["is_group"] = saved.IsGroup,
                     ["item_count"] = (double?)ExplicitItems(saved as SelectionSet)?.Count ?? 0.0,
@@ -1378,10 +1380,26 @@ namespace NavisCoord
             return def.CategoryIds.Count == 0 || def.CategoryIds.Contains(info.Item2);
         }
 
+        private static IEnumerable<Tuple<SavedItem, string>> WalkSets(GroupItem parent, string prefix = "")
+        {
+            foreach (var item in parent.Children)
+            {
+                var path = prefix + (item.DisplayName ?? string.Empty);
+                yield return Tuple.Create(item, path);
+                if (item is GroupItem group)
+                    foreach (var nested in WalkSets(group, path + "/")) yield return nested;
+            }
+        }
+
         private static SelectionSet FindSet(Document doc, string name)
-            => doc.SelectionSets.RootItem.Children
-                   .FirstOrDefault(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase))
-               as SelectionSet;
+        {
+            var all = WalkSets(doc.SelectionSets.RootItem).Where(e => e.Item1 is SelectionSet).ToList();
+            var matches = all.Where(e => string.Equals(e.Item2, name, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (matches.Count == 0)
+                matches = all.Where(e => string.Equals(e.Item1.DisplayName, name, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (matches.Count > 1) throw new ArgumentException("Ambiguous selection set; use its full folder path: " + name);
+            return matches.Count == 1 ? (SelectionSet)matches[0].Item1 : null;
+        }
 
         // ---------------------------------------------------- clash matrix
 
@@ -1413,11 +1431,13 @@ namespace NavisCoord
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var plan = new List<object>();
+            var invalidPairs = new List<string>();
             var toCreate = new List<(string Name, List<SelectionSet> SetsA, List<SelectionSet> SetsB, ClashTestType Type, double Tolerance)>();
 
             foreach (var raw in pairs)
             {
-                if (!(raw is Dictionary<string, object> spec)) continue;
+                if (!(raw is Dictionary<string, object> spec))
+                    throw new ArgumentException("Each matrix pair must be an object.");
                 var a = Json.Str(spec, "a");
                 var b = Json.Str(spec, "b");
                 var typeName = Json.Str(spec, "type", "Hard");
@@ -1434,11 +1454,20 @@ namespace NavisCoord
 
                 var setsA = namesA.Select(n => FindSet(doc, n)).Where(s => s != null).ToList();
                 var setsB = namesB.Select(n => FindSet(doc, n)).Where(s => s != null).ToList();
-                var skip = setsA.Count == 0 || setsB.Count == 0
+                var validType = Enum.TryParse<ClashTestType>(typeName, true, out var testType) &&
+                                Enum.IsDefined(typeof(ClashTestType), testType);
+                var invalid = string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)
+                    ? "faltan disciplinas del par"
+                    : !validType ? "tipo de test inválido: " + typeName
+                    : double.IsNaN(toleranceM) || double.IsInfinity(toleranceM) || toleranceM < 0
+                        ? "tolerancia inválida"
+                    : setsA.Count != namesA.Count || setsB.Count != namesB.Count
                     ? $"faltan conjuntos ({string.Join(", ", namesA)} / {string.Join(", ", namesB)})"
-                    : existing.Contains(name) && !replace
+                    : null;
+                if (invalid != null) invalidPairs.Add(name + ": " + invalid);
+                var skip = invalid ?? (existing.Contains(name) && !replace
                         ? "ya existe un test con ese nombre"
-                        : null;
+                        : null);
 
                 plan.Add(new Dictionary<string, object>
                 {
@@ -1450,7 +1479,7 @@ namespace NavisCoord
                     ["skipped"] = skip ?? string.Empty
                 });
 
-                if (skip == null && Enum.TryParse<ClashTestType>(typeName, true, out var testType))
+                if (skip == null)
                 {
                     // Tolerance travels in metres over the bridge and must be
                     // converted back into document units before it reaches
@@ -1459,6 +1488,10 @@ namespace NavisCoord
                     toCreate.Add((name, setsA, setsB, testType, toleranceM / (scale == 0 ? 1 : scale)));
                 }
             }
+
+            // Reject the whole invalid plan before making any document changes.
+            if (!dryRun && invalidPairs.Count > 0)
+                throw new ArgumentException(string.Join("; ", invalidPairs));
 
             if (dryRun)
             {

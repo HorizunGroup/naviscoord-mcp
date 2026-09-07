@@ -391,7 +391,7 @@ class TestHostSpecificPlaceholders:
         """
         servers = read_json(ROOT / ".codex-plugin" / "plugin.json")["mcpServers"]
         for name, spec in servers.items():
-            script = [a for a in spec.get("args", []) if a.endswith(".py")]
+            script = [a for a in spec.get("args", []) if a.endswith(".ps1")]
             assert script, name
             assert script[0].startswith("${CLAUDE_PLUGIN_ROOT}/"), name
 
@@ -404,7 +404,7 @@ class TestHostSpecificPlaceholders:
         for manifest in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json"):
             servers = read_json(ROOT / manifest)["mcpServers"]
             for spec in servers.values():
-                script = [a for a in spec["args"] if a.endswith(".py")]
+                script = [a for a in spec["args"] if a.endswith(".ps1")]
                 assert script, manifest
                 relative = script[0].replace("${CLAUDE_PLUGIN_ROOT}/", "").lstrip("./")
                 assert (ROOT / relative).is_file(), f"{manifest}: falta {relative}"

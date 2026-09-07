@@ -202,6 +202,11 @@ class SeverityScorer:
                 "duro no lo ve, y en obra aparece el día que hay que abrir la válvula."
             )
 
+        if any(code in {"", "OTRO"} for code in cluster.discipline_pair):
+            why.append("La clasificación está incompleta: la puntuación es provisional y no determina "
+                       "qué elemento puede moverse ni el coste relativo del ajuste.")
+            return [_es(reason) for reason in why]
+
         # The consequence, said the way a site coordinator would say it.
         if immovable.discipline == "EST":
             why.append(
@@ -279,6 +284,10 @@ def suggest_action(
     cluster: ClashCluster, verdict: SeverityVerdict, profile: Profile
 ) -> str:
     """One concrete next step, phrased for the person who has to do it."""
+    if any(code in {"", "OTRO"} for code in cluster.discipline_pair):
+        return _es("Identifica las disciplinas y el responsable de ambos elementos en el perfil, "
+                   "y repite el análisis antes de decidir qué elemento mover. "
+                   "La geometría por sí sola no establece esa responsabilidad.")
     worst = _worst_clash(cluster)
     movable_side = worst.side_for(verdict.responsible)
     immovable_side = worst.side_for(verdict.immovable_side)

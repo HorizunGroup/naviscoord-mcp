@@ -17,16 +17,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
 from importlib import metadata
 from pathlib import Path
+from packaging.requirements import Requirement
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from runtime_lock_spec import DIRECT, LOCK_PATH, LOCK_SCHEMA, load, verify  # noqa: E402
 
 PUBLIC_RANGES = {"mcp": ">=1.9,<3", "reportlab": ">=4.0,<6", "pillow": ">=10.0"}
+
+
+def canonical_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def installed_versions() -> dict[str, str]:
@@ -35,7 +41,7 @@ def installed_versions() -> dict[str, str]:
     for line in out.splitlines():
         if "==" in line:
             name, version = line.split("==", 1)
-            found[name.strip().lower()] = version.strip()
+            found[canonical_name(name.strip())] = version.strip()
     return found
 
 
@@ -47,28 +53,26 @@ def transitive_closure(installed: dict[str, str]) -> set[str]:
     tested here.
     """
     closure: set[str] = set()
-    queue = list(DIRECT)
+    visited: set[tuple[str, tuple[str, ...]]] = set()
+    queue = [(name, ()) for name in DIRECT]
     while queue:
-        name = queue.pop().lower()
-        if name in closure:
+        raw_name, extras = queue.pop()
+        name = canonical_name(raw_name)
+        if (name, extras) in visited:
             continue
+        visited.add((name, extras))
         closure.add(name)
-        try:
-            requires = metadata.requires(name) or []
-        except Exception:  # noqa: BLE001 - a distribution with no metadata is a leaf
-            requires = []
+        requires = metadata.requires(name) or []
         for requirement in requires:
-            head = requirement
-            if ";" in requirement:
-                head, marker = requirement.split(";", 1)
-                if "extra" in marker:
-                    continue      # optional extras are not part of the runtime
-            dep = head.split("[")[0]
-            for token in ("<", ">", "=", "!", "~", " ", "("):
-                dep = dep.split(token)[0]
-            dep = dep.strip().lower()
-            if dep and dep in installed and dep not in closure:
-                queue.append(dep)
+            parsed = Requirement(requirement)
+            if parsed.marker and not any(parsed.marker.evaluate({"extra": extra}) for extra in ("", *extras)):
+                continue
+            dep = canonical_name(parsed.name)
+            if dep not in installed:
+                raise RuntimeError(f"Required dependency missing from tested environment: {requirement}")
+            if not parsed.specifier.contains(installed[dep]):
+                raise RuntimeError(f"Installed dependency violates {requirement}: {installed[dep]}")
+            queue.append((dep, tuple(sorted(parsed.extras))))
     return closure
 
 

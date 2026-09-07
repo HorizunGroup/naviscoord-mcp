@@ -1,62 +1,33 @@
 ---
 name: naviscoord-setup
-description: Instala, actualiza, repara y verifica NavisCoord — el complemento de Autodesk Navisworks y su runtime local — cuando se usa como plugin de Claude o Codex. Úsala si las herramientas navis_* no aparecen, si solo aparece navis_install_status, si el puente no responde, si Navisworks no muestra la pestaña NavisCoord en la cinta, o si el usuario pide instalar, actualizar o diagnosticar el plugin.
+description: Instalar, actualizar, reparar y verificar NavisCoord en ChatGPT Work de escritorio, Claude Desktop, Claude Code y Codex cuando faltan las herramientas navis_* o el puente de Navisworks no responde.
 ---
 
 # Instalar y verificar NavisCoord
 
-NavisCoord tiene **dos piezas** y casi todos los problemas vienen de confundirlas:
+NavisCoord conecta un runtime MCP local con un complemento de Navisworks Manage 2024–2026. El runtime distribuido incluye Python y sus dependencias. No requiere instalar Python, una cuenta de OpenAI Platform, una API key ni un túnel para Work de escritorio.
 
-| Pieza | Qué es | Quién la instala |
-|---|---|---|
-| Runtime del servidor MCP | Python: `mcp`, `reportlab`, `pillow` | El launcher, solo, al arrancar |
-| Complemento de Navisworks | Un DLL .NET dentro de Navisworks | **Requiere Navisworks cerrado** — nadie puede hacerlo automáticamente |
+## Diagnóstico
 
-El launcher resuelve la primera. La segunda es la que hay que atender aquí.
+Llama `navis_health` cuando esté disponible. Comprueba las versiones del servidor y del complemento, la sesión y el documento; una conexión viva por sí sola no prueba que el análisis esté actualizado.
 
-## Diagnóstico: empieza siempre por aquí
+Si no aparecen herramientas, revisa la configuración del cliente y el registro de arranque del servidor. `scripts/Start-Mcp.ps1` usa el runtime incluido en el plugin o descarga la versión exacta del release con verificación SHA-256. `scripts/Install-Runtime.ps1` detecta archivos incompletos y los repara conservando una copia del directorio anterior. En instalaciones antiguas basadas en Python puede aparecer `navis_install_status`: su diagnóstico corresponde al launcher anterior.
 
-Llama `navis_health`.
+Si no se encuentra una sesión, comprueba que Navisworks esté abierto con el complemento instalado bajo el mismo usuario. Con varias instancias, usa `navis_sessions` y `navis_target`.
 
-- **Responde con la versión de Navisworks** → todo bien, no hay nada que instalar.
-- **Solo existe `navis_install_status`** → falló el runtime de Python. Llámala: dice el intérprete, el destino y el comando exacto de `pip` para arreglarlo a mano.
-- **`No hay respuesta del complemento en Navisworks`** → el runtime está bien, falta el complemento o Navisworks está cerrado. Sigue abajo.
-- **`No encuentro una sesión activa`** → Navisworks está cerrado, o el servidor MCP corre como otro usuario. En ese caso apunta `NAVISCOORD_SESSION` al archivo de esa instancia dentro de `%LOCALAPPDATA%\NavisCoord\sessions\`.
+## Instalación del cliente
 
-## Instalar el complemento de Navisworks
+- ChatGPT Work de escritorio y Codex: extrae el ZIP de desktop del release y ejecuta `scripts/Install-DesktopPlugin.ps1`. Reinicia la app y abre **Plugins → Personal → NavisCoord → Install**. El instalador conserva las entradas ajenas del catálogo personal y comunica su nombre si no es `personal`.
+- Claude Desktop: instala el `.mcpb` del release mediante Extensions. Incluye su propio ejecutable.
+- Claude Code: añade el marketplace `HorizunGroup/naviscoord-mcp` e instala `naviscoord-mcp@horizun-navis`.
+- Registro directo: `scripts/Configure-Clients.ps1 -Executable <ruta real a naviscoord-mcp.exe> -Client <ClaudeDesktop|ClaudeCode|Codex>`.
 
-Requiere **Navisworks cerrado**. El script lo comprueba y se niega si está abierto: con el proceso vivo el DLL queda bloqueado y la copia falla a medias, que es peor que no copiar.
+Verifica los paquetes contra `SHA256SUMS.txt` del mismo release. Documentación completa: https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/INSTALL.md.
 
-Desde la raíz del repo o del plugin:
+## Complemento de Navisworks
 
-```powershell
-.\install.ps1
-```
+Con Navisworks cerrado, ejecuta `Install-NavisCoord.ps1` descargado del repositorio oficial. Selecciona los binarios de la versión instalada, verifica sus hashes y respalda los archivos gestionados. No sustituyas un DLL mientras Navisworks lo utiliza. Si hay cambios sin guardar, respeta la decisión de guardado del usuario antes de cerrar.
 
-Detecta cada Navisworks Manage 2024–2026 instalado, compila el complemento contra el API de **cada uno** — cada versión trae su propio ensamblado, un DLL no sirve para todas — e instala por versión verificando cada copia.
+Abre Navisworks y verifica `navis_health`, luego `navis_discover` con un modelo. Los binarios se instalan en `%APPDATA%\Autodesk\Navisworks Manage <año>\Plugins\NavisCoord\`. El registro está en `%LOCALAPPDATA%\NavisCoord\bridge.log`.
 
-- `.\install.ps1 -Version 2025` limita a una versión.
-- `.\install.ps1 -Uninstall` desinstala de todas.
-
-**Sin herramientas de compilación**: descarga `NavisCoord-addin-NW<versión>.zip` del release en GitHub y descomprime en
-`%APPDATA%\Autodesk\Navisworks Manage <versión>\Plugins\NavisCoord\`.
-
-Después abre Navisworks: el puente arranca solo. Para comprobarlo, la cinta tiene una pestaña propia **NavisCoord → Puente → Estado del puente**, que informa antes de actuar y no cambia nada si respondes «No».
-
-## Verificar
-
-1. `navis_health` → debe devolver versión de Navisworks y documento.
-2. Con un modelo abierto: `navis_discover` → cómo está estructurado el modelo.
-3. `navis_analyze` → el análisis completo.
-
-## Problemas frecuentes
-
-**Cambié de versión de Navisworks y falla la primera llamada.** No debería: el cliente relee la sesión y reintenta una vez. Si persiste, `navis_health` de nuevo; si sigue, el complemento no está instalado en esa versión.
-
-**Dos versiones abiertas a la vez.** Conviven en puertos distintos y cada una publica su propia sesión. Llama `navis_sessions` y elige la instancia con `navis_target`; una mutación ambigua se rechaza en vez de adivinar.
-
-**Cambié código Python del servidor y no se refleja.** El servidor MCP es un subproceso que cargó el código al arrancar. `navis_health` lo reporta en `server.code_newer_on_disk`; reinicia el cliente para cargarlo.
-
-**El complemento no aparece en Navisworks.** Comprueba que el DLL esté en
-`%APPDATA%\Autodesk\Navisworks Manage <versión>\Plugins\NavisCoord\NavisCoord.dll`
-y revisa `%LOCALAPPDATA%\NavisCoord\bridge.log`: el complemento nunca abre diálogos, todo lo escribe ahí.
+Después de actualizar, reinicia el cliente MCP y vuelve a verificar versiones y documento. Para análisis usa `navis_analyze`; para comprobar vigencia usa `navis_analysis_state`. Repite el análisis cuando cambien el modelo, los conjuntos o los resultados de clash.

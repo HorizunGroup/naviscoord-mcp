@@ -97,7 +97,10 @@ class TestEveryDivisor:
     """The audit: no accepted profile can make a known divisor zero."""
 
     def test_the_shipped_profiles_all_validate(self) -> None:
-        for path in sorted(Path("server/naviscoord/profiles").glob("*.json")):
+        folder = Path(__file__).resolve().parents[1] / "naviscoord" / "profiles"
+        profiles = sorted(p for p in folder.glob("*.json") if p.name != "profile_contract.json")
+        assert profiles, "No shipped profiles found"
+        for path in profiles:
             raw = json.loads(path.read_text(encoding="utf-8"))
             assert not validate_semantics(raw), f"{path.name} no valida"
 

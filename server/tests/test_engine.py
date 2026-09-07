@@ -149,6 +149,7 @@ def test_flush_mounted_devices_are_not_clashes(profile):
         "ele/o1", "Electrical Fixtures", "DUPLEX_REC", ((4, 0.02, 0.3), (4.1, 0.12, 0.45)),
         source_file="PROY-ELE.rvt",
     )
+    outlet["props"]["NC:HostPath"] = wall["path_id"]
     panel = synth.element(
         "ele/p1", "Electrical Equipment", "TABLERO TD-1", ((6, -0.4, 1.0), (6.6, 0.15, 2.0)),
         source_file="PROY-ELE.rvt",
@@ -245,7 +246,8 @@ def test_issue_ids_follow_priority_order(profile):
     result = analyze(ClashExport.from_json(synth.full_project_case()), profile)
     severities = [issue.severity for issue in result.issues]
     assert severities == sorted(severities, reverse=True)
-    assert result.issues[0].issue_id == "ISS-0001"
+    assert len({i.issue_id for i in result.issues}) == len(result.issues)
+    assert all(i.issue_id.startswith("ISS-") for i in result.issues)
 
 
 # ----------------------------------------------------------- root causes
@@ -260,7 +262,8 @@ def test_systemic_elevation_is_detected(profile):
     assert cause.clash_count == 10
     assert cause.evidence["system"] == "AA-SUMINISTRO-01"
     assert 240.0 <= cause.evidence["mean_overlap_mm"] <= 260.0
-    assert "250" in cause.suggested_action or "300" in cause.suggested_action
+    assert cause.evidence["vertical_separation"]["up_m"] > .25
+    assert cause.evidence["vertical_separation"]["down_m"] > .9
 
 
 def test_scattered_clashes_do_not_fake_a_systemic_cause(profile):

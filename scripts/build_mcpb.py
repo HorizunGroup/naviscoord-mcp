@@ -1,35 +1,8 @@
-"""Empaqueta NavisCoord como MCP Bundle (.mcpb) para Claude Desktop.
+"""Package the standalone Windows MCP runtime as a Claude Desktop .mcpb.
 
-Un `.mcpb` es un zip con el servidor y un `manifest.json` que lo describe, y
-es la única forma en que un servidor MCP **local** entra al directorio de
-conectores de Anthropic: el portal de conectores solo acepta servidores
-remotos, y NavisCoord necesita el Navisworks que está corriendo en ESTA
-máquina.
-
-Dos decisiones que no son obvias:
-
-**No vendoriza las dependencias dentro del zip.** El bundle arranca
-`scripts/plugin_launcher.py`, el mismo punto de entrada que ya usan los
-plugins de Claude Code y Codex, que crea un entorno virtual propio y lo
-instala desde `runtime-lock.json`. Meter reportlab y pillow dentro del zip
-sería un segundo mecanismo de aprovisionamiento —con sus propias ruedas por
-plataforma y su propia forma de quedar desactualizado— para resolver un
-problema que ya está resuelto y probado. Un solo camino de arranque es
-también un solo camino que puede fallar.
-
-**La lista de tools se lee del servidor vivo, no se escribe a mano.** El
-manifiesto declara las 50 tools con su descripción; una lista copiada a mano
-queda desfasada en la primera release y nadie lo nota hasta que el revisor
-compara. Aquí se importa el servidor y se listan de verdad.
-
-Uso:
-
-    python scripts/build_mcpb.py            # arma dist/mcpb/ y el manifiesto
-    python scripts/build_mcpb.py --pack     # además empaqueta el .mcpb
-
-`--pack` exige el CLI `mcpb` en el PATH (`npm install -g @anthropic-ai/mcpb`).
-Si no está, el script deja el árbol listo y dice el comando exacto que falta,
-en vez de instalar nada por su cuenta.
+Build the portable runtime first with scripts/build_portable.py.
+The bundle includes all Python dependencies and needs no external interpreter.
+Tool declarations are generated from the registered server.
 """
 
 from __future__ import annotations
@@ -121,9 +94,9 @@ def manifest(release: str) -> dict:
             "From there come the work plan, the coordination matrix, the "
             "written report, and a PDF with a verified image per clash.\n\n"
             "The model never leaves the machine: the analysis runs locally "
-            "and only the summary travels to the client. Every write to the "
-            "document is two-step, requires the fingerprint of the document "
-            "you meant, and reports only what it verified by reading back."
+            "and requested tool results travel to the client. Document writes "
+            "require the fingerprint of the intended document and report "
+            "what was verified by reading back."
         ),
         "icon": "assets/icon.png",
         "author": {"name": "HorizunGroup", "url": "https://github.com/HorizunGroup"},
@@ -142,11 +115,11 @@ def manifest(release: str) -> dict:
             "construction",
         ],
         "server": {
-            "type": "python",
-            "entry_point": "scripts/plugin_launcher.py",
+            "type": "binary",
+            "entry_point": "runtime/naviscoord-mcp.exe",
             "mcp_config": {
-                "command": "python",
-                "args": ["${__dirname}/scripts/plugin_launcher.py"],
+                "command": "${__dirname}/runtime/naviscoord-mcp.exe",
+                "args": [],
                 "env": {
                     # Vacío significa «solo la carpeta de exportación por
                     # defecto», que es exactamente lo que hace paths.py con
@@ -174,29 +147,27 @@ def manifest(release: str) -> dict:
             # tiene con qué hablar. Declararlo multiplataforma sería ofrecerle
             # a un usuario de macOS una instalación que no puede funcionar.
             "platforms": ["win32"],
-            "runtimes": {"python": ">=3.10"},
         },
     }
 
 
 def stage(release: str) -> Path:
+    if STAGE.resolve().parent != (ROOT / "dist").resolve():
+        raise RuntimeError("Unsafe staging directory")
     if STAGE.exists():
         shutil.rmtree(STAGE)
     (STAGE / "scripts").mkdir(parents=True)
 
-    for relative in LAUNCHER_FILES + LEGAL_FILES:
+    for relative in LEGAL_FILES:
         source = ROOT / relative
         destination = STAGE / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
 
-    # El paquete Python entero, sin caches: un __pycache__ de otra versión de
-    # intérprete dentro del zip es peso muerto en el mejor caso.
-    shutil.copytree(
-        SERVER / "naviscoord",
-        STAGE / "server" / "naviscoord",
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-    )
+    runtime = ROOT / "dist/portable/naviscoord-mcp"
+    if not (runtime / "naviscoord-mcp.exe").is_file():
+        raise RuntimeError("Build the standalone runtime before packaging the MCP bundle.")
+    shutil.copytree(runtime, STAGE / "runtime")
 
     (STAGE / "manifest.json").write_text(
         json.dumps(manifest(release), indent=2, ensure_ascii=False) + "\n",
