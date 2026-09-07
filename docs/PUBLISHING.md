@@ -1,164 +1,42 @@
-# Publicación en directorios
+# Distribution and directory publication
 
-[RELEASING.md](RELEASING.md) termina con el tag y los artefactos construidos.
-Este documento es el paso siguiente y es otra cosa: dónde se publica
-NavisCoord para que alguien que no nos conoce lo encuentre.
+The source changes for 1.0 are public in [PR #19](https://github.com/HorizunGroup/naviscoord-mcp/pull/19). The stable 1.0 release is not published yet. Directory submission must reference available, tested artifacts; this document does not claim that any submission has been approved.
 
-Son tres canales independientes. Ninguno depende de los otros, y un fallo en
-uno no bloquea a los demás.
-
-| Canal | Qué se lista | Estado |
+| Channel | Distribution route | Current 1.0 status |
 |---|---|---|
-| Directorio de plugins de Claude | el plugin completo (MCP + skill) | listo para enviar |
-| Registro oficial de MCP | el paquete de PyPI | falta publicar en PyPI |
-| Directorio de conectores (MCPB) | un bundle de escritorio | listo para empaquetar y enviar |
+| GitHub Releases | Stable tag, three Navisworks add-in ZIPs, runtime ZIP, desktop ZIP, MCPB, wheel/sdist, SHA256SUMS.txt | Built locally; merge and final release pending |
+| ChatGPT Work desktop / Codex | Local Personal marketplace and standalone runtime | Installed locally; Codex CLI installation and MCP protocol passed; Work conversation check pending |
+| Claude Code | Repository plugin or direct stdio registration | Direct 1.0 connection and repeated registration verified |
+| Claude Desktop | Standalone MCPB or local stdio configuration | Official bundle validation passed; app-level check pending |
+| Claude desktop extension directory | [Official submission instructions](https://claude.com/docs/connectors/building/submission) | Not submitted; requires final artifact and review contact |
+| Claude plugin directory | [Plugin submission portal](https://platform.claude.com/plugins/submit) | Not submitted as 1.0 |
+| PyPI | Versioned wheel and sdist, then authenticated upload or configured Trusted Publisher | Artifacts built; publication credentials/setup not established |
+| Official MCP Registry | `server.json`, published Python package, GitHub namespace authentication | Metadata prepared; depends on PyPI publication |
+| Glama | [Repository indexing and ownership verification](https://glama.ai/mcp/methodology) | Not submitted; listing ownership and local-runtime suitability to verify |
+| Additional community directories | Assess current submission requirements and avoid duplicate listings | No 1.0 submission claimed |
 
-Los tres terminan en un formulario que exige una sesión iniciada. Esa parte no
-la automatiza nadie: la hace una persona con permisos en la organización.
+## Ready-to-use listing information
 
-## 1. Directorio de plugins de Claude
+**Name:** NavisCoord by HorizunGroup
 
-Es el marketplace `claude-plugins-official` que Claude Code y Cowork traen
-puesto. Acepta plugins con MCP **local**, que es nuestro caso.
+**Tagline:** Turn Navisworks clashes into coordination decisions.
 
-Antes de enviar:
+**Description:** NavisCoord connects a desktop AI client to Autodesk Navisworks Manage on the same Windows computer. It exposes 53 MCP tools for model discovery, clash tests, evidence-aware analysis, coordination groups, revision comparisons and reports. Document writes check their target and report verification outcomes. The standalone runtime includes its dependencies. Live use requires licensed Navisworks Manage 2024, 2025 or 2026. Requested tool outputs can include model properties, coordinates and images sent to the user's AI client.
 
-```powershell
-claude plugin validate .
-```
+**Repository:** https://github.com/HorizunGroup/naviscoord-mcp
 
-El repositorio tiene que ser público — no se aceptan plugins de código
-cerrado — y lo que se envía es el link de GitHub, no un zip.
+**Documentation:** https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/INSTALL.md
 
-Hay dos formularios y **para HorizunGroup solo sirve el de Console**:
+**Privacy:** https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/PRIVACY.md
 
-- Console, para un autor con rol Developer, Admin u Owner:
-  <https://platform.claude.com/plugins/submit>
-- Claude.ai, que exige organización Team o Enterprise:
-  <https://claude.ai/admin-settings/directory/submissions/plugins/new>
+**Support:** https://github.com/HorizunGroup/naviscoord-mcp/issues
 
-El segundo responde «You don't have access to organization settings» con la
-cuenta actual: es una cuestión de plan, no de permisos, y no se arregla siendo
-administrador de la empresa.
+**Icon:** `assets/icon.png`. Obtain the review contact from the publisher; do not invent an email address or publish a private account address without authorization.
 
-En Console, `/plugins/submit` redirige al alta de organización si quedó a
-medias, y el paso donde se detiene es el de comprar créditos. **No hacen falta
-créditos para enviar un plugin**: el botón que corresponde es «Skip for now».
+## Publication requirements
 
-Entra como plugin de comunidad con revisión automática. El sello «Anthropic
-Verified» es una escalación que decide Anthropic; no se solicita.
+The [official MCP Registry quickstart](https://modelcontextprotocol.io/registry/quickstart) requires the referenced package to be published first. `server.json` and the PyPI README must agree on `io.github.HorizunGroup/naviscoord-mcp`. Verify the wheel includes the README ownership marker and matches the declared release version before upload.
 
-**Después de publicado no se reenvía el formulario en cada versión**: el CI de
-Anthropic espeja los cambios del repositorio al marketplace público y corre el
-escrutinio automático en cada actualización.
+Claude's [official submission page](https://claude.com/docs/connectors/building/submission) distinguishes local desktop MCPB submissions from the remote connector portal. Local bundles have a separate form and require a public privacy policy and annotated tools. A successful form submission is pending review, not certification. Record the actual submission URL or receipt and status here when available.
 
-## 2. Registro oficial de MCP
-
-No es de Anthropic: es el índice que consumen varios clientes. Lo que se
-publica es una referencia al paquete, así que el paquete tiene que existir
-primero — y `naviscoord` todavía no está en PyPI.
-
-El manifiesto es [`server.json`](../server.json) en la raíz, validado contra
-el esquema `2025-12-11`.
-
-Dos cosas que se comprueban solas y conviene entender antes de correr nada:
-
-- **El nombre exige ser Owner.** `io.github.HorizunGroup/naviscoord-mcp` solo
-  se concede a un Owner de la organización HorizunGroup en GitHub; pertenecer
-  a la organización no basta. Que `io.github.HorizunGroup/horizun-msproject-mcp`
-  ya esté publicado en el registro confirma que el namespace funciona con esa
-  cuenta y con esa capitalización.
-- **La propiedad del paquete se verifica leyendo el README que PyPI muestra
-  como descripción**, buscando ahí la cadena `mcp-name:
-  io.github.HorizunGroup/naviscoord-mcp`. El marcador ya está en
-  [README.md](../README.md), pero viaja dentro del wheel y del sdist: si
-  subes a PyPI un artefacto construido **antes** de que se agregara, la
-  verificación falla y no hay forma de arreglarlo salvo publicar otra versión.
-
-Orden:
-
-```powershell
-python scripts\build_artifacts.py
-```
-
-```powershell
-python -m twine upload server\dist\naviscoord-0.4.1*
-```
-
-El token de la **primera** subida tiene que ser de alcance «Entire account»:
-PyPI no deja acotar un token a un proyecto que todavía no existe. En cuanto
-`naviscoord` esté publicado conviene emitir uno acotado y retirar el otro.
-
-La alternativa es Trusted Publishing, que sube desde GitHub Actions por OIDC y
-elimina el token. No está implementado a propósito: el `ci.yml` de este
-repositorio declara que ningún job publica nada, y activar OIDC significa dar
-`id-token: write` a un workflow. Es una decisión de postura, no una tarea
-pendiente.
-
-```powershell
-mcp-publisher login github
-```
-
-```powershell
-mcp-publisher publish --dry-run
-```
-
-```powershell
-mcp-publisher publish
-```
-
-La versión de `server.json` debe coincidir con la que quedó en PyPI, y hay que
-subirla en cada release igual que el resto de las declaraciones de versión.
-
-## 3. Directorio de conectores, como extensión de escritorio
-
-El portal de conectores acepta **solo servidores remotos**, así que por ahí
-NavisCoord no entra: necesita el Navisworks que corre en la misma máquina. La
-puerta para un servidor local es el bundle MCPB, que es lo que Claude Desktop
-instala desde Settings → Extensions → Browse extensions, y tiene su propio
-formulario.
-
-Armar el bundle:
-
-```powershell
-python scripts\build_mcpb.py --pack
-```
-
-`--pack` necesita el CLI oficial (`npm install -g @anthropic-ai/mcpb`). Sin
-él, el script deja el árbol en `dist/mcpb` y dice qué falta.
-
-Lo que la revisión exige y aquí ya está resuelto:
-
-- **Política de privacidad**, sección en el README y `privacy_policies` en el
-  manifiesto, con URL HTTPS. Falta o incompleta es rechazo inmediato.
-- **Anotaciones en todas las tools**: `title` más `readOnlyHint` o
-  `destructiveHint`. Las 50 las llevan, y dos tests lo sostienen
-  (`test_every_tool_is_annotated`, `test_no_writing_tool_claims_to_be_read_only`).
-- **Lectura y escritura separadas**, sin una tool que haga ambas según un
-  parámetro.
-- **Código abierto**, que no es negociable para MCPB.
-
-El icono es [`assets/icon.png`](../assets/icon.png), generado por
-[`scripts/make_icon.py`](../scripts/make_icon.py) sobre el `brandColor` que ya
-declaraba el manifiesto de Codex. El manifiesto del bundle lo declara y el
-mismo archivo sirve para subir en los formularios.
-
-Lo único que no está en el repositorio es un **correo de soporte público**:
-hoy el canal es issues de GitHub. Los formularios piden además un contacto de
-revisión, que se escribe ahí y no vive en el código.
-
-Formulario: <https://clau.de/desktop-extention-submission>
-
-## Antes de cualquier envío
-
-```powershell
-cd server
-python -m pytest tests -q
-```
-
-```powershell
-claude plugin validate ..
-```
-
-Los criterios completos que aplica la revisión están en
-<https://claude.com/docs/connectors/building/review-criteria>.
+For each directory, verify the repository is not already listed, submit only supported local-client capabilities, and retain a record of the outcome. Do not manufacture public endpoints, Windows signing trust, approval badges or zero-defect guarantees to meet a form's requirements.
