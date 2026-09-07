@@ -71,7 +71,7 @@ Load a company profile to control disciplines, category/file mappings, tolerance
 
 NavisCoord produces evidence and proposed coordination actions. Engineering approval and edits in the authoring application remain with the project team. Handoff files carry the IDs needed to continue with tools such as [Horizun Revit MCP](https://github.com/HorizunGroup/horizun-revit-mcp) and [Horizun PBI MCP](https://github.com/HorizunGroup/horizun-pbi-mcp).
 
-## Privacy
+## Privacy Policy
 
 NavisCoord does not upload the complete model or send telemetry to a Horizun service. Requested tool outputs can include model names, element properties, coordinates and images; your AI client receives those outputs. [Read the privacy policy](docs/PRIVACY.md) and [security model](docs/SECURITY-MODEL.md).
 
