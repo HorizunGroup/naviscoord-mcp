@@ -4,7 +4,7 @@ Status: verification in progress; no 1.0 release has been published. Base: publi
 
 | Area | Evidence | State |
 |---|---|---|
-| Engine and packaging | Full Python suite: 983 passed, 2 skipped, including final report regressions | Passed |
+| Engine and packaging | Full Python suite: 986 passed, 2 skipped, including report and concurrent-publication regressions | Passed |
 | Add-in shared logic | `dotnet run --project addin/NavisCoord.Tests -c Release`: 1,860 checks | Passed |
 | Native assemblies | Build-Release: 2024, 2025, 2026; public-path guard passed | Passed |
 | Runtime dependencies | Clean environment, 33 pinned packages installed with hashes; pip check | Passed |
@@ -36,3 +36,5 @@ CI on cc248d0 passed all 20 jobs, including the required ci-ok, Python 3.10–3.
 Final client-code CI on `e9add09` passed the required `ci-ok`. Live acceptance subsequently passed in 2024 and 2025 with 208 raw clashes and 68 issues in each. All QA document changes were discarded without saving; process exit was checked. The 2025 process exited after the bounded verification window, so the first exit response correctly reported incomplete verification, followed by confirmed absence of the process.
 
 Claude Desktop connection to add-in 1.0.0.0 was confirmed by the user after restart. The four client paths now have verification records: Work desktop and Claude Desktop by user confirmation; Codex installation/protocol and Claude Code connection by tool observation. Required ci-ok passed on 981c0e4. Release merge still requires an independent approval.
+
+A later CI run on `bf2fd10` exposed a concurrent export cleanup race. The collector could delete another writer's staging directory or a promoted generation before its pointer landed. Publication now uses OS ownership locks, serializes promotion with retention, protects verification from collection, and refuses reused generation IDs. Three deterministic regression cases and the full local suite passed; the rebuilt standalone runtime passed live MCP health. The subsequent CI run must pass before release.

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import naviscoord.bundle as bundle
 
 from naviscoord.bundle import (
     CURRENT_NAME,
@@ -268,6 +269,68 @@ class TestRetention:
 
 
 class TestConcurrentWriters:
+    def test_prune_preserves_a_writer_paused_inside_an_artifact(self, root: Path) -> None:
+        started, resume = threading.Event(), threading.Event()
+        results: list[Any] = []
+
+        def slow_artifact(path: Path) -> None:
+            started.set()
+            assert resume.wait(10), "test did not release the writer"
+            path.write_text("completed", encoding="utf-8")
+
+        def writer() -> None:
+            try:
+                results.append(publish(root, [Artifact("slow.json", slow_artifact)]))
+            except Exception as exc:
+                results.append(exc)
+
+        thread = threading.Thread(target=writer)
+        thread.start()
+        try:
+            assert started.wait(10)
+            # This used to classify every staging directory as orphaned.
+            for i in range(4):
+                publish(root, _good_set(str(i)), retention=2)
+            assert len(list(root.glob(".staging-*"))) == 1
+        finally:
+            resume.set()
+            thread.join(15)
+        assert not thread.is_alive()
+        assert len(results) == 1 and not isinstance(results[0], Exception), results
+        assert verify(root)["ok"]
+        assert (results[0].directory / "slow.json").read_text() == "completed"
+
+    def test_promotion_and_retention_share_the_pointer_lock(self, root: Path, monkeypatch) -> None:
+        original = bundle.os.replace
+        probes: list[bool] = []
+
+        def probe() -> None:
+            try:
+                with bundle._pointer_lock(root, timeout=0):
+                    probes.append(False)
+            except BundleError:
+                probes.append(True)
+
+        def replace(source, destination) -> None:
+            if Path(source).name.startswith(bundle.STAGING_PREFIX):
+                worker = threading.Thread(target=probe)
+                worker.start()
+                worker.join(5)
+                assert not worker.is_alive()
+            original(source, destination)
+
+        monkeypatch.setattr(bundle.os, "replace", replace)
+        publish(root, _good_set())
+        assert probes == [True], "collector could delete a generation before its pointer lands"
+        assert verify(root)["ok"]
+
+    def test_reused_generation_id_preserves_the_existing_publication(self, root: Path) -> None:
+        first = publish(root, _good_set("original"))
+        with pytest.raises(BundleError):
+            publish(root, _good_set("replacement"), generation_id=first.generation_id)
+        assert verify(root)["ok"]
+        assert json.loads((first.directory / "coordination_handoff.json").read_text())["gen"] == "original"
+
     def test_two_handoffs_do_not_interleave(self, root: Path) -> None:
         """Each staging is independent; only the pointer is contended.
 
