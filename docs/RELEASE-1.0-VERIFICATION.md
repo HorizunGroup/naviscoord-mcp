@@ -18,7 +18,7 @@ Status: verification in progress; no 1.0 release has been published. Base: publi
 | Work desktop conversation | User confirmed navis_health connects to add-in 1.0.0.0 from a new Work desktop conversation | Passed (user reported) |
 | Claude Desktop extension | User confirmed navis_health connects to add-in 1.0.0.0 after restarting Claude Desktop | Passed (user reported) |
 | Claude Code | Standalone 1.0 registration, repeated update and Claude CLI Connected status | Passed |
-| Directory submissions | Anthropic MCPB form and MCPFly repository form confirmed receipt on 2026-09-07 UTC | Submitted; external evaluation pending |
+| Directory submissions | Anthropic MCPB, Claude plugin directory and MCPFly confirmed receipt on 2026-09-07 UTC; Glama action recorded separately | Submitted; external evaluation pending |
 | Public stable release | Independent merge approval and final release publication remain outstanding | Pending |
 
 ## Live acceptance
@@ -44,3 +44,5 @@ A later CI run on `bf2fd10` exposed a concurrent export cleanup race. The collec
 An in-use desktop update exposed PowerShell Move-Item's partial-directory behavior. The interrupted local copy was restored and passed live MCP health. The installer now uses a directory rename and installs a complete sibling copy when active clients prevent replacement; the Personal catalog points at that copy. The isolated regression exercises held-open files. The corrected installer was applied locally, and Claude Desktop, Claude Code and the Codex Personal plugin were configured for the rebuilt runtime without terminating active client conversations. Existing desktop processes adopt it after restart.
 
 Required CI passed on `0a10f4f`, including the declared-minimum dependency job that exposed the export race and all other 19 jobs. The desktop installer follow-up also passed its local held-file regression and live stdio health; its CI run is subsequent. Actual directory receipts are recorded in [PUBLISHING.md](PUBLISHING.md).
+
+Final runtime and installer CI passed on `6ac2647` ([run 34075191413](https://github.com/HorizunGroup/naviscoord-mcp/actions/runs/34075191413)), including the required ci-ok, Windows installation with held-open runtime files and all Python/MCP combinations. The GitHub release is staged as an unpublished draft with eight distributables and SHA256SUMS.txt; isPrerelease is false. Main remains protected by independent review. Subsequent changes to this record only add distribution receipts.
