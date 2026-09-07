@@ -65,6 +65,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-PortableInstall.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-DesktopInstall.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   engine:
     name: motor (py${{ matrix.python }}, mcp${{ matrix.mcp }})
     runs-on: ubuntu-latest

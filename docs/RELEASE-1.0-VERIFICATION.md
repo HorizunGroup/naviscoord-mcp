@@ -10,6 +10,7 @@ Status: verification in progress; no 1.0 release has been published. Base: publi
 | Runtime dependencies | Clean environment, 33 pinned packages installed with hashes; pip check | Passed |
 | Real MCP protocol | Standalone executable and PowerShell plugin launcher: initialize, 53 tools, tool call, live health | Passed |
 | Runtime repair | Verified download, corrupt-file repair and offline repeated installation | Passed |
+| Desktop updates with active clients | Fresh and repeated installs, side-by-side update while runtime files are held open, unrelated catalog preservation | Passed |
 | Add-in recovery | 24 backup/install/update/restore and failure-injection checks | Passed |
 | Public artifact guard | 21 self-tests | Passed |
 | Claude bundle | Official MCPB CLI validates and packs the binary bundle | Passed |
@@ -38,3 +39,5 @@ Final client-code CI on `e9add09` passed the required `ci-ok`. Live acceptance s
 Claude Desktop connection to add-in 1.0.0.0 was confirmed by the user after restart. The four client paths now have verification records: Work desktop and Claude Desktop by user confirmation; Codex installation/protocol and Claude Code connection by tool observation. Required ci-ok passed on 981c0e4. Release merge still requires an independent approval.
 
 A later CI run on `bf2fd10` exposed a concurrent export cleanup race. The collector could delete another writer's staging directory or a promoted generation before its pointer landed. Publication now uses OS ownership locks, serializes promotion with retention, protects verification from collection, and refuses reused generation IDs. Three deterministic regression cases and the full local suite passed; the rebuilt standalone runtime passed live MCP health. The subsequent CI run must pass before release.
+
+An in-use desktop update exposed PowerShell Move-Item's partial-directory behavior. The interrupted local copy was restored and passed live MCP health. The installer now uses a directory rename and installs a complete sibling copy when active clients prevent replacement; the Personal catalog points at that copy. The isolated regression exercises held-open files. The corrected installer was applied locally, and Claude Desktop, Claude Code and the Codex Personal plugin were configured for the rebuilt runtime without terminating active client conversations. Existing desktop processes adopt it after restart.

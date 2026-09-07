@@ -28,15 +28,24 @@ try {
     Copy-Item -LiteralPath $runtime -Destination (Join-Path $stage 'runtime') -Recurse
     if (Test-Path -LiteralPath $destination) {
         if (-not ([IO.Path]::GetFullPath($destination)).StartsWith($pluginRoot + '\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe plugin path.' }
-        Move-Item -LiteralPath $destination -Destination $backup
+        # Directory.Move is a single rename. Move-Item can move individual files
+        # before failing on a running client's DLL, leaving a partial install.
+        try { [IO.Directory]::Move($destination, $backup) }
+        catch {
+            # Running desktop clients can keep the whole directory locked.
+            # Install beside it and point the catalog at the complete new copy.
+            # Existing processes keep their original files until they exit.
+            if (-not (Test-Path -LiteralPath $destination) -or (Test-Path -LiteralPath $backup)) { throw }
+            $destination = Join-Path $pluginRoot ('naviscoord-mcp-' + [guid]::NewGuid().ToString('N'))
+        }
     }
-    try { Move-Item -LiteralPath $stage -Destination $destination }
+    try { [IO.Directory]::Move($stage, $destination) }
     catch {
-        if (Test-Path -LiteralPath $backup) { Move-Item -LiteralPath $backup -Destination $destination }
+        if (Test-Path -LiteralPath $backup) { [IO.Directory]::Move($backup, $destination) }
         throw
     }
     $entry = [pscustomobject]@{
-        name='naviscoord-mcp'; source=@{source='local';path='./plugins/naviscoord-mcp'}
+        name='naviscoord-mcp'; source=@{source='local';path=('./plugins/' + [IO.Path]::GetFileName($destination))}
         policy=@{installation='AVAILABLE';authentication='ON_INSTALL'};category='Productivity'
     }
     $catalog.plugins = @($catalog.plugins | Where-Object name -ne 'naviscoord-mcp') + @($entry)
@@ -46,7 +55,7 @@ try {
     if (Test-Path -LiteralPath $marketplace) {
         [IO.File]::Replace($temp,$marketplace,($marketplace+'.backup-'+[guid]::NewGuid().ToString('N')))
     } else { [IO.File]::Move($temp,$marketplace) }
-    [pscustomobject]@{status='configured';plugin=$manifest.name;version=$manifest.version;marketplace=$catalog.name;next='Restart ChatGPT Desktop. Open Plugins > Personal > NavisCoord > Install.'} | ConvertTo-Json
+    [pscustomobject]@{status='configured';plugin=$manifest.name;version=$manifest.version;marketplace=$catalog.name;directory=$destination;runtime=(Join-Path $destination 'runtime');next='Restart ChatGPT Desktop. Open Plugins > Personal > NavisCoord > Install.'} | ConvertTo-Json
 } finally {
     if (Test-Path -LiteralPath $stage) {
         if (([IO.Path]::GetFullPath($stage)).StartsWith($pluginRoot + '\',[StringComparison]::OrdinalIgnoreCase)) {
