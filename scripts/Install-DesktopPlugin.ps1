@@ -55,7 +55,9 @@ try {
     if (Test-Path -LiteralPath $marketplace) {
         [IO.File]::Replace($temp,$marketplace,($marketplace+'.backup-'+[guid]::NewGuid().ToString('N')))
     } else { [IO.File]::Move($temp,$marketplace) }
-    [pscustomobject]@{status='configured';plugin=$manifest.name;version=$manifest.version;marketplace=$catalog.name;directory=$destination;runtime=(Join-Path $destination 'runtime');next='Restart ChatGPT Desktop. Open Plugins > Personal > NavisCoord > Install.'} | ConvertTo-Json
+    # If the plugin is already enabled in Codex, drop a direct server entry so only one instance runs.
+    $duplicates = @(& (Join-Path $PSScriptRoot 'Resolve-DuplicateRegistrations.ps1') -Keep Plugin -Client Codex -HomeDirectory $homeRoot | ConvertFrom-Json | ForEach-Object { $_ })
+    [pscustomobject]@{status='configured';plugin=$manifest.name;version=$manifest.version;marketplace=$catalog.name;directory=$destination;runtime=(Join-Path $destination 'runtime');duplicates=$duplicates;next='Restart ChatGPT Desktop. Open Plugins > Personal > NavisCoord > Install.'} | ConvertTo-Json -Depth 6
 } finally {
     if (Test-Path -LiteralPath $stage) {
         if (([IO.Path]::GetFullPath($stage)).StartsWith($pluginRoot + '\',[StringComparison]::OrdinalIgnoreCase)) {

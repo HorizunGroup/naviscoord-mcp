@@ -1,4 +1,4 @@
-<# Registers the same standalone server in Claude Desktop, Claude Code and Codex. #>
+<# Registers the same standalone server in Claude Desktop, Claude Code and Codex, leaving one NavisCoord registration per client. #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][string]$Executable,
@@ -12,6 +12,7 @@ if ([IO.Path]::GetExtension($exe) -ne '.exe') { throw 'Select the packaged navis
 $name = 'horizun-navis-mcp'
 $mode = if ($ReadOnly) { '1' } else { '0' }
 $outcomes = @()
+$resolver = Join-Path $PSScriptRoot 'Resolve-DuplicateRegistrations.ps1'
 if ($Client -in @('All','ClaudeDesktop')) {
     if (-not $DesktopConfig) {
         $DesktopConfig = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
@@ -36,6 +37,10 @@ if ($Client -in @('All','ClaudeDesktop')) {
     }
     $entry = [pscustomobject]@{ command=$exe; args=@(); env=@{ NAVISCOORD_READ_ONLY=$mode } }
     $config.mcpServers | Add-Member -NotePropertyName $name -NotePropertyValue $entry -Force
+    # One NavisCoord entry only: drop other Navisworks entries registered under an older name.
+    $superseded = @($config.mcpServers.PSObject.Properties | Where-Object {
+        $_.Name -ne $name -and ($_.Name -match 'navis' -or (([string]$_.Value.command + ' ' + (@($_.Value.args) -join ' ')) -match 'naviscoord')) } | ForEach-Object { $_.Name })
+    foreach ($old in $superseded) { $config.mcpServers.PSObject.Properties.Remove($old) }
     $directory = Split-Path $DesktopConfig -Parent
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
     $temporary = $DesktopConfig + '.new-' + [guid]::NewGuid().ToString('N')
@@ -46,7 +51,7 @@ if ($Client -in @('All','ClaudeDesktop')) {
     if (Test-Path -LiteralPath $DesktopConfig) {
         [IO.File]::Replace($temporary,$DesktopConfig,($DesktopConfig+'.backup-'+[guid]::NewGuid().ToString('N')))
     } else { [IO.File]::Move($temporary,$DesktopConfig) }
-    $outcomes += [pscustomobject]@{client='Claude Desktop';status='configured';next='Restart Claude Desktop and verify navis_health'}
+    $outcomes += [pscustomobject]@{client='Claude Desktop';status='configured';removed_duplicates=$superseded;next='Restart Claude Desktop and verify navis_health'}
 }
 if ($Client -in @('All','ClaudeCode')) {
     $cli = Get-Command claude -ErrorAction SilentlyContinue
@@ -70,13 +75,15 @@ if ($Client -in @('All','ClaudeCode')) {
         throw 'Claude Code update failed; attempted to restore the previous entry. Backup retained.'
     }
     if ($LASTEXITCODE -ne 0) { throw 'Claude Code registration failed; existing configuration was preserved.' }
-    $outcomes += [pscustomobject]@{client='Claude Code';status='configured';next='claude mcp get horizun-navis-mcp'}
+    $duplicates = @(& $resolver -Keep Direct -Client ClaudeCode -HomeDirectory $env:USERPROFILE | ConvertFrom-Json | ForEach-Object { $_ })
+    $outcomes += [pscustomobject]@{client='Claude Code';status='configured';duplicates=$duplicates;next='claude mcp get horizun-navis-mcp'}
 }
 if ($Client -in @('All','Codex')) {
     $cli = Get-Command codex -ErrorAction SilentlyContinue
     if (-not $cli) { throw 'Codex CLI is not installed.' }
     & $cli.Source mcp add $name --env "NAVISCOORD_READ_ONLY=$mode" -- $exe
     if ($LASTEXITCODE -ne 0) { throw 'Codex registration failed.' }
-    $outcomes += [pscustomobject]@{client='Codex';status='configured';next='Restart the client and verify navis_health'}
+    $duplicates = @(& $resolver -Keep Direct -Client Codex -HomeDirectory $env:USERPROFILE | ConvertFrom-Json | ForEach-Object { $_ })
+    $outcomes += [pscustomobject]@{client='Codex';status='configured';duplicates=$duplicates;next='Restart the client and verify navis_health'}
 }
 $outcomes | ConvertTo-Json -Depth 5

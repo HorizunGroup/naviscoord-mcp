@@ -20,7 +20,8 @@ Si no se encuentra una sesión, comprueba que Navisworks esté abierto con el co
 - ChatGPT Work de escritorio y Codex: extrae el ZIP de desktop del release y ejecuta `scripts/Install-DesktopPlugin.ps1`. Reinicia la app y abre **Plugins → Personal → NavisCoord → Install**. El instalador conserva las entradas ajenas del catálogo personal y comunica su nombre si no es `personal`.
 - Claude Desktop: instala el `.mcpb` del release mediante Extensions. Incluye su propio ejecutable.
 - Claude Code: añade el marketplace `HorizunGroup/naviscoord-mcp` e instala `naviscoord-mcp@horizun-navis`.
-- Registro directo: `scripts/Configure-Clients.ps1 -Executable <ruta real a naviscoord-mcp.exe> -Client <ClaudeDesktop|ClaudeCode|Codex>`.
+- Registro directo: `scripts/Configure-Clients.ps1 -Executable <ruta real a naviscoord-mcp.exe> -Client <ClaudeDesktop|ClaudeCode|Codex>`. Deja una sola instancia por cliente: deshabilita el plugin `naviscoord-mcp@*` de Claude Code y quita los registros de Navisworks con otro nombre, con copia de respaldo con fecha.
+- Un solo registro por cliente: si ves el servidor dos veces (plugin y registro directo, o dos nombres), ejecuta `scripts/Resolve-DuplicateRegistrations.ps1 -Keep <Direct|Plugin> -Client <ClaudeCode|Codex|All>` (añade `-Check` para ver qué haría) y pide reiniciar el cliente. El nombre vigente es `horizun-navis-mcp`.
 
 Verifica los paquetes contra `SHA256SUMS.txt` del mismo release. Documentación completa: https://github.com/HorizunGroup/naviscoord-mcp/blob/main/docs/INSTALL.md.
 

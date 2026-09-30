@@ -44,7 +44,7 @@ NavisCoord pairs a native Navisworks add-in with an open-source MCP server. The 
 | **ChatGPT Desktop — Work** | Run the desktop-plugin installer, then open **Plugins → Personal → NavisCoord → Install** |
 | **Codex** | Use the same personal plugin, or register the executable with `codex mcp add` |
 | **Claude Desktop** | Install the release `.mcpb`, which includes the standalone server |
-| **Claude Code** | Install `naviscoord-mcp@horizun-navis`, or register the executable with `claude mcp add` |
+| **Claude Code** | Install `naviscoord-mcp@horizun-navis`, or register the executable with `claude mcp add` (use one or the other; see [one registration per client](docs/INSTALL.md#one-registration-per-client)) |
 
 All four connect to the local workstation. ChatGPT Desktop uses a local plugin; **OpenAI Platform, a tunnel and a runtime API key are not part of this installation.** See [OpenAI’s desktop-plugin documentation](https://learn.chatgpt.com/docs/enterprise/plugin-management).
 

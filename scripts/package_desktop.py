@@ -34,7 +34,8 @@ def main():
                 "LICENSE", "NOTICE", "README.md", "README.es.md", "Install-NavisCoord.ps1",
                 "docs/INSTALL.md", "docs/PRIVACY.md", "docs/TOOLS.md",
                 "scripts/Start-Mcp.ps1", "scripts/Install-Runtime.ps1",
-                "scripts/Install-DesktopPlugin.ps1", "scripts/Configure-Clients.ps1"]
+                "scripts/Install-DesktopPlugin.ps1", "scripts/Configure-Clients.ps1",
+                "scripts/Resolve-DuplicateRegistrations.ps1"]
     includes += [p.relative_to(ROOT).as_posix() for p in (ROOT / "skills").rglob("*.md")]
     plugin_zip = dist / f"naviscoord-desktop-{__version__}-win-x64.zip"
     archive(plugin_zip, [(ROOT / name, name) for name in includes] + [(p, "runtime/" + name) for p, name in runtime_files])

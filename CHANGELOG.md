@@ -5,6 +5,8 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+- Leave one NavisCoord instance per client. A server registered twice (as a plugin and as a direct entry, or under an older name) made each session talk to a different instance, including an old plugin that ran without a dry run. `scripts/Configure-Clients.ps1` now disables the `naviscoord-mcp@*` Claude Code plugin (`enabledPlugins` set to `false`, with a dated backup, plugin cache kept), removes Navisworks server sections with another name from the Codex `config.toml`, and drops older-named entries from the Claude Desktop config. `scripts/Install-DesktopPlugin.ps1` removes the direct Codex entry when the plugin is already enabled. The new `scripts/Resolve-DuplicateRegistrations.ps1` does the same on demand (`-Keep Direct|Plugin`, `-Check` to preview) and never removes the registration it is keeping, never edits `~/.claude.json` by hand (it uses `claude mcp remove --scope user`), never writes a Codex file it cannot read with certainty, and is idempotent. Covered by `scripts/Test-RegistrationDedupe.ps1`, which runs in a temporary home.
+
 ## [1.0.0] — 2026-09-07
 
 - Require explicit host/contact evidence before suppressing category-based contacts.
