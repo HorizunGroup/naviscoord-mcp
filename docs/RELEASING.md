@@ -370,6 +370,7 @@ python scripts/build_mcpb.py
 npm exec --yes --package=@anthropic-ai/mcpb -- mcpb pack dist/mcpb dist/naviscoord-1.0.0-win-x64.mcpb
 python scripts/package_desktop.py
 powershell -File scripts/Test-PortableInstall.ps1
+powershell -File scripts/Test-RegistrationDedupe.ps1
 ```
 
 Use the declared release version for the MCPB filename. `package_desktop.py` reads that version and requires all three add-in ZIPs. It creates the standalone runtime ZIP, the local desktop plugin ZIP, and `dist/SHA256SUMS.txt`. Add the Python wheel/sdist and their hashes when preparing the complete release upload.

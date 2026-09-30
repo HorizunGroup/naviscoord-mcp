@@ -63,6 +63,24 @@ codex mcp add horizun-navis-mcp -- 'C:\path\to\naviscoord-mcp.exe'
 
 Use your actual extracted executable path. `scripts/Configure-Clients.ps1` can register the same executable in Claude Desktop, Claude Code and Codex while preserving unrelated settings.
 
+### One registration per client
+
+The same server must not be registered twice in one client: each session could then talk to a different instance, such as an old plugin version. `Configure-Clients.ps1` therefore also turns off the duplicate, backs up every file it changes with a dated copy, prints what it changed, and never touches other servers:
+
+| Client | When you register the executable directly | When you use the plugin |
+|---|---|---|
+| Claude Code | The `naviscoord-mcp@<marketplace>` plugin is disabled (`enabledPlugins` = `false` in `~/.claude/settings.json`); its cache is kept. | The direct user-scope entry is removed with `claude mcp remove <name> --scope user`. |
+| Codex | Navisworks server sections with another name are removed from `config.toml`, and the plugin is disabled. | Navisworks server sections are removed from `config.toml`. |
+| Claude Desktop | Entries for this server under an older name are removed from `claude_desktop_config.json`. | Not applicable. |
+
+A registration is only removed when the one you keep is really in place. If you install the Claude Code plugin from the marketplace, remove a direct entry left from before with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Resolve-DuplicateRegistrations.ps1 -Keep Plugin -Client ClaudeCode
+```
+
+Add `-Check` to preview without changing anything. Restart the client afterwards. An extension installed from the `.mcpb` bundle in Claude Desktop is managed by Claude Desktop itself; if you also register the executable there, remove one of the two in **Settings → Extensions**.
+
 ## First verification
 
 Ask: **“Call navis_health, identify the active document, then analyze its clashes without modifying or saving the model.”** Use `navis_sessions` and `navis_target` when several Navisworks instances are open.
