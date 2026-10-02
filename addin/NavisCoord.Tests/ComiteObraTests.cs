@@ -217,7 +217,7 @@ namespace NavisCoord.Tests
             section("comité 8: guardar en una carpeta que no existe dice eso");
 
             var missing = SaveFormats.MissingFolderProblem(
-                @"C:\Users\x\AppData\Local\NavisCoord\exports\ComiteObra\Mirador-comite.nwf", _ => false);
+                @"C:\Users\<tu-usuario>\AppData\Local\NavisCoord\exports\ComiteObra\Mirador-comite.nwf", _ => false);
             check(missing != null && missing.Contains(@"exports\ComiteObra") && missing.Contains("no existe"),
                 "el mensaje nombra la carpeta que falta");
             check(!missing.Contains("devolvió false"), "y no es el «Navisworks devolvió false» de antes");
