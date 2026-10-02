@@ -118,7 +118,9 @@ powershell -File scripts\Build-Release.ps1
   `Autodesk.Navisworks.Api.dll` esté de verdad en el candidato. Si no
   encuentra una versión, el error lista cada ruta que sondeó.
 - Los DLL de Autodesk **nunca** se empaquetan: se compila contra ellos con
-  `Private=false` y el ZIP lleva solo `NavisCoord.dll`, licencias y el perfil
+  `Private=false` y el ZIP lleva solo `NavisCoord.dll`, la cinta
+  (`NavisCoordRibbon.xaml` en la raíz y en `en-US/`, `nc_16.png`, `nc_32.png`),
+  licencias y el perfil
   de ejemplo.
 
 Compila una vez por versión detectada, arma `dist/addin/<versión>/`, copia
@@ -308,7 +310,10 @@ Adjuntar al release de GitHub, con los nombres que produce el script —no otros
   no existe es peor que no prometerlo.
 - `SHA256SUMS.txt`
 
-Cada ZIP del complemento lleva `LICENSE` y `NOTICE` dentro.
+Cada ZIP del complemento lleva `LICENSE` y `NOTICE` dentro, y sus entradas son
+exactamente las `$ManagedFiles` de `Install-NavisCoord.ps1`:
+`test_addin_package_parity.py` compara las dos listas. Antes de 1.1.1 no
+coincidían y el instalador oficial rechazaba los ZIP publicados.
 
 Los checksums se generan sobre los artefactos ya construidos, en modo binario
 y con nombres relativos, para que `sha256sum -c` funcione desde la carpeta de

@@ -5,6 +5,15 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-10-01
+
+- **Los ZIP del complemento traen la cinta.** `Build-Release.ps1` empaquetaba
+  solo `NavisCoord.dll`, LICENSE, NOTICE y el perfil, mientras
+  `Install-NavisCoord.ps1` exige además `NavisCoordRibbon.xaml` (raíz y
+  `en-US/`) y los dos iconos. El instalador oficial rechazaba los ZIP de 1.0.0
+  y 1.1.0, y descomprimirlos a mano dejaba el complemento sin pestaña. Una
+  prueba compara ahora las dos listas. Sin cambios de código respecto a 1.1.0.
+
 ## [1.1.0] — 2026-10-01
 
 Defectos de la corrida real del ejercicio «Comité de obra» (2026-10-01).
@@ -704,7 +713,8 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
-[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.0.0...v1.1.0
 [0.4.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.4.1
 [0.4.0]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.4.0
