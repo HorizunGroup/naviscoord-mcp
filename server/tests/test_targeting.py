@@ -311,7 +311,7 @@ class TestExitVerification:
         from naviscoord import mcp_server as M
         from naviscoord.bridge import EXIT_VERIFY_CAP, EXIT_VERIFY_DEFAULT
 
-        assert EXIT_VERIFY_DEFAULT >= 40, "15 s no alcanzó para cerrar el federado del comité"
+        assert EXIT_VERIFY_DEFAULT >= 45, "en vivo Navisworks tardó 36 s en cerrar el federado del comité"
         assert EXIT_VERIFY_CAP < 60, "por debajo del límite de 60 s del cliente MCP"
         assert inspect.signature(M.navis_exit).parameters["verify_timeout"].default >= 40
 

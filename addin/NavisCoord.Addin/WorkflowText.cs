@@ -134,7 +134,12 @@ namespace NavisCoord
                         .Take(5)
                         .Select(u => Json.Str(u, "category") + " " +
                                      Json.Num(u, "elements", 0).ToString("N0", CultureInfo.InvariantCulture) +
-                                     " (id " + Json.Str(u, "category_id") + ")")));
+                                     // Without CategoryId the key IS the name;
+                                     // repeating it as an "id" reads as data.
+                                     (string.Equals(Json.Str(u, "category_id"), Json.Str(u, "category"),
+                                         StringComparison.OrdinalIgnoreCase)
+                                         ? string.Empty
+                                         : " (id " + Json.Str(u, "category_id") + ")"))));
                 }
             }
 

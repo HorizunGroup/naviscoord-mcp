@@ -454,7 +454,12 @@ namespace NavisCoord
                 .Count();
             var testsPresent = doc.GetClash().TestsData.Tests.Count;
 
-            result.Verified = (int)Json.Num(setsSummary, "verified_folders", foldersPresent)
+            // Sets and tests, the same units as Requested and Applied. It used
+            // to add FOLDERS here, so a fully applied profile read «6
+            // verificados de 19» and a wholly empty one read the same.
+            result.Verified = (setsSummary.ContainsKey("verified_sets")
+                                  ? (int)Json.Num(setsSummary, "verified_sets", 0)
+                                  : (int)Json.Num(setsSummary, "verified_folders", foldersPresent))
                               + (int)Json.Num(clashSummary, "verified_tests", 0);
             result.Detail["verified_folders_in_document"] = (double)foldersPresent;
             result.Detail["verified_tests_in_document"] = (double)testsPresent;
@@ -553,6 +558,11 @@ namespace NavisCoord
                 var rows = inDoc.OfType<Dictionary<string, object>>().ToList();
                 summary["matches"] = rows.Sum(r => Json.Num(r, "matches", 0));
                 summary["current_sets"] = (double)rows.Count(r => Json.Bool(r, "current_definition"));
+                // Verified = re-read with the requested definition AND
+                // capturing something. An empty set is in the document but
+                // configures nothing, so it does not count toward completed.
+                summary["verified_sets"] = (double)rows.Count(r =>
+                    Json.Bool(r, "current_definition") && Json.Num(r, "matches", 0) > 0);
                 summary["sets_in_document"] = inDoc;
             }
             summary["stale_sets"] = Json.Arr(raw, "stale_sets");

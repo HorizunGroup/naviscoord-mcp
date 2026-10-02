@@ -790,6 +790,13 @@ discrepar. Nunca destruye resultados ya corridos en silencio; un test con
 definición cambiada pero con resultados se conserva y se reporta como
 desactualizado, para que la decisión sea humana.
 
+Los conteos se releen del documento: `sets.matches` suma solo los sets
+que quedaron con la definición pedida; los de una carpeta conservada
+salen en `sets.stale_sets` (con `planned_matches` aparte) y bajan el
+estado a `partial`. Un test SIN resultados que esta misma configuración
+rehace ya no congela los sets viejos que usaba. `tests_not_in_profile` y
+`folders_not_in_profile` nombran lo que el documento trae y el perfil no.
+
 ```json
 {
   "properties": {
@@ -913,7 +920,8 @@ el PID terminó. Si Navisworks sigue abierto —por ejemplo, por un diálogo
 de otro complemento— devuelve `partial`, nunca un falso `completed`.
 Con `dry_run=true` no cierra nada.
 
-Espera hasta `verify_timeout` segundos (40 por defecto, máximo 50):
+Espera hasta `verify_timeout` segundos (45 por defecto, máximo 50; en la
+prueba en vivo del comité Navisworks tardó 36 s en terminar el proceso):
 descargar un federado tarda, y con 15 s un cierre en curso se reportaba
 como rechazado. Si el proceso sigue vivo pero el puente ya no responde,
 lo dice (`exit_in_progress: true`) en vez de sugerir un diálogo bloqueado.
@@ -935,7 +943,7 @@ lo dice (`exit_in_progress: true`) en vez de sugerir un diálogo bloqueado.
       "type": "boolean"
     },
     "verify_timeout": {
-      "default": 40.0,
+      "default": 45.0,
       "title": "Verify Timeout",
       "type": "number"
     }

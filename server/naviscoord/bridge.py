@@ -31,7 +31,7 @@ DEFAULT_TIMEOUT = 180.0
 #: three-model federation took longer than the old 15 s default, so the exit
 #: was reported partial while it was in fact closing. Below the 60 s most MCP
 #: clients allow a call, with room for the close itself.
-EXIT_VERIFY_DEFAULT = 40.0
+EXIT_VERIFY_DEFAULT = 45.0
 EXIT_VERIFY_CAP = 50.0
 
 # Kept as aliases: `Session` and `session_file` were the public names before

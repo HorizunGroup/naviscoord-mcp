@@ -55,6 +55,19 @@ namespace NavisCoord.Tests
               ""misplaced"": [], ""reference_mismatch"": [], ""coordinates_verified"": false
             }"));
             check(audit.Contains("SIN verificar"), "sin puntos publicados se dice que no se verificó");
+
+            var purity = WorkflowText.AuditModels(Json.ParseObject(@"{
+              ""models"": [ { ""name"": ""MIR-EST-Mirador.nwc"", ""discipline"": ""EST"", ""elements"": 1,
+                              ""status"": ""único modelo"" } ],
+              ""misplaced"": [], ""coordinates_verified"": false,
+              ""view_purity"": { ""evaluated"": true, ""dirty_views"": 0, ""findings"": [
+                { ""discipline"": ""EST"", ""evaluated"": true, ""intruder_elements"": 0,
+                  ""unclassified"": [
+                    { ""category"": ""Structural Rebar"", ""elements"": 1153, ""category_id"": ""Structural Rebar"" },
+                    { ""category"": ""Levels"", ""elements"": 5, ""category_id"": ""-2000240"" } ] } ] }
+            }"));
+            check(!purity.Contains("(id Structural Rebar)"), "sin CategoryId no se repite el nombre como «id»");
+            check(purity.Contains("(id -2000240)"), "un id real sí se muestra");
             check(!audit.Contains("comparten volumen"), "ya no se afirma una ubicación común sin matices");
         }
 

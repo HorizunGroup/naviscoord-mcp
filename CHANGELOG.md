@@ -39,7 +39,7 @@ sigue funcionando con un complemento 1.0.0, por la vía síncrona de antes.
   «Arquitectura» (C#).
 - La huella del documento incluye el contenido cargado de cada modelo (caja,
   elementos de primer nivel, herramienta de origen), no solo rutas (C#).
-- `navis_exit` espera hasta 40 s y distingue un Navisworks que está cerrando
+- `navis_exit` espera hasta 45 s (en vivo Navisworks tardó 36–38 s en cerrar) y distingue un Navisworks que está cerrando
   de uno que rechazó el cierre. `navis_save_as` a una carpeta inexistente lo
   dice en vez de «Navisworks devolvió false» (C#), y el motivo de un 422 llega
   al llamador.

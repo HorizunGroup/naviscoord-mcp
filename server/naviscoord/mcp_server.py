@@ -2491,7 +2491,7 @@ def navis_exit(
     disposition: str,
     expected_document_fingerprint: str,
     dry_run: bool = True,
-    verify_timeout: float = 40.0,
+    verify_timeout: float = 45.0,
 ) -> dict[str, Any]:
     """Cierra el documento y sale de Navisworks de forma verificable.
 
@@ -2501,7 +2501,8 @@ def navis_exit(
     de otro complemento— devuelve `partial`, nunca un falso `completed`.
     Con `dry_run=true` no cierra nada.
 
-    Espera hasta `verify_timeout` segundos (40 por defecto, máximo 50):
+    Espera hasta `verify_timeout` segundos (45 por defecto, máximo 50; en la
+    prueba en vivo del comité Navisworks tardó 36 s en terminar el proceso):
     descargar un federado tarda, y con 15 s un cierre en curso se reportaba
     como rechazado. Si el proceso sigue vivo pero el puente ya no responde,
     lo dice (`exit_in_progress: true`) en vez de sugerir un diálogo bloqueado.
