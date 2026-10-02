@@ -7,7 +7,7 @@ namespace NavisCoord
 {
     internal static class PenetrationInventory
     {
-        private static readonly string[] IdentityProperties =
+        internal static readonly string[] IdentityProperties =
             { "Type", "Tipo", "Family", "Familia", "Family and Type" };
 
         /// <param name="shouldStop">Checked between items; true stops the walk
@@ -16,7 +16,8 @@ namespace NavisCoord
         /// thousand items so a job poller sees the walk move.</param>
         public static Dictionary<string, object> Read(Document doc, double scale,
             ICollection<string> wanted, Dictionary<string, object> payload,
-            Func<bool> shouldStop = null, Action<int> progress = null)
+            Func<bool> shouldStop = null, Action<int> progress = null,
+            NodePropertyCache<ModelItem> cache = null)
         {
             var rules = PenetrationRules.FromPayload(payload);
             var result = new List<object>();
@@ -34,10 +35,17 @@ namespace NavisCoord
                 return Describe(rules, "not_configured", scanned, false, errors, result);
             }
 
+            // Walking every node top-down (TreeWalk), each read by direct
+            // lookup of the few names the rules need: no Parent calls, no
+            // ModelItem hashing, no path id per node. Matches are still
+            // described through the export's full cache.
+            var read = NavisContext.NewLookupReader(doc, IdentityProperties);
+            var identityNames = new HashSet<string>(IdentityProperties, StringComparer.OrdinalIgnoreCase);
             foreach (var model in doc.Models)
             {
-                foreach (var item in model.RootItem.DescendantsAndSelf)
+                foreach (var frame in TreeWalk.PreOrder(model.RootItem, node => node.Children, read))
                 {
+                    var item = frame.Node;
                     scanned++;
                     if ((scanned & 1023) == 0)
                     {
@@ -50,17 +58,21 @@ namespace NavisCoord
                     }
                     try
                     {
-                        var matched = rules.MatchesCategory(NavisContext.CategoryOf(item));
+                        // CategoryOf's rule: five levels of published category,
+                        // then four of node class — read lazily, nearest first.
+                        var category = NavisContext.ResolveCategory(
+                            frame.ValuesUp("Category", 5),
+                            frame.Chain(4).Select(f => f.Node.ClassDisplayName));
+                        var matched = rules.MatchesCategory(category);
                         if (!matched && rules.NeedsIdentity)
                         {
-                            var identity = NavisContext.Harvest(item, IdentityProperties);
-                            NavisContext.CompositeParent(doc, item, out var parentName);
-                            var searchable = (item.DisplayName ?? string.Empty) + " " + parentName + " " +
+                            var identity = frame.Harvest(identityNames.Contains, 8);
+                            var searchable = (item.DisplayName ?? string.Empty) + " " + CompositeName(frame) + " " +
                                              string.Join(" ", identity.Values.Select(v => Convert.ToString(v)));
                             matched = rules.MatchesText(searchable);
                         }
                         if (!matched) continue;
-                        var described = NavisContext.Describe(doc, item, scale, wanted);
+                        var described = NavisContext.Describe(doc, item, scale, wanted, cache);
                         if (seen.Add(Json.Str(described, "path_id"))) result.Add(described);
                     }
                     catch (Exception ex)
@@ -80,6 +92,24 @@ namespace NavisCoord
             }
             progress?.Invoke(scanned);
             return Describe(rules, "all_loaded_models", scanned, !stopped && errors.Count == 0, errors, result);
+        }
+
+        /// <summary>
+        /// The composite parent's name, as <c>NavisContext.CompositeParent</c>
+        /// gives it, without computing that parent's path id.
+        /// </summary>
+        private static string CompositeName(TreeWalk.Frame<ModelItem> frame)
+        {
+            var parent = frame.Parent?.Node;
+            if (parent == null) return string.Empty;
+            try
+            {
+                return parent.IsComposite && !parent.IsLayer ? parent.DisplayName ?? string.Empty : string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
 
         private static Dictionary<string, object> Describe(PenetrationRules rules, string scope, int scanned,

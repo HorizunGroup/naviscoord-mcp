@@ -206,10 +206,16 @@ namespace NavisCoord
         /// geometry that clashed. Walking up is what makes the join keys
         /// usable instead of mostly empty.
         /// </remarks>
-        public static Dictionary<string, object> Harvest(ModelItem item, ICollection<string> wanted)
+        public static Dictionary<string, object> Harvest(
+            ModelItem item, ICollection<string> wanted, NodePropertyCache<ModelItem> cache = null)
         {
             var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             if (item == null) return result;
+            if (cache != null)
+            {
+                // Same eight hops and nearest-wins rule, from the run's cache.
+                return cache.Harvest(item, name => IsWanted(name, wanted), 8);
+            }
 
             // Eight, not four.
             //
@@ -257,6 +263,171 @@ namespace NavisCoord
                 depth++;
             }
             return result;
+        }
+
+        /// <summary>
+        /// A per-run property cache keeping only <paramref name="interest"/>
+        /// (exact names and trailing-* prefixes, as in Harvest).
+        /// </summary>
+        /// <remarks>
+        /// The interest must cover every name the run will ask for: Harvest
+        /// and CategoryOf read only from the cache when one is passed.
+        /// </remarks>
+        public static NodePropertyCache<ModelItem> NewCache(IEnumerable<string> interest)
+        {
+            var names = new List<string>(interest ?? Enumerable.Empty<string>()) { "Category" };
+            return new NodePropertyCache<ModelItem>(ReadOwn, item => item.Parent, name => IsWanted(name, names));
+        }
+
+        /// <summary>
+        /// A cache that reads each node by direct lookup in the tabs where a
+        /// sample of the document showed each property lives, instead of
+        /// enumerating every tab and property of every node.
+        /// </summary>
+        /// <remarks>
+        /// For walks over the whole tree (inventory, audit, census, explicit
+        /// sets). Measured live on the «Comité de obra» federation: even read
+        /// once per node, enumerating the tabs of 58,244 nodes cost 37 s for
+        /// one category rule — the enumeration builds a managed wrapper for
+        /// every property of every tab. A direct lookup asks for two or three.
+        ///
+        /// The tabs are taken in the order the sample met them, so "first tab
+        /// wins" — the rule enumeration applied, under which Revit's
+        /// <c>Item &gt; Type</c> ("Solid") precedes <c>Element &gt; Type</c>
+        /// — still holds. Names must be exact (no trailing *): a prefix rule
+        /// cannot be looked up, so <paramref name="interest"/> with one falls
+        /// back to the enumerating cache. A name the sample never met has no
+        /// tab to look in and reads as absent; the sample spans every model.
+        /// </remarks>
+        public static NodePropertyCache<ModelItem> NewLookupCache(
+            Document doc, IEnumerable<string> interest, int samplePerModel = 600)
+        {
+            var names = new List<string>(interest ?? Enumerable.Empty<string>()) { "Category" };
+            names = names.Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (doc == null || names.Any(n => n.EndsWith("*", StringComparison.Ordinal))) return NewCache(names);
+
+            var tabs = SampleTabs(doc, names, samplePerModel);
+            return new NodePropertyCache<ModelItem>(
+                (item, keep) => ReadByLookup(item, tabs),
+                item => item.Parent,
+                name => names.Contains(name, StringComparer.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// The same direct-lookup reading as <see cref="NewLookupCache"/>,
+        /// as a plain function for a top-down walk (see <see cref="TreeWalk"/>).
+        /// </summary>
+        public static Func<ModelItem, Dictionary<string, string>> NewLookupReader(
+            Document doc, IEnumerable<string> interest, int samplePerModel = 600)
+        {
+            var names = new List<string>(interest ?? Enumerable.Empty<string>()) { "Category" };
+            names = names.Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var tabs = SampleTabs(doc, names, samplePerModel);
+            return item =>
+            {
+                var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    foreach (var pair in ReadByLookup(item, tabs))
+                    {
+                        if (!map.ContainsKey(pair.Key)) map[pair.Key] = pair.Value;
+                    }
+                }
+                catch
+                {
+                    // An unreadable tab is not a reason to fail the walk.
+                }
+                return map;
+            };
+        }
+
+        /// <summary>
+        /// <see cref="CategoryOf"/>'s rule over values already collected:
+        /// the nearest usable published category, else the nearest usable
+        /// node class name. Both sequences nearest first and lazily read.
+        /// </summary>
+        public static string ResolveCategory(IEnumerable<string> published, IEnumerable<string> classNames)
+        {
+            foreach (var value in published ?? Enumerable.Empty<string>())
+            {
+                if (IsUsableCategory(value)) return CleanCategory(value);
+            }
+            foreach (var value in classNames ?? Enumerable.Empty<string>())
+            {
+                if (IsUsableCategory(value)) return CleanCategory(value);
+            }
+            return string.Empty;
+        }
+
+        /// <summary>Name → the tabs it was seen in, in first-seen order.</summary>
+        private static Dictionary<string, List<string>> SampleTabs(
+            Document doc, ICollection<string> names, int perModel)
+        {
+            var tabs = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in names) tabs[name] = new List<string>();
+            foreach (var model in doc.Models)
+            {
+                var visited = 0;
+                foreach (var item in model.RootItem.DescendantsAndSelf)
+                {
+                    if (++visited > perModel) break;
+                    try
+                    {
+                        foreach (var category in item.PropertyCategories)
+                        {
+                            foreach (var property in category.Properties)
+                            {
+                                if (property.DisplayName == null ||
+                                    !tabs.TryGetValue(property.DisplayName, out var seen)) continue;
+                                var tab = category.DisplayName ?? string.Empty;
+                                if (!seen.Contains(tab)) seen.Add(tab);
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // A node whose tabs cannot be read teaches nothing.
+                    }
+                }
+            }
+            return tabs;
+        }
+
+        private static IEnumerable<KeyValuePair<string, string>> ReadByLookup(
+            ModelItem item, Dictionary<string, List<string>> tabs)
+        {
+            var found = new List<KeyValuePair<string, string>>();
+            var categories = item.PropertyCategories;
+            foreach (var entry in tabs)
+            {
+                foreach (var tab in entry.Value)
+                {
+                    var property = categories.FindPropertyByDisplayName(tab, entry.Key);
+                    if (property == null) continue;
+                    var text = ValueToString(property.Value);
+                    if (string.IsNullOrWhiteSpace(text)) continue;
+                    found.Add(new KeyValuePair<string, string>(entry.Key, text));
+                    break;
+                }
+            }
+            return found;
+        }
+
+        private static IEnumerable<KeyValuePair<string, string>> ReadOwn(ModelItem item, Func<string, bool> keep)
+        {
+            var found = new List<KeyValuePair<string, string>>();
+            foreach (var category in item.PropertyCategories)
+            {
+                foreach (var property in category.Properties)
+                {
+                    var name = property.DisplayName;
+                    if (string.IsNullOrEmpty(name) || !keep(name)) continue;
+                    found.Add(new KeyValuePair<string, string>(name, ValueToString(property.Value)));
+                }
+            }
+            return found;
         }
 
         private static bool IsWanted(string name, ICollection<string> wanted)
@@ -309,7 +480,8 @@ namespace NavisCoord
         // ------------------------------------------------------- geometry
 
         public static Dictionary<string, object> Describe(
-            Document doc, ModelItem item, double scale, ICollection<string> wanted)
+            Document doc, ModelItem item, double scale, ICollection<string> wanted,
+            NodePropertyCache<ModelItem> cache = null)
         {
             var pathId = PathId(doc, item);
             var modelIndex = ModelIndexOf(doc, item);
@@ -319,12 +491,12 @@ namespace NavisCoord
             {
                 ["path_id"] = pathId,
                 ["display_name"] = item?.DisplayName ?? string.Empty,
-                ["category"] = CategoryOf(item),
+                ["category"] = CategoryOf(item, cache),
                 ["model_index"] = modelIndex,
                 ["source_file"] = SourceFileOf(item, doc, modelIndex),
                 ["parent_path_id"] = CompositeParent(doc, item, out var compositeName),
                 ["parent_name"] = compositeName,
-                ["props"] = Harvest(item, wanted)
+                ["props"] = Harvest(item, wanted, cache)
             };
 
             var box = SafeBoundingBox(item);
@@ -394,18 +566,30 @@ namespace NavisCoord
         /// only a fallback, filtered against the class names and file
         /// extensions that are never categories.
         /// </remarks>
-        public static string CategoryOf(ModelItem item)
+        public static string CategoryOf(ModelItem item, NodePropertyCache<ModelItem> cache = null)
         {
             if (item == null) return string.Empty;
 
-            var current = item;
-            var depth = 0;
-            while (current != null && depth < 5)
+            ModelItem current;
+            int depth;
+            if (cache != null)
             {
-                var published = FindProperty(current, "Category");
-                if (IsUsableCategory(published)) return CleanCategory(published);
-                current = current.Parent;
-                depth++;
+                foreach (var published in cache.ValuesUp(item, "Category", 5))
+                {
+                    if (IsUsableCategory(published)) return CleanCategory(published);
+                }
+            }
+            else
+            {
+                current = item;
+                depth = 0;
+                while (current != null && depth < 5)
+                {
+                    var published = FindProperty(current, "Category");
+                    if (IsUsableCategory(published)) return CleanCategory(published);
+                    current = current.Parent;
+                    depth++;
+                }
             }
 
             current = item;

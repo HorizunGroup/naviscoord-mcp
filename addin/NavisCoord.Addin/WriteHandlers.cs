@@ -337,6 +337,7 @@ namespace NavisCoord
 
             var scanned = 0;
             var ambiguous = 0;
+            var cache = NavisContext.NewLookupCache(doc, new[] { "Category" });
             foreach (var model in doc.Models)
             {
                 var sourceFile = System.IO.Path.GetFileName(
@@ -349,7 +350,7 @@ namespace NavisCoord
                     // parents duplicates every clash their children produce.
                     if (item.Children.Any()) continue;
 
-                    var verdict = router.Resolve(sourceFile, NavisContext.CategoryOf(item));
+                    var verdict = router.Resolve(sourceFile, NavisContext.CategoryOf(item, cache));
                     if (!verdict.Matched) continue;
                     if (!buckets.TryGetValue(verdict.Discipline, out var bucket))
                     {

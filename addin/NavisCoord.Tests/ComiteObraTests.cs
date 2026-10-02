@@ -25,6 +25,118 @@ namespace NavisCoord.Tests
             FingerprintFollowsContent(section, eq, check);
             MissingFolderIsNamed(section, eq, check);
             TextDoesNotClaimWhatWasNotWritten(section, eq, check);
+            PropertyCacheReadsEachNodeOnce(section, eq, check);
+            TopDownWalkMatchesTheUpwardRules(section, eq, check);
+        }
+
+        private static void TopDownWalkMatchesTheUpwardRules(
+            Action<string> section, Action<object, object, string> eq, Action<bool, string> check)
+        {
+            section("comité 1+: recorrido de arriba abajo con los ancestros a mano");
+
+            var root = new FakeNode(null, "Source File", "MIR-EST.nwc");
+            var level = new FakeNode(root, "Level", "02");
+            var category = new FakeNode(level, "Category", "Generic Models");
+            var instance = new FakeNode(category, "Type", "Pasamuro 4in", "Family", "Sleeve");
+            var geometry = new FakeNode(instance, "Type", "");
+            var sibling = new FakeNode(level, "Category", "Walls");
+            var children = new Dictionary<FakeNode, List<FakeNode>>
+            {
+                [root] = new List<FakeNode> { level },
+                [level] = new List<FakeNode> { category, sibling },
+                [category] = new List<FakeNode> { instance },
+                [instance] = new List<FakeNode> { geometry }
+            };
+            var reads = 0;
+            Dictionary<string, string> Read(FakeNode node)
+            {
+                reads++;
+                var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var p in node.Props)
+                    if (!map.ContainsKey(p.Key) && !string.IsNullOrWhiteSpace(p.Value)) map[p.Key] = p.Value;
+                return map;
+            }
+
+            var frames = TreeWalk.PreOrder(root,
+                n => children.TryGetValue(n, out var k) ? k : new List<FakeNode>(), Read).ToList();
+            eq("root level category instance geometry sibling",
+                string.Join(" ", frames.Select(f =>
+                    f.Node == root ? "root" : f.Node == level ? "level" : f.Node == category ? "category" :
+                    f.Node == instance ? "instance" : f.Node == geometry ? "geometry" : "sibling")),
+                "pre-orden: el mismo orden que DescendantsAndSelf");
+            eq(0, frames.Single(f => f.Node == geometry).ChildCount, "la hoja sabe que es hoja");
+            eq(2, frames.Single(f => f.Node == level).ChildCount, "y el nivel, cuántos hijos tiene");
+            eq(4, frames.Single(f => f.Node == geometry).Depth, "profundidad desde la raíz");
+
+            var leaf = frames.Single(f => f.Node == geometry);
+            eq("Generic Models", leaf.ValuesUp("Category", 5).First(), "la categoría llega desde dos niveles arriba");
+            eq(0, leaf.ValuesUp("Category", 2).Count(), "con el mismo tope de profundidad");
+            var identity = leaf.Harvest(n => n == "Type" || n == "Family", 8);
+            eq("Pasamuro 4in", identity["Type"], "un Type vacío en la hoja no tapa el de la instancia");
+            eq("Sleeve", identity["Family"], "la familia se hereda");
+            eq(5, reads, "solo se leen los nodos por los que alguien preguntó, y cada uno una vez");
+            leaf.ValuesUp("Category", 5).ToList();
+            eq(5, reads, "volver a preguntar no relee");
+        }
+
+        private sealed class FakeNode
+        {
+            public FakeNode Parent;
+            public List<KeyValuePair<string, string>> Props = new List<KeyValuePair<string, string>>();
+            public bool Broken;
+            public FakeNode(FakeNode parent, params string[] pairs)
+            {
+                Parent = parent;
+                for (var i = 0; i + 1 < pairs.Length; i += 2)
+                    Props.Add(new KeyValuePair<string, string>(pairs[i], pairs[i + 1]));
+            }
+        }
+
+        private static void PropertyCacheReadsEachNodeOnce(
+            Action<string> section, Action<object, object, string> eq, Action<bool, string> check)
+        {
+            section("comité 1+: cada nodo se lee una vez por corrida, con las mismas reglas");
+
+            var file = new FakeNode(null, "Source File", "MIR-EST.nwc");
+            var category = new FakeNode(file, "Category", "Structural Framing", "Level", "02");
+            var family = new FakeNode(category, "Family", "M_Concrete-Rectangular Beam", "Category", "");
+            var instance = new FakeNode(family, "Type", "400x800", "Mark", "V-12", "MARK", "otra", "Ignorada", "x");
+            var geometryA = new FakeNode(instance, "Type", "", "Material", "Concrete");
+            var geometryB = new FakeNode(instance, "Material", "Steel");
+
+            var reads = new Dictionary<FakeNode, int>();
+            IEnumerable<KeyValuePair<string, string>> Read(FakeNode node, Func<string, bool> keep)
+            {
+                reads[node] = reads.TryGetValue(node, out var n) ? n + 1 : 1;
+                if (node.Broken) throw new InvalidOperationException("pestaña ilegible");
+                return node.Props.Where(p => keep(p.Key)).ToList();
+            }
+            var interest = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { "Category", "Level", "Type", "Family", "Mark", "Material" };
+            var cache = new NodePropertyCache<FakeNode>(Read, n => n.Parent, interest.Contains);
+
+            var harvestA = cache.Harvest(geometryA, interest.Contains, 8);
+            eq("400x800", harvestA["Type"], "un valor vacío en la hoja no tapa el del ancestro");
+            eq("V-12", harvestA["mark"], "nombres sin distinguir mayúsculas; dentro de un nodo gana el primero");
+            eq("02", harvestA["Level"], "el nivel sale de un ancestro lejano");
+            check(!harvestA.ContainsKey("Ignorada"), "lo que no interesa ni siquiera se guarda");
+            eq("Structural Framing", cache.ValuesUp(geometryA, "Category", 5).First(),
+                "la categoría vacía de la familia se salta y gana la publicada más arriba");
+            eq(0, cache.ValuesUp(geometryA, "Category", 2).Count(),
+                "el tope de profundidad se respeta igual que sin caché");
+
+            cache.Harvest(geometryB, interest.Contains, 8);
+            cache.ValuesUp(geometryB, "Category", 5).ToList();
+            check(reads.Values.All(n => n == 1),
+                "dos hojas hermanas y varias preguntas: cada nodo se leyó UNA vez");
+            eq(6, cache.NodesRead, "seis nodos distintos en caché");
+
+            var broken = new FakeNode(category, "Type", "x") { Broken = true };
+            check(cache.Harvest(broken, interest.Contains, 8)["Level"].Equals("02"),
+                "una pestaña ilegible no tumba la lectura del resto de la rama");
+
+            var onlyType = cache.Harvest(geometryA, n => n == "Type", 8);
+            eq(1, onlyType.Count, "el filtro de la llamada se aplica sobre la caché compartida");
         }
 
         private static void TextDoesNotClaimWhatWasNotWritten(

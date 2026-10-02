@@ -70,6 +70,8 @@
     <Compile Include="..\NavisCoord.Addin\PenetrationRules.cs" Link="PenetrationRules.cs" />
     <Compile Include="..\NavisCoord.Addin\SetDiagnostics.cs" Link="SetDiagnostics.cs" />
     <Compile Include="..\NavisCoord.Addin\ColocationAudit.cs" Link="ColocationAudit.cs" />
+    <Compile Include="..\NavisCoord.Addin\NodePropertyCache.cs" Link="NodePropertyCache.cs" />
+    <Compile Include="..\NavisCoord.Addin\TreeWalk.cs" Link="TreeWalk.cs" />
     <!--
       Presentation only, and it needs nothing but Json.cs: the prose the
       ribbon shows is the one place where a step that failed can end up

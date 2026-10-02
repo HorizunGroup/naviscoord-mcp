@@ -258,6 +258,7 @@ namespace NavisCoord
             var sampleLimit = Math.Max(0, Json.Int(payload, "category_sample", 20000));
 
             var models = new List<object>();
+            var cache = NavisContext.NewLookupCache(doc, new[] { "Category" });
             for (var i = 0; i < doc.Models.Count; i++)
             {
                 var model = doc.Models[i];
@@ -270,7 +271,7 @@ namespace NavisCoord
                     {
                         itemCount++;
                         if (itemCount > sampleLimit) break;
-                        var category = NavisContext.CategoryOf(item);
+                        var category = NavisContext.CategoryOf(item, cache);
                         if (string.IsNullOrWhiteSpace(category)) continue;
                         categories.TryGetValue(category, out var count);
                         categories[category] = count + 1;
@@ -381,6 +382,13 @@ namespace NavisCoord
 
             var wanted = new List<string>(NavisContext.BaseProperties);
             wanted.AddRange(Json.StrArr(payload, "properties"));
+            // One property read per node for the whole run: the clashes and
+            // the opening inventory walk the same ancestors over and over.
+            // The interest covers every name either of them asks for.
+            var interest = new List<string>(wanted);
+            interest.AddRange(LevelProperties);
+            interest.AddRange(PenetrationInventory.IdentityProperties);
+            var cache = NavisContext.NewCache(interest);
 
             var testFilter = new HashSet<string>(Json.StrArr(payload, "tests"), StringComparer.OrdinalIgnoreCase);
             var statusFilter = new HashSet<string>(Json.StrArr(payload, "statuses"), StringComparer.OrdinalIgnoreCase);
@@ -427,7 +435,7 @@ namespace NavisCoord
                         break;
                     }
 
-                    clashes.Add(DescribeClash(doc, test, result, scale, wanted));
+                    clashes.Add(DescribeClash(doc, test, result, scale, wanted, cache));
                     exported++;
                     job?.Progress("exportando cruces", clashes.Count, Math.Max(total, 1));
                 }
@@ -464,10 +472,12 @@ namespace NavisCoord
                 }
                 : PenetrationInventory.Read(doc, scale, wanted, payload,
                     job == null ? (Func<bool>)null : () => job.CancelRequested,
-                    job == null ? (Action<int>)null : n => job.Phasing("inventario de pasos", n + " elementos revisados"));
+                    job == null ? (Action<int>)null : n => job.Phasing("inventario de pasos", n + " elementos revisados"),
+                    cache);
             timings["penetration_inventory_ms"] = (double)(clock.ElapsedMilliseconds - inventoryStart);
             cancelled = cancelled || (job != null && job.CancelRequested);
             timings["total_ms"] = (double)clock.ElapsedMilliseconds;
+            timings["nodes_read"] = (double)cache.NodesRead;
 
             return new Dictionary<string, object>
             {
@@ -546,8 +556,11 @@ namespace NavisCoord
             return models;
         }
 
+        private static readonly string[] LevelProperties = { "Level", "Reference Level", "Nivel" };
+
         private static Dictionary<string, object> DescribeClash(
-            Document doc, ClashTest test, ClashResult result, double scale, List<string> wanted)
+            Document doc, ClashTest test, ClashResult result, double scale, List<string> wanted,
+            NodePropertyCache<ModelItem> cache = null)
         {
             // Item1/Item2 are the clashing geometry; CompositeItem falls back
             // to the composite parent when the test merged composites, which
@@ -570,10 +583,10 @@ namespace NavisCoord
                 // scaled but otherwise untouched.
                 ["distance_m"] = result.Distance * scale,
                 ["point"] = NavisContext.ToMetres(result.Center, scale),
-                ["level"] = LevelOf(a, b),
+                ["level"] = LevelOf(a, b, cache),
                 ["grid"] = string.Empty,
-                ["a"] = NavisContext.Describe(doc, a, scale, wanted),
-                ["b"] = NavisContext.Describe(doc, b, scale, wanted)
+                ["a"] = NavisContext.Describe(doc, a, scale, wanted, cache),
+                ["b"] = NavisContext.Describe(doc, b, scale, wanted, cache)
             };
         }
 
@@ -585,13 +598,13 @@ namespace NavisCoord
         /// either, despite what the printed Navisworks report shows — so the
         /// level is taken from whichever side actually published one.
         /// </remarks>
-        private static string LevelOf(ModelItem a, ModelItem b)
+        private static string LevelOf(ModelItem a, ModelItem b, NodePropertyCache<ModelItem> cache = null)
         {
             foreach (var item in new[] { a, b })
             {
                 if (item == null) continue;
-                var props = NavisContext.Harvest(item, new[] { "Level", "Reference Level", "Nivel" });
-                foreach (var key in new[] { "Level", "Reference Level", "Nivel" })
+                var props = NavisContext.Harvest(item, LevelProperties, cache);
+                foreach (var key in LevelProperties)
                 {
                     if (props.TryGetValue(key, out var value))
                     {

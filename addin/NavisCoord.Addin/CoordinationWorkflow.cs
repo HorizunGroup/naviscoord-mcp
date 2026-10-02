@@ -64,6 +64,9 @@ namespace NavisCoord
             var tallies = new List<Dictionary<string, int>>();
             var categoryNames = new Dictionary<string, string>(StringComparer.Ordinal);
             var references = new List<Dictionary<string, string>>();
+            // Each node's tabs read once: a leaf's category is found by
+            // walking up, and its ancestors are shared by thousands of leaves.
+            var read = NavisContext.NewLookupReader(doc, new[] { "CategoryId", "Category" });
 
             var total = doc.Models.Count;
             for (var index = 0; index < total; index++)
@@ -83,21 +86,27 @@ namespace NavisCoord
 
                 if (model.RootItem != null)
                 {
-                    foreach (var item in model.RootItem.Descendants)
+                    // Top-down (TreeWalk): every leaf finds its category on
+                    // the frames above it instead of asking up the tree.
+                    foreach (var frame in TreeWalk.PreOrder(model.RootItem, node => node.Children, read))
                     {
+                        if (frame.Depth == 0) continue;   // Descendants: the root itself is not counted
                         count++;
-                        if (item.Children.Any()) continue;
+                        if (frame.ChildCount > 0) continue;
                         // CategoryId when the file has it (ACC aggregates);
                         // otherwise the Revit category NAME, read up the tree.
                         // A NWC exported locally from Revit has no CategoryId
                         // at all, and keying only on it left every tally empty
                         // — «sin elementos legibles» over an architecture model
                         // full of structural columns.
-                        var id = NavisContext.PropertyOf(item, "CategoryId");
+                        var own = frame.Own;
+                        own.TryGetValue("CategoryId", out var id);
                         var display = string.Empty;
                         if (string.IsNullOrWhiteSpace(id))
                         {
-                            display = StripRevitPrefix(NavisContext.CategoryOf(item));
+                            display = StripRevitPrefix(NavisContext.ResolveCategory(
+                                frame.ValuesUp("Category", 5),
+                                frame.Chain(4).Select(f => f.Node.ClassDisplayName)));
                             if (string.IsNullOrWhiteSpace(display)) continue;
                             id = display;
                         }
@@ -106,7 +115,8 @@ namespace NavisCoord
                         {
                             if (string.IsNullOrWhiteSpace(display))
                             {
-                                display = StripRevitPrefix(NavisContext.PropertyOf(item, "Category"));
+                                own.TryGetValue("Category", out var published);
+                                display = StripRevitPrefix(published);
                             }
                             if (!string.IsNullOrWhiteSpace(display)) categoryNames[id] = display;
                         }

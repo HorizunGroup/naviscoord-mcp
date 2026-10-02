@@ -19,6 +19,15 @@ sigue funcionando con un complemento 1.0.0, por la vía síncrona de antes.
   no terminó, se recoge con `navis_analyze(job_id=...)`, se une a la
   extracción en curso en vez de encolar otra y rechaza llamadas concurrentes.
   La respuesta trae `timings`.
+- Recorridos del árbol mucho más rápidos (C#), medidos en vivo sobre la
+  federación del comité (58.244 nodos, 2.221 cruces), con resultados
+  idénticos: `navis_analyze` ~60 s → **4,1 s**; inventario de pasos con regla
+  de categoría 39 s → **3,5 s** y con palabra clave 104–134 s → **3,4 s**;
+  `navis_audit_models` 28,6 s → **1,8 s**. Cada nodo se lee una vez por
+  corrida (caché de propiedades), las pasadas completas leen por búsqueda
+  directa en las pestañas detectadas en vez de enumerar todas, y el
+  inventario y la auditoría recorren el árbol de arriba abajo con los
+  ancestros en una pila.
 - Perfil de ejemplo con `Element > Category` y una condición por set: con
   `CategoryId` (solo existe en agregados de ACC) capturaba cero en un NWC
   local. Un set vacío sale en `empty_sets` con su causa (C#) y no es
