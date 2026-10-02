@@ -1,5 +1,17 @@
 # Distribution and directory publication
 
+## 1.1.1 — 2026-10-02 UTC
+
+The [NavisCoord 1.1.1 release](https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v1.1.1) (merge of PR #24 on top of PR #23, source f1b7125) was published on 2026-10-02 at 02:04 UTC with thirteen assets; all public hashes were re-downloaded and verified. 1.1.0 (01:41 UTC the same night, PR #23) shipped add-in ZIPs without the ribbon files, which `Install-NavisCoord.ps1` refused; its notes now point to 1.1.1. The 1.0.0 ZIPs had the same defect.
+
+| Channel | Status |
+|---|---|
+| GitHub Releases | 1.1.1 published and marked latest; tag CI green; add-in ZIPs reproduced byte-for-byte from two clones; wheel, sdist, SBOM and provenance from the tag's CI run |
+| Official MCP Registry | Published 2026-10-02 at 02:29:58 UTC; the public API reports `io.github.HorizunGroup/naviscoord-mcp` 1.1.1 as active and latest, with the MCPB SHA256 `91fe6268…` matching the downloaded release asset. Authorized by exchanging the owner's GitHub CLI token for a registry token (`/v0/auth/github-at`); no credential was stored or printed |
+| Smithery | 1.1.1 installer bundle verified against its checksum and Smithery's pre-checks (53 tools with input schemas, matching versions, 0.06 MB); upload pending the publisher's `SMITHERY_API_KEY` |
+
+## 1.0.0
+
 The stable [NavisCoord 1.0.0 release](https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v1.0.0) was published on 2026-09-07 at 03:56 UTC after independent approval and merge of PRs #19 and #20. Its original eleven assets include eight distributables, a CycloneDX SBOM, provenance and SHA256 checksums. An optional small installer MCPB and its separate checksum were subsequently added, bringing the total to thirteen. All asset hashes were verified. Directory review is separate from release publication; no third-party approval is claimed without a receipt.
 
 | Channel | Distribution route | Current 1.0 status |

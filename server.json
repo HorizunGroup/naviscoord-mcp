@@ -3,7 +3,7 @@
   "name": "io.github.HorizunGroup/naviscoord-mcp",
   "title": "NavisCoord",
   "description": "Autodesk Navisworks coordination: clash triage, root causes, work plans and reports",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "websiteUrl": "https://github.com/HorizunGroup/naviscoord-mcp",
   "repository": {
     "url": "https://github.com/HorizunGroup/naviscoord-mcp",
@@ -13,8 +13,8 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/HorizunGroup/naviscoord-mcp/releases/download/v1.0.0/naviscoord-1.0.0-win-x64.mcpb",
-      "fileSha256": "a94cd1dc2f5532f9830a4fd857f16cc5c36f761465b8aa5de67ab76b2971d01e",
+      "identifier": "https://github.com/HorizunGroup/naviscoord-mcp/releases/download/v1.1.1/naviscoord-1.1.1-win-x64.mcpb",
+      "fileSha256": "91fe62684474a72461e88b58ba62c05d39225fc98587f1d383913e4d658819f1",
       "transport": {
         "type": "stdio"
       }
