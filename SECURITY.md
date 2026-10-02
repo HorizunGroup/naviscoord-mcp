@@ -4,7 +4,8 @@
 
 | Versión | Soporte |
 |---|---|
-| 1.1.0 | Sí |
+| 1.1.1 | Sí |
+| 1.1.0 | No: sus ZIP del complemento no traen la cinta; usa 1.1.1 |
 | 1.0.0 | Sí |
 | 0.4.0 | Sí |
 

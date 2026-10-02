@@ -78,6 +78,12 @@ $project   = @{
 $legal        = @('LICENSE', 'NOTICE')
 $profileSrc   = Join-Path $repoRoot 'profiles\example-profile.json'
 $profileName  = 'example-profile.json'
+# La cinta y sus iconos, tal como los deja el build (CopyRibbonLayout y
+# CopyRibbonIcons en el .csproj). Sin ellos el DLL carga pero la pestaña no
+# aparece, e Install-NavisCoord.ps1 rechaza el ZIP: los paquetes 1.0.0 y
+# 1.1.0 se publicaron sin estos cuatro archivos y el instalador oficial no
+# pudo instalar ninguno. Rutas relativas con barra normal, como en el ZIP.
+$ribbon       = @('NavisCoordRibbon.xaml', 'en-US/NavisCoordRibbon.xaml', 'nc_16.png', 'nc_32.png')
 $guard        = Join-Path $PSScriptRoot 'Assert-PublicArtifacts.ps1'
 
 # ------------------------------------------------------- fecha reproducible
@@ -513,9 +519,9 @@ foreach ($f in $found) {
     # haya dejado aqui: un perfil afinado es trabajo de un coordinador y este
     # script no sabe reconstruirlo.
     New-Item -ItemType Directory -Force -Path $packDir | Out-Null
-    $owned = @($project.Dll, '*.pdb', $profileName) + $legal
+    $owned = @($project.Dll, '*.pdb', $profileName) + $legal + ($ribbon | ForEach-Object { Split-Path $_ -Leaf })
     foreach ($pattern in $owned) {
-        Get-ChildItem -Path $packDir -Filter $pattern -File -ErrorAction SilentlyContinue |
+        Get-ChildItem -Path $packDir -Filter $pattern -File -Recurse -ErrorAction SilentlyContinue |
             ForEach-Object { [System.IO.File]::Delete($_.FullName) }
     }
 
@@ -524,6 +530,13 @@ foreach ($f in $found) {
         Copy-Item (Join-Path $repoRoot $name) -Destination $packDir -Force
     }
     Copy-Item $profileSrc -Destination $packDir -Force
+    foreach ($relative in $ribbon) {
+        $source = Join-Path $outDir ($relative.Replace('/', [IO.Path]::DirectorySeparatorChar))
+        if (-not (Test-Path $source)) { throw "[$v] el build no dejó $relative en $outDir" }
+        $target = Join-Path $packDir ($relative.Replace('/', [IO.Path]::DirectorySeparatorChar))
+        New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
+        Copy-Item $source -Destination $target -Force
+    }
 
     # Verificacion: comprobar lo que quedo en disco, no asumir que las copias
     # funcionaron.
@@ -532,15 +545,17 @@ foreach ($f in $found) {
     if ((Get-Item $builtDll).Length -ne (Get-Item $packedDll).Length) {
         throw "[$v] el DLL empaquetado no coincide en tamano con el compilado; la copia quedo incompleta."
     }
-    foreach ($name in ($legal + $profileName)) {
-        if (-not (Test-Path (Join-Path $packDir $name))) { throw "[$v] falta $name en $packDir" }
+    foreach ($name in ($legal + $profileName + $ribbon)) {
+        if (-not (Test-Path (Join-Path $packDir ($name.Replace('/', [IO.Path]::DirectorySeparatorChar))))) { throw "[$v] falta $name en $packDir" }
     }
 
     # Nada privado puede viajar en el paquete. Un .pdb ya NO es tolerado: el
     # build de Release no emite simbolos, asi que uno aqui solo puede venir de
     # una copia manual o de un build de Debug mal dirigido.
-    $allowed = @($project.Dll, $profileName) + $legal
-    $stray = Get-ChildItem $packDir -Recurse -File | Where-Object { $_.Name -notin $allowed }
+    $allowed = @($project.Dll, $profileName) + $legal + $ribbon
+    $stray = Get-ChildItem $packDir -Recurse -File | Where-Object {
+        $_.FullName.Substring($packDir.Length).TrimStart('\', '/').Replace('\', '/') -notin $allowed
+    }
     if ($stray) {
         throw "[$v] el paquete lleva archivos inesperados: $(($stray | ForEach-Object { $_.Name }) -join ', ')"
     }
