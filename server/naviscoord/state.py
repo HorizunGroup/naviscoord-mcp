@@ -62,6 +62,11 @@ class SessionState:
     discovery: Any = None
     group_key: str = ""
     group_roles: dict[str, str] = field(default_factory=dict)
+    # The clash export still running as a job in the add-in, if any. Kept so
+    # a retried navis_analyze joins it instead of queueing a second full
+    # export behind it — which is how a one-minute export became a
+    # Navisworks that did not answer for the rest of the session.
+    analysis_job: dict[str, Any] = field(default_factory=dict)
 
     # Provenance of everything above.
     target_id: str = ""
@@ -124,6 +129,7 @@ class SessionState:
         self.discovery = None
         self.group_key = ""
         self.group_roles = {}
+        self.analysis_job = {}
 
     def set_profile(self, profile: Profile) -> bool:
         """Swaps the profile and drops what it invalidates.

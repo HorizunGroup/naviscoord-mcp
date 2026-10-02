@@ -281,19 +281,22 @@ namespace NavisCoord
             }
 
             var mine = whitelists[own];
+            categoryNames = categoryNames ?? new Dictionary<string, string>();
             foreach (var entry in categoryTally.OrderByDescending(e => e.Value).ThenBy(e => e.Key, StringComparer.Ordinal))
             {
-                if (mine.Contains(entry.Key)) continue;
+                // A whitelist may hold ids (CategoryId) or names (Element >
+                // Category); the tally key is an id when the file had one, so
+                // its display name is tried as well.
+                categoryNames.TryGetValue(entry.Key, out var display);
+                bool Holds(HashSet<string> list) =>
+                    list.Contains(entry.Key) || (!string.IsNullOrEmpty(display) && list.Contains(display));
+                if (Holds(mine)) continue;
 
                 var owners = whitelists
-                    .Where(w => !string.Equals(w.Key, own, StringComparison.OrdinalIgnoreCase) &&
-                                w.Value.Contains(entry.Key))
+                    .Where(w => !string.Equals(w.Key, own, StringComparison.OrdinalIgnoreCase) && Holds(w.Value))
                     .Select(w => w.Key)
                     .OrderBy(w => w, StringComparer.OrdinalIgnoreCase)
                     .ToList();
-
-                categoryNames = categoryNames ?? new Dictionary<string, string>();
-                categoryNames.TryGetValue(entry.Key, out var display);
 
                 if (owners.Count == 0)
                 {

@@ -318,6 +318,10 @@ class DisciplineRule:
     label: str
     categories: set[str] = field(default_factory=set)
     file_patterns: list[str] = field(default_factory=list)
+    #: Every category the profile's sets select for this trade, shared ones
+    #: included. Used to build explicit sets, where the source file — not
+    #: the category — decides between two trades that both model walls.
+    selected_categories: set[str] = field(default_factory=set)
 
 
 @dataclass(slots=True)
@@ -358,6 +362,16 @@ class Profile:
                 # First discipline to claim a category wins, so profile order
                 # is the tie-break for genuinely ambiguous categories.
                 category_index.setdefault(category, code)
+        if not disciplines:
+            # The add-in's format: the trades are the folders of `sets`, and
+            # nothing else declares them. The «Comité de obra» profile is
+            # written that way, and this side read it as a profile with no
+            # disciplines at all — navis_load_profile answered ["OTRO"] for
+            # a three-trade project and every later step agreed.
+            for rule in _disciplines_from_sets(raw):
+                disciplines[rule.code] = rule
+                for category in rule.categories:
+                    category_index.setdefault(category, rule.code)
         if UNCLASSIFIED not in disciplines:
             disciplines[UNCLASSIFIED] = DisciplineRule(code=UNCLASSIFIED, label="Sin clasificar")
         return cls(
@@ -411,6 +425,54 @@ class Profile:
     def label(self, code: str) -> str:
         rule = self.disciplines.get(code)
         return rule.label if rule else code
+
+    def discipline_code(self, name: str) -> str:
+        """The code a profile name refers to: a code, a folder label or an alias.
+
+        The add-in's clash pairs name folders (``"a": "Estructura"``) while
+        the engine tags elements with codes (``EST``); without this the two
+        never meet and every pair reads as uncovered.
+        """
+        text = str(name or "").strip()
+        if not text:
+            return ""
+        aliases = {
+            str(k).strip().lower(): str(v).strip()
+            for k, v in (self.raw.get("discipline_aliases") or {}).items()
+            if not str(k).startswith("_") and str(v).strip()
+        }
+        text = aliases.get(text.lower(), text)
+        for code, rule in self.disciplines.items():
+            if text.lower() in (code.lower(), rule.label.lower()):
+                return code
+        return text.upper()
+
+    def clash_pairs(self) -> list[dict[str, Any]]:
+        """The pairs to compare, from ``clash_matrix.pairs`` or ``clash.pairs``.
+
+        Two spellings exist because the server and the add-in grew separate
+        formats: the add-in's configure reads ``clash``, the server's matrix
+        read only ``clash_matrix`` and refused a profile that configure had
+        just applied. Both are accepted; sides are resolved to discipline
+        codes and the add-in's ``test`` key is read as the test ``type``.
+        """
+        for section in ("clash_matrix", "clash"):
+            pairs = self.section(section).get("pairs") or []
+            if not isinstance(pairs, list) or not pairs:
+                continue
+            out: list[dict[str, Any]] = []
+            for pair in pairs:
+                if not isinstance(pair, dict):
+                    continue
+                entry = dict(pair)
+                entry["a"] = self.discipline_code(str(pair.get("a", "")))
+                entry["b"] = self.discipline_code(str(pair.get("b", "")))
+                if "type" not in entry and pair.get("test"):
+                    entry["type"] = pair["test"]
+                entry["source_section"] = section
+                out.append(entry)
+            return out
+        return []
 
     def noun_for(self, category: str) -> str:
         """How to name an element of this category in prose, or ''."""
@@ -558,6 +620,56 @@ _NODE_ARTEFACTS = {
     "körper", "gruppe", "ebene", "geometrie", "datei", "linie",
     "sólido composto", "camada", "arquivo", "linha",
 }
+
+
+def _scope_tokens(scope: str) -> list[str]:
+    """``"-VTM-|-AAC-"`` → ``["VTM", "AAC"]``: the codes a scope names."""
+    out: list[str] = []
+    for variant in str(scope or "").split("|"):
+        token = variant.strip().strip("-_ .").strip()
+        if token and token.replace("-", "").replace("_", "").isalnum():
+            out.append(token)
+    return out
+
+
+def _disciplines_from_sets(raw: dict[str, Any]) -> list[DisciplineRule]:
+    """Discipline rules read from ``sets.folders`` (the add-in's format).
+
+    Code: the model token of the folder's scope (``-EST-`` → ``EST``), or the
+    folder name when there is none. Label: the folder name. File patterns:
+    the scope tokens and the folder name. Categories: the ``Category`` values
+    the folder's sets select — but only the ones no other folder also
+    selects. ``Walls`` in both architecture and structure says nothing about
+    which trade a wall is, and claiming it for the first folder would tag
+    every structural wall as architecture; the model file decides instead.
+    """
+    sets = raw.get("sets") if isinstance(raw.get("sets"), dict) else {}
+    folders = [f for f in (sets.get("folders") or []) if isinstance(f, dict)]
+    rules: list[DisciplineRule] = []
+    claimed: dict[str, set[str]] = {}
+    for folder in folders:
+        name = str(folder.get("folder") or "").strip()
+        if not name:
+            continue
+        tokens = _scope_tokens(str(folder.get("scope_model_contains") or ""))
+        code = tokens[0].upper() if tokens else name
+        categories = {
+            str(condition.get("value") or "").strip().lower()
+            for entry in (folder.get("sets") or []) if isinstance(entry, dict)
+            for condition in (entry.get("conditions") or []) if isinstance(condition, dict)
+            if str(condition.get("property") or "").strip().lower() in ("category", "categoría", "categoria")
+            and str(condition.get("test") or "equals").strip().lower() in ("equals", "=", "==")
+            and str(condition.get("value") or "").strip()
+        }
+        for category in categories:
+            claimed.setdefault(category, set()).add(code)
+        patterns = [t.lower() for t in tokens] + [name.lower()]
+        rules.append(DisciplineRule(code=code, label=name, categories=set(categories),
+                                    file_patterns=list(dict.fromkeys(patterns)),
+                                    selected_categories=set(categories)))
+    for rule in rules:
+        rule.categories = {c for c in rule.categories if len(claimed.get(c, ())) == 1}
+    return rules
 
 
 def _is_useful_name(value: str) -> bool:

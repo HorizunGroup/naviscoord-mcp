@@ -28,6 +28,15 @@ Devuelve un resumen compacto — nunca la lista cruda — con los problemas
 mejor puntuados y las causas raíz. El resultado completo queda en memoria
 para navis_issue_detail, navis_apply_groups y el resto.
 
+**Federaciones grandes.** La extracción corre en Navisworks como trabajo
+(`clash/export`). Esta llamada espera hasta `wait_seconds` (40 s por
+defecto, por debajo del límite de 60 s del cliente); si el trabajo no ha
+terminado responde `state: "running"` con `job_id` y su avance. Entonces:
+`navis_job_status(job_id)` para ver el avance, `navis_cancel_job(job_id)`
+para detenerlo, y `navis_analyze(job_id=...)` para recoger el análisis
+cuando termine. NO repitas navis_analyze sin `job_id` mientras tanto: se
+une al trabajo en curso en vez de encolar otra extracción completa.
+
 ```json
 {
   "properties": {
@@ -55,6 +64,16 @@ para navis_issue_detail, navis_apply_groups y el resto.
       "default": 15,
       "title": "Top",
       "type": "integer"
+    },
+    "job_id": {
+      "default": "",
+      "title": "Job Id",
+      "type": "string"
+    },
+    "wait_seconds": {
+      "default": 40.0,
+      "title": "Wait Seconds",
+      "type": "number"
     }
   },
   "title": "navis_analyzeArguments",
@@ -259,9 +278,17 @@ Crea carpetas de search sets definidos por criterio, no por lista.
 Complementa `navis_build_sets`, no lo reemplaza: aquel congela QUÉ
 elementos se probaron, para que dos corridas de la matriz sigan siendo
 comparables; éste guarda la REGLA, de modo que la plantilla sobreviva a
-una actualización del federado. El ancla recomendada es independiente del
-idioma —alcance por modelo y `CategoryId` numérico— porque el nombre de
-categoría cambia con el idioma del Revit que publicó.
+una actualización del federado. Ancla: alcance por modelo
+(`scope_model_contains`) y la categoría de Revit. En un NWC exportado
+localmente desde Revit usa `{"tab": "Element", "property": "Category",
+"value": "Walls"}` con el nombre en el idioma del Revit que publicó;
+`CategoryId` solo existe en los agregados de ACC y en un NWC local captura
+cero. Navisworks une las condiciones de un set con Y: un set por valor.
+
+Un set que no captura nada se reporta en `empty_sets` con su causa
+probable y la llamada no sale `completed`. «created/updated/unchanged» se
+deciden releyendo el GUID de cada carpeta antes y después; una carpeta
+que no se pudo reemplazar sale en `blocked` y sus sets en `stale_sets`.
 
 `folders`: [{"folder": "MEP", "scope_model_contains": "-MEP-",
              "sets": [{"name": "Tubería", ...criterios}]}]
@@ -763,6 +790,13 @@ discrepar. Nunca destruye resultados ya corridos en silencio; un test con
 definición cambiada pero con resultados se conserva y se reporta como
 desactualizado, para que la decisión sea humana.
 
+Los conteos se releen del documento: `sets.matches` suma solo los sets
+que quedaron con la definición pedida; los de una carpeta conservada
+salen en `sets.stale_sets` (con `planned_matches` aparte) y bajan el
+estado a `partial`. Un test SIN resultados que esta misma configuración
+rehace ya no congela los sets viejos que usaba. `tests_not_in_profile` y
+`folders_not_in_profile` nombran lo que el documento trae y el perfil no.
+
 ```json
 {
   "properties": {
@@ -886,6 +920,12 @@ el PID terminó. Si Navisworks sigue abierto —por ejemplo, por un diálogo
 de otro complemento— devuelve `partial`, nunca un falso `completed`.
 Con `dry_run=true` no cierra nada.
 
+Espera hasta `verify_timeout` segundos (45 por defecto, máximo 50; en la
+prueba en vivo del comité Navisworks tardó 36 s en terminar el proceso):
+descargar un federado tarda, y con 15 s un cierre en curso se reportaba
+como rechazado. Si el proceso sigue vivo pero el puente ya no responde,
+lo dice (`exit_in_progress: true`) en vez de sugerir un diálogo bloqueado.
+
 ```json
 {
   "properties": {
@@ -903,7 +943,7 @@ Con `dry_run=true` no cierra nada.
       "type": "boolean"
     },
     "verify_timeout": {
-      "default": 15.0,
+      "default": 45.0,
       "title": "Verify Timeout",
       "type": "number"
     }

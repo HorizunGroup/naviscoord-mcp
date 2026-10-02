@@ -337,6 +337,7 @@ namespace NavisCoord
 
             var scanned = 0;
             var ambiguous = 0;
+            var cache = NavisContext.NewLookupCache(doc, new[] { "Category" });
             foreach (var model in doc.Models)
             {
                 var sourceFile = System.IO.Path.GetFileName(
@@ -349,7 +350,7 @@ namespace NavisCoord
                     // parents duplicates every clash their children produce.
                     if (item.Children.Any()) continue;
 
-                    var verdict = router.Resolve(sourceFile, NavisContext.CategoryOf(item));
+                    var verdict = router.Resolve(sourceFile, NavisContext.CategoryOf(item, cache));
                     if (!verdict.Matched) continue;
                     if (!buckets.TryGetValue(verdict.Discipline, out var bucket))
                     {
@@ -526,12 +527,24 @@ namespace NavisCoord
                     var search = BuildSetSearch(doc, scopeRoots, setSpec, out matchMode);
                     var count = search.FindAll(doc, false).Count;
 
-                    setReports.Add(new Dictionary<string, object>
+                    var report = new Dictionary<string, object>
                     {
                         ["name"] = setName,
                         ["matches"] = (double)count,
                         ["match_mode"] = matchMode
-                    });
+                    };
+                    // An empty set is reported with its likely cause instead
+                    // of being written as if it were a configuration.
+                    var diagnosis = SetDiagnostics.Diagnose(
+                        Json.Arr(setSpec, "conditions").OfType<Dictionary<string, object>>(),
+                        count, detected != null);
+                    if (diagnosis != null)
+                    {
+                        report["empty"] = true;
+                        report["empty_reason"] = Json.Str(diagnosis, "code");
+                        report["hint"] = Json.Str(diagnosis, "hint");
+                    }
+                    setReports.Add(report);
                     pending.Add(Tuple.Create(folderName, setName, search));
                 }
 
@@ -600,7 +613,12 @@ namespace NavisCoord
                 });
             }
 
-            var steps = ConfigurePlanning.Plan(existingSets, desiredSets, before, Capability);
+            // Tests the caller is about to rebuild from the profile (configure
+            // sends its matrix). Only those, and only while they have no
+            // results, stop protecting the sets they point at.
+            var rebuildable = new HashSet<string>(
+                Json.StrArr(payload, "rebuild_tests_without_results"), StringComparer.OrdinalIgnoreCase);
+            var steps = ConfigurePlanning.Plan(existingSets, desiredSets, before, Capability, rebuildable);
             result["plan"] = steps.Select(st => (object)st.ToJson()).ToList();
             result["migration_capability"] = Capability == ConfigurePlanning.MigrationCapability.Unverified
                 ? ConfigurePlanning.CapabilityUnverified
@@ -617,6 +635,7 @@ namespace NavisCoord
             }
 
             var blocked = new List<object>();
+            var rebuildPending = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             // Built with the plan and with `allowed` tied to the rehearsal
             // flag, so the ordering rules below are enforced by the gate
@@ -684,15 +703,22 @@ namespace NavisCoord
                     // it is. Not updating a criterion is recoverable. Losing a
                     // finished clash run is not.
                     var held = GuidsUnder(existing).Where(referenced.Contains).ToList();
-                    if (held.Count > 0)
+                    var affected = held
+                        .SelectMany(g => dependents.TryGetValue(g, out var users)
+                            ? users
+                            : Enumerable.Empty<string>())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    if (held.Count > 0 && ConfigurePlanning.CanRebuildDependents(affected, before, rebuildable))
                     {
-                        var affected = held
-                            .SelectMany(g => dependents.TryGetValue(g, out var users)
-                                ? users
-                                : Enumerable.Empty<string>())
-                            .Distinct(StringComparer.OrdinalIgnoreCase)
-                            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-                            .ToList();
+                        // Empty tests the caller rebuilds next: the folder goes,
+                        // and they are excluded from the integrity check below
+                        // because their sources are meant to disappear.
+                        foreach (var name in affected) rebuildPending.Add(name);
+                    }
+                    else if (held.Count > 0)
+                    {
                         var withResults = before
                             .Where(t => t.HasResults && t.AllSourceGuids.Any(held.Contains))
                             .Select(t => t.Name)
@@ -855,8 +881,45 @@ namespace NavisCoord
             // have shrunk. A single degradation is enough to withhold
             // `completed` — including one nothing here predicted.
             var after = SnapshotTests(doc);
-            var degraded = ConfigurePlanning.CompareIntegrity(before, after, ResolveSources(doc, after));
+            var degraded = ConfigurePlanning.CompareIntegrity(
+                before.Where(t => !rebuildPending.Contains(t.Name)),
+                after.Where(t => !rebuildPending.Contains(t.Name)),
+                ResolveSources(doc, after));
             result["integrity"] = degraded.Cast<object>().ToList();
+            result["tests_pending_rebuild"] = rebuildPending
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase).Cast<object>().ToList();
+
+            // Each requested set, re-read: is it at its path, and does it
+            // search for what was asked? The planned `matches` describe the
+            // NEW criteria; they are only true of the document for a set whose
+            // definition is current. A preserved folder keeps its old sets —
+            // with the same names — and reporting the new counts over them is
+            // how a run announced 3,940 captured elements in empty sets.
+            var inDocument = new List<object>();
+            var stale = new List<object>();
+            var plannedCounts = planned.OfType<Dictionary<string, object>>()
+                .Where(p => p.TryGetValue("sets", out var s) && s is List<object>)
+                .SelectMany(p => ((List<object>)p["sets"]).OfType<Dictionary<string, object>>()
+                    .Select(s => Tuple.Create(Json.Str(p, "folder") + "/" + Json.Str(s, "name"), Json.Num(s, "matches", 0))))
+                .GroupBy(t => t.Item1, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Item2, StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in pending)
+            {
+                var live = FindSetIn(doc, entry.Item1, entry.Item2);
+                var current = live != null && SameDefinition(live, entry.Item3);
+                var path = entry.Item1 + "/" + entry.Item2;
+                inDocument.Add(new Dictionary<string, object>
+                {
+                    ["set"] = path,
+                    ["present"] = live != null,
+                    ["current_definition"] = current,
+                    ["guid"] = live?.Guid.ToString() ?? string.Empty,
+                    ["matches"] = current && plannedCounts.TryGetValue(path, out var n) ? n : 0.0
+                });
+                if (!current) stale.Add(path);
+            }
+            result["sets_in_document"] = inDocument;
+            result["stale_sets"] = stale;
 
             // `verified` counts only folders that were written AND came back
             // clean. Preserved and blocked stay separate on purpose: a folder
@@ -867,6 +930,11 @@ namespace NavisCoord
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count();
             var defects = degraded.Count + failures.Count;
+            if (stale.Count > 0)
+            {
+                result["stale_note"] = stale.Count + " set(s) siguen en el documento con su definición anterior " +
+                                       "(carpeta conservada o no escrita): sus conteos no son los planeados.";
+            }
             var settledCount = created + untouched.Count;
             return Sealed("sets/build_search", payload, result,
                 requested: writtenFolders,

@@ -145,6 +145,16 @@ namespace NavisCoord
                 destination = decision.Path;
                 result.Detail["overwrote_existing"] = decision.Existed;
                 result.Detail["allowed_root"] = decision.Root ?? string.Empty;
+
+                var missingFolder = SaveFormats.MissingFolderProblem(destination, Directory.Exists);
+                if (missingFolder != null)
+                {
+                    result.Detail["path"] = destination;
+                    result.Detail["folder_exists"] = false;
+                    result.Fail(missingFolder);
+                    result.FingerprintAfter = result.FingerprintBefore;
+                    return result.ToJson();
+                }
             }
             else
             {

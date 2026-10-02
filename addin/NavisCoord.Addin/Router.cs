@@ -77,6 +77,7 @@ namespace NavisCoord
                 ["workflow/rules"] = WorkflowHandlers.Rules,
                 ["document/save"] = SaveHandlers.Save,
                 ["document/save_as"] = SaveHandlers.SaveAs,
+                ["clash/export"] = ExportClashes,
                 ["clash/run"] = (p, _) => WriteHandlers.RunTests(p),
                 ["clash/group"] = (p, _) => WriteHandlers.ApplyGroups(p),
                 ["clash/apply_rules"] = (p, _) => WriteHandlers.ApplyIgnoreRules(p),
@@ -257,6 +258,7 @@ namespace NavisCoord
             var sampleLimit = Math.Max(0, Json.Int(payload, "category_sample", 20000));
 
             var models = new List<object>();
+            var cache = NavisContext.NewLookupCache(doc, new[] { "Category" });
             for (var i = 0; i < doc.Models.Count; i++)
             {
                 var model = doc.Models[i];
@@ -269,7 +271,7 @@ namespace NavisCoord
                     {
                         itemCount++;
                         if (itemCount > sampleLimit) break;
-                        var category = NavisContext.CategoryOf(item);
+                        var category = NavisContext.CategoryOf(item, cache);
                         if (string.IsNullOrWhiteSpace(category)) continue;
                         categories.TryGetValue(category, out var count);
                         categories[category] = count + 1;
@@ -354,7 +356,25 @@ namespace NavisCoord
         /// groups, and a grouped result must not be silently skipped.
         /// </remarks>
         private static Dictionary<string, object> ExportClashes(Dictionary<string, object> payload)
+            => ExportClashes(payload, null);
+
+        /// <summary>
+        /// The export, optionally as a job: progress per clash and a cancel
+        /// honoured between clashes and between inventory items.
+        /// </summary>
+        /// <remarks>
+        /// Synchronously the export held the UI thread for about a minute on
+        /// a three-model federation, which is exactly the MCP client's
+        /// timeout: the caller gave up, retried, and every retry queued
+        /// another full export behind the first. As a job the caller gets an
+        /// id at once, watches it move through <c>job/status</c> and can stop
+        /// it; the phase timings say where the time went.
+        /// </remarks>
+        internal static Dictionary<string, object> ExportClashes(
+            Dictionary<string, object> payload, JobManager.Job job)
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var timings = new Dictionary<string, object>();
             var doc = RequireDocument();
             var analysisRevision = AnalysisRevision.Current(doc);
             var scale = NavisContext.MetreScale(doc);
@@ -362,6 +382,13 @@ namespace NavisCoord
 
             var wanted = new List<string>(NavisContext.BaseProperties);
             wanted.AddRange(Json.StrArr(payload, "properties"));
+            // One property read per node for the whole run: the clashes and
+            // the opening inventory walk the same ancestors over and over.
+            // The interest covers every name either of them asks for.
+            var interest = new List<string>(wanted);
+            interest.AddRange(LevelProperties);
+            interest.AddRange(PenetrationInventory.IdentityProperties);
+            var cache = NavisContext.NewCache(interest);
 
             var testFilter = new HashSet<string>(Json.StrArr(payload, "tests"), StringComparer.OrdinalIgnoreCase);
             var statusFilter = new HashSet<string>(Json.StrArr(payload, "statuses"), StringComparer.OrdinalIgnoreCase);
@@ -370,6 +397,22 @@ namespace NavisCoord
             var clashes = new List<object>();
             var tests = new List<object>();
             var truncated = false;
+            var cancelled = false;
+
+            var total = 0;
+            if (job != null)
+            {
+                foreach (var saved in doc.GetClash().TestsData.Tests)
+                {
+                    if (saved is ClashTest counted &&
+                        (testFilter.Count == 0 || testFilter.Contains(counted.DisplayName ?? string.Empty)))
+                    {
+                        total += CountResults(counted);
+                    }
+                }
+                if (limit > 0) total = Math.Min(total, limit);
+                job.Progress("exportando cruces", 0, Math.Max(total, 1));
+            }
 
             foreach (var saved in doc.GetClash().TestsData.Tests)
             {
@@ -380,6 +423,11 @@ namespace NavisCoord
                 var exported = 0;
                 foreach (var result in EnumerateResults(test))
                 {
+                    if (job != null && job.CancelRequested)
+                    {
+                        cancelled = true;
+                        break;
+                    }
                     if (statusFilter.Count > 0 && !statusFilter.Contains(result.Status.ToString())) continue;
                     if (limit > 0 && clashes.Count >= limit)
                     {
@@ -387,8 +435,9 @@ namespace NavisCoord
                         break;
                     }
 
-                    clashes.Add(DescribeClash(doc, test, result, scale, wanted));
+                    clashes.Add(DescribeClash(doc, test, result, scale, wanted, cache));
                     exported++;
+                    job?.Progress("exportando cruces", clashes.Count, Math.Max(total, 1));
                 }
 
                 tests.Add(new Dictionary<string, object>
@@ -410,14 +459,37 @@ namespace NavisCoord
                     ["selection_b"] = SelectionNames(doc, test.SelectionB)
                 });
 
-                if (truncated) break;
+                if (truncated || cancelled) break;
             }
+            timings["clashes_ms"] = (double)clock.ElapsedMilliseconds;
+
+            var inventoryStart = clock.ElapsedMilliseconds;
+            var inventory = cancelled
+                ? new Dictionary<string, object>
+                {
+                    ["scope"] = "not_read", ["scanned"] = 0, ["complete"] = false,
+                    ["errors"] = new List<object>(), ["elements"] = new List<object>()
+                }
+                : PenetrationInventory.Read(doc, scale, wanted, payload,
+                    job == null ? (Func<bool>)null : () => job.CancelRequested,
+                    job == null ? (Action<int>)null : n => job.Phasing("inventario de pasos", n + " elementos revisados"),
+                    cache);
+            timings["penetration_inventory_ms"] = (double)(clock.ElapsedMilliseconds - inventoryStart);
+            cancelled = cancelled || (job != null && job.CancelRequested);
+            timings["total_ms"] = (double)clock.ElapsedMilliseconds;
+            timings["nodes_read"] = (double)cache.NodesRead;
 
             return new Dictionary<string, object>
             {
+                // Read by JobManager when this runs as a job: a cancelled
+                // export is not an export, and saying `completed` over half
+                // the clashes would be analysed as if it were the model.
+                ["status"] = cancelled ? EnvelopeContract.Cancelled : EnvelopeContract.Completed,
+                ["cancelled"] = cancelled,
+                ["timings"] = timings,
                 ["schema"] = NavisContext.Schema,
                 ["analysis_revision"] = analysisRevision,
-                ["penetration_inventory"] = PenetrationInventory.Read(doc, scale, wanted, payload),
+                ["penetration_inventory"] = inventory,
                 ["document_fingerprint"] = DocumentContext.Fingerprint(doc),
                 ["document"] = new Dictionary<string, object>
                 {
@@ -484,8 +556,11 @@ namespace NavisCoord
             return models;
         }
 
+        private static readonly string[] LevelProperties = { "Level", "Reference Level", "Nivel" };
+
         private static Dictionary<string, object> DescribeClash(
-            Document doc, ClashTest test, ClashResult result, double scale, List<string> wanted)
+            Document doc, ClashTest test, ClashResult result, double scale, List<string> wanted,
+            NodePropertyCache<ModelItem> cache = null)
         {
             // Item1/Item2 are the clashing geometry; CompositeItem falls back
             // to the composite parent when the test merged composites, which
@@ -508,10 +583,10 @@ namespace NavisCoord
                 // scaled but otherwise untouched.
                 ["distance_m"] = result.Distance * scale,
                 ["point"] = NavisContext.ToMetres(result.Center, scale),
-                ["level"] = LevelOf(a, b),
+                ["level"] = LevelOf(a, b, cache),
                 ["grid"] = string.Empty,
-                ["a"] = NavisContext.Describe(doc, a, scale, wanted),
-                ["b"] = NavisContext.Describe(doc, b, scale, wanted)
+                ["a"] = NavisContext.Describe(doc, a, scale, wanted, cache),
+                ["b"] = NavisContext.Describe(doc, b, scale, wanted, cache)
             };
         }
 
@@ -523,13 +598,13 @@ namespace NavisCoord
         /// either, despite what the printed Navisworks report shows — so the
         /// level is taken from whichever side actually published one.
         /// </remarks>
-        private static string LevelOf(ModelItem a, ModelItem b)
+        private static string LevelOf(ModelItem a, ModelItem b, NodePropertyCache<ModelItem> cache = null)
         {
             foreach (var item in new[] { a, b })
             {
                 if (item == null) continue;
-                var props = NavisContext.Harvest(item, new[] { "Level", "Reference Level", "Nivel" });
-                foreach (var key in new[] { "Level", "Reference Level", "Nivel" })
+                var props = NavisContext.Harvest(item, LevelProperties, cache);
+                foreach (var key in LevelProperties)
                 {
                     if (props.TryGetValue(key, out var value))
                     {

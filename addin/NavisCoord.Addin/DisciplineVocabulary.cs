@@ -102,20 +102,32 @@ namespace NavisCoord
 
             var tokens = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (profile.TryGetValue("sets", out var rawSets) && rawSets is Dictionary<string, object> sets)
             {
                 foreach (var rawFolder in Json.Arr(sets, "folders"))
                 {
                     if (!(rawFolder is Dictionary<string, object> folder)) continue;
                     var name = Json.Str(folder, "folder");
-                    if (!string.IsNullOrWhiteSpace(name) && seen.Add(name.Trim()))
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    name = name.Trim();
+                    if (seen.Add(name)) tokens.Add(name);
+
+                    // The model token the folder is scoped to is the code a
+                    // model NAME carries. A folder called "Arquitectura" scoped
+                    // to "-ARQ-" must recognise MIR-ARQ-Mirador.nwc as
+                    // Arquitectura; matching only the folder name left every
+                    // model of the «Comité de obra» profile without a
+                    // discipline, and the purity audit with nothing to judge.
+                    foreach (var token in ScopeTokens(Json.Str(folder, "scope_model_contains")))
                     {
-                        tokens.Add(name.Trim());
+                        if (string.Equals(token, name, StringComparison.OrdinalIgnoreCase)) continue;
+                        if (!aliases.ContainsKey(token)) aliases[token] = name;
+                        if (seen.Add(token)) tokens.Add(token);
                     }
                 }
             }
 
-            var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (profile.TryGetValue(AliasSection, out var rawAliases) &&
                 rawAliases is Dictionary<string, object> map)
             {
@@ -143,6 +155,19 @@ namespace NavisCoord
             // carrying -MECH- must not match on the shorter prefix.
             tokens.Sort((a, b) => b.Length.CompareTo(a.Length));
             return new DisciplineVocabulary(tokens.ToArray(), aliases, freestanding);
+        }
+
+        /// <summary><c>"-VTM-|-AAC-"</c> → <c>VTM</c>, <c>AAC</c>.</summary>
+        internal static IEnumerable<string> ScopeTokens(string scope)
+        {
+            foreach (var variant in (scope ?? string.Empty).Split('|'))
+            {
+                var token = variant.Trim().Trim('-', '_', '.', ' ');
+                if (token.Length > 0 && token.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_'))
+                {
+                    yield return token;
+                }
+            }
         }
 
         /// <summary>

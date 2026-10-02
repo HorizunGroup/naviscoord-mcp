@@ -194,7 +194,7 @@ def test_no_tool_advertises_the_wrapper_signature(tools):
 def test_parameters_survive_the_guard_decorator(tools):
     """A tool with arguments must still declare them after wrapping."""
     analyze = next(t for t in tools if t.name == "navis_analyze")
-    assert set(_schema(analyze).get("properties") or {}) == {"tests", "limit", "top"}
+    assert set(_schema(analyze).get("properties") or {}) == {"tests", "limit", "top", "job_id", "wait_seconds"}
 
 
 def test_the_two_imaging_tools_take_the_same_visual_options(tools):
