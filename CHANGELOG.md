@@ -5,6 +5,8 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-01
+
 Defectos de la corrida real del ejercicio «Comité de obra» (2026-10-01).
 **Requiere el complemento nuevo** para los puntos marcados (C#); el servidor
 sigue funcionando con un complemento 1.0.0, por la vía síncrona de antes.
@@ -702,7 +704,8 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
-[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.0.0...v1.1.0
 [0.4.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.4.1
 [0.4.0]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.4.0
 [0.3.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.3.1
