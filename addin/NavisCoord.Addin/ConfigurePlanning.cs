@@ -77,6 +77,63 @@ namespace NavisCoord
         public const string PreserveDueToResults = "preserve_due_to_results";
         public const string Blocked = "blocked";
         public const string RemoveAfterVerification = "remove_after_verification";
+        /// <summary>
+        /// A test with no results that the same configure run rebuilds from
+        /// the profile, so the set it points at may be replaced.
+        /// </summary>
+        public const string RebuildTest = "rebuild_test";
+
+        /// <summary>The names the matrix step gives the profile's clash pairs.</summary>
+        internal static List<string> MatrixTestNames(Dictionary<string, object> profile)
+        {
+            var names = new List<string>();
+            if (profile == null || !profile.TryGetValue("clash", out var raw) ||
+                !(raw is Dictionary<string, object> clash))
+            {
+                return names;
+            }
+            var format = Json.Str(clash, "name_format", "{0} VS {1}");
+            foreach (var spec in Json.Arr(clash, "pairs").OfType<Dictionary<string, object>>())
+            {
+                var name = Json.Str(spec, "name");
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    try { name = string.Format(format, Json.Str(spec, "a"), Json.Str(spec, "b")); }
+                    catch (FormatException) { continue; }
+                }
+                if (!names.Contains(name, StringComparer.OrdinalIgnoreCase)) names.Add(name);
+            }
+            return names;
+        }
+
+        /// <summary>
+        /// Whether a set that tests depend on may be replaced because every
+        /// one of those tests is empty and about to be rebuilt.
+        /// </summary>
+        /// <remarks>
+        /// The «Comité de obra» run: the first profile built sets on
+        /// <c>CategoryId</c> that captured nothing, configure built the matrix
+        /// on them, and from then on every corrected profile was refused —
+        /// the empty sets were "referenced", so they were preserved, the
+        /// empty tests were "kept", and the run reported 3,940 elements that
+        /// were only in the plan. Preserving a test protects its results; a
+        /// test with none, which this same run recreates against the new
+        /// sets, has nothing to protect. A test outside the profile, or one
+        /// with even a single result, still blocks.
+        /// </remarks>
+        public static bool CanRebuildDependents(
+            IEnumerable<string> users, IEnumerable<TestSnapshot> tests, ICollection<string> rebuildable)
+        {
+            var names = (users ?? Enumerable.Empty<string>()).ToList();
+            if (names.Count == 0 || rebuildable == null || rebuildable.Count == 0) return false;
+            var byName = (tests ?? Enumerable.Empty<TestSnapshot>())
+                .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+            return names.All(name =>
+                rebuildable.Contains(name) &&
+                byName.TryGetValue(name, out var found) &&
+                found.All(t => !t.HasResults));
+        }
 
         /// <summary>A saved item as it exists now: identity, not a handle.</summary>
         internal sealed class SetSnapshot
@@ -205,7 +262,8 @@ namespace NavisCoord
             IEnumerable<SetSnapshot> existing,
             IEnumerable<DesiredSet> desired,
             IEnumerable<TestSnapshot> tests,
-            MigrationCapability capability)
+            MigrationCapability capability,
+            ICollection<string> rebuildable = null)
         {
             var current = (existing ?? Enumerable.Empty<SetSnapshot>()).ToList();
             var wanted = (desired ?? Enumerable.Empty<DesiredSet>()).ToList();
@@ -250,6 +308,31 @@ namespace NavisCoord
                 var blocking = users
                     .Where(name => byName.TryGetValue(name, out var t) && t.HasResults)
                     .ToList();
+
+                if (CanRebuildDependents(users, testList, rebuildable))
+                {
+                    steps.Add(new Step
+                    {
+                        Target = want.Path,
+                        Action = Create,
+                        Guid = have.Guid,
+                        Reason = "la definición cambió y los " + users.Count + " test(s) que dependen " +
+                                 "de este conjunto no tienen resultados: se reemplaza y esta misma " +
+                                 "configuración los rehace contra el conjunto nuevo",
+                        AffectedTests = new List<string>(users)
+                    });
+                    foreach (var name in users)
+                    {
+                        steps.Add(new Step
+                        {
+                            Target = name,
+                            Action = RebuildTest,
+                            Reason = "sin resultados; se rehace desde el perfil",
+                            AffectedTests = new List<string> { name }
+                        });
+                    }
+                    continue;
+                }
 
                 // Any dependant at all is enough to stop, not just one holding
                 // results. Relinking a test that has not been run yet still

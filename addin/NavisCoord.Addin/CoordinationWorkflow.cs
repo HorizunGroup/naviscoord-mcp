@@ -63,6 +63,7 @@ namespace NavisCoord
             var counts = new List<int>();
             var tallies = new List<Dictionary<string, int>>();
             var categoryNames = new Dictionary<string, string>(StringComparer.Ordinal);
+            var references = new List<Dictionary<string, string>>();
 
             var total = doc.Models.Count;
             for (var index = 0; index < total; index++)
@@ -86,21 +87,32 @@ namespace NavisCoord
                     {
                         count++;
                         if (item.Children.Any()) continue;
+                        // CategoryId when the file has it (ACC aggregates);
+                        // otherwise the Revit category NAME, read up the tree.
+                        // A NWC exported locally from Revit has no CategoryId
+                        // at all, and keying only on it left every tally empty
+                        // — «sin elementos legibles» over an architecture model
+                        // full of structural columns.
                         var id = NavisContext.PropertyOf(item, "CategoryId");
-                        if (string.IsNullOrWhiteSpace(id)) continue;
+                        var display = string.Empty;
+                        if (string.IsNullOrWhiteSpace(id))
+                        {
+                            display = StripRevitPrefix(NavisContext.CategoryOf(item));
+                            if (string.IsNullOrWhiteSpace(display)) continue;
+                            id = display;
+                        }
                         tally[id] = tally.TryGetValue(id, out var c) ? c + 1 : 1;
                         if (!categoryNames.ContainsKey(id))
                         {
-                            var display = NavisContext.PropertyOf(item, "Category");
-                            if (!string.IsNullOrWhiteSpace(display))
+                            if (string.IsNullOrWhiteSpace(display))
                             {
-                                categoryNames[id] = display.StartsWith("Revit ", StringComparison.OrdinalIgnoreCase)
-                                    ? display.Substring(6)
-                                    : display;
+                                display = StripRevitPrefix(NavisContext.PropertyOf(item, "Category"));
                             }
+                            if (!string.IsNullOrWhiteSpace(display)) categoryNames[id] = display;
                         }
                     }
                 }
+                references.Add(ReferencePointsOf(model.RootItem));
 
                 names.Add(name);
                 disciplines.Add(discipline);
@@ -114,6 +126,9 @@ namespace NavisCoord
             var models = new List<object>();
             var misplaced = new List<object>();
             var withoutDiscipline = new List<object>();
+            var referenceMismatch = new List<object>();
+            var reference = ColocationAudit.Compare(references);
+            var allVerified = names.Count > 1;
 
             for (var i = 0; i < names.Count; i++)
             {
@@ -121,6 +136,7 @@ namespace NavisCoord
 
                 var status = "sin geometría";
                 var colocated = false;
+                var verifiedCoordinates = false;
                 var distance = 0.0;
 
                 if (boxes[i] != null && !boxes[i].IsEmpty)
@@ -141,8 +157,17 @@ namespace NavisCoord
                     }
 
                     distance = nearest == double.MaxValue ? 0.0 : nearest;
-                    if (names.Count == 1) { status = "único modelo"; colocated = true; }
-                    else if (colocated) status = "co-ubicado";
+                    if (names.Count == 1) { status = ColocationAudit.SingleModel; colocated = true; }
+                    else if (colocated)
+                    {
+                        // Overlapping boxes say "same area", never "same
+                        // coordinates": see ColocationAudit.
+                        status = ColocationAudit.ForOverlap(i, reference, out verifiedCoordinates);
+                        if (status == ColocationAudit.ReferenceMismatch)
+                        {
+                            referenceMismatch.Add(disciplines[i] + " (" + names[i] + ")");
+                        }
+                    }
                     else if (vocabulary.IsFreestanding(disciplines[i]))
                     {
                         // Urbanism, landscape and survey legitimately sit
@@ -162,9 +187,16 @@ namespace NavisCoord
                     ["discipline"] = disciplines[i],
                     ["elements"] = (double)counts[i],
                     ["status"] = status,
+                    // Kept for callers that read it, and redefined honestly:
+                    // the boxes share an area. Whether the coordinates match
+                    // is `coordinates_verified`.
                     ["colocated"] = colocated,
+                    ["coordinates_verified"] = verifiedCoordinates,
+                    ["reference_points"] = references[i]
+                        .ToDictionary(p => p.Key, p => (object)p.Value),
                     ["nearest_model_m"] = Math.Round(distance, 1)
                 });
+                if (!verifiedCoordinates) allVerified = false;
             }
 
             job?.Phasing("auditando pureza de vistas");
@@ -178,8 +210,57 @@ namespace NavisCoord
                 ["misplaced"] = misplaced,
                 ["without_discipline"] = withoutDiscipline,
                 ["view_purity"] = purity,
-                ["colocation_ok"] = misplaced.Count == 0
+                ["colocation_ok"] = misplaced.Count == 0 && referenceMismatch.Count == 0,
+                ["coordinates_verified"] = allVerified,
+                ["reference_mismatch"] = referenceMismatch,
+                ["reference_differences"] = reference.Differences.Cast<object>().ToList(),
+                ["colocation_note"] = allVerified
+                    ? "Los puntos de referencia publicados coinciden entre modelos."
+                    : reference.Comparable
+                        ? "Algún modelo publica un punto de referencia distinto: revisa reference_differences."
+                        : "Los NWC no publican puntos de referencia: el solape de cajas solo prueba que los " +
+                          "modelos ocupan la misma zona, NO que compartan coordenadas (un modelo desplazado " +
+                          "unos metros sigue solapándose). Compara los puntos de reconocimiento en Revit."
             };
+        }
+
+        private static string StripRevitPrefix(string display)
+        {
+            if (string.IsNullOrWhiteSpace(display)) return string.Empty;
+            return display.StartsWith("Revit ", StringComparison.OrdinalIgnoreCase) ? display.Substring(6) : display;
+        }
+
+        /// <summary>
+        /// Reference-point properties the file publishes on its root or on
+        /// the nodes right below it, by "tab/property".
+        /// </summary>
+        private static Dictionary<string, string> ReferencePointsOf(ModelItem root)
+        {
+            var found = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (root == null) return found;
+            var nodes = new List<ModelItem> { root };
+            try { nodes.AddRange(root.Children.Take(20)); } catch { }
+            foreach (var node in nodes)
+            {
+                try
+                {
+                    foreach (var category in node.PropertyCategories)
+                    {
+                        foreach (var property in category.Properties)
+                        {
+                            if (!ColocationAudit.IsReferenceProperty(property.DisplayName)) continue;
+                            var key = (category.DisplayName ?? string.Empty) + "/" + property.DisplayName;
+                            var text = NavisContext.ValueToString(property.Value);
+                            if (!found.ContainsKey(key) && !string.IsNullOrWhiteSpace(text)) found[key] = text;
+                        }
+                    }
+                }
+                catch
+                {
+                    // An unreadable tab is not a reason to fail the audit.
+                }
+            }
+            return found;
         }
 
         private static bool Overlaps(BoundingBox3D a, BoundingBox3D b, double slack)
@@ -274,15 +355,20 @@ namespace NavisCoord
                 var name = Json.Str(folder, "folder");
                 if (string.IsNullOrWhiteSpace(name)) continue;
 
-                var ids = new HashSet<string>(StringComparer.Ordinal);
+                // Ids and names in one case-insensitive set: a profile written
+                // for local NWCs selects by `Element > Category` name, and the
+                // audit tallies by name when the file carries no CategoryId.
+                var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var rawSet in Json.Arr(folder, "sets"))
                 {
                     if (!(rawSet is Dictionary<string, object> set)) continue;
                     foreach (var rawCond in Json.Arr(set, "conditions"))
                     {
                         if (!(rawCond is Dictionary<string, object> cond)) continue;
-                        if (!string.Equals(Json.Str(cond, "property"), "CategoryId",
-                                StringComparison.OrdinalIgnoreCase)) continue;
+                        var property = Json.Str(cond, "property");
+                        if (!string.Equals(property, "CategoryId", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(property, "Category", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(property, "Categoría", StringComparison.OrdinalIgnoreCase)) continue;
                         if (!string.Equals(SearchOperators.Normalise(Json.Str(cond, "test", SearchOperators.Equal)),
                                 SearchOperators.Equal, StringComparison.OrdinalIgnoreCase)) continue;
                         ids.Add(Json.Str(cond, "value"));
@@ -333,6 +419,9 @@ namespace NavisCoord
                 if (!setsPayload.ContainsKey("replace_existing")) setsPayload["replace_existing"] = true;
                 setsPayload["observe_categories"] = false;
                 setsPayload["expected_document_fingerprint"] = result.FingerprintBefore;
+                // The tests the matrix step below rebuilds. An empty one of
+                // these no longer pins the old sets it points at.
+                setsPayload["rebuild_tests_without_results"] = ConfigurePlanning.MatrixTestNames(profile).Cast<object>().ToList();
                 setsSummary = SummariseSets(WriteHandlers.BuildCriteriaSets(setsPayload));
             }
             result.Detail["sets"] = setsSummary;
@@ -347,7 +436,11 @@ namespace NavisCoord
             result.Detail["clash"] = clashSummary;
 
             result.Requested = (int)Json.Num(setsSummary, "sets", 0) + (int)Json.Num(clashSummary, "requested", 0);
-            result.Applied = (int)Json.Num(setsSummary, "sets", 0) + (int)Json.Num(clashSummary, "created", 0)
+            // Sets count as applied only when re-read with the requested
+            // definition; a preserved folder's sets were not applied, whatever
+            // their names say.
+            result.Applied = (int)Json.Num(setsSummary, "current_sets", Json.Num(setsSummary, "sets", 0))
+                             + (int)Json.Num(clashSummary, "created", 0)
                              + (int)Json.Num(clashSummary, "kept", 0);
 
             job?.Phasing("verificando");
@@ -365,6 +458,30 @@ namespace NavisCoord
                               + (int)Json.Num(clashSummary, "verified_tests", 0);
             result.Detail["verified_folders_in_document"] = (double)foldersPresent;
             result.Detail["verified_tests_in_document"] = (double)testsPresent;
+
+            // What the document holds that this profile does not ask for. Not
+            // removed — that is a person's call — but named, so «6 tests in
+            // the document» is not read as six tests of this configuration.
+            var wantedTests = new HashSet<string>(ConfigurePlanning.MatrixTestNames(profile), StringComparer.OrdinalIgnoreCase);
+            result.Detail["tests_not_in_profile"] = doc.GetClash().TestsData.Tests
+                .Select(t => t.DisplayName ?? string.Empty)
+                .Where(n => !wantedTests.Contains(n))
+                .Cast<object>().ToList();
+            result.Detail["folders_not_in_profile"] = doc.SelectionSets.RootItem.Children
+                .Where(c => c.IsGroup)
+                .Select(c => c.DisplayName ?? string.Empty)
+                .Where(n => !foldersWanted.Contains(n))
+                .Cast<object>().ToList();
+            var stale = Json.Arr(setsSummary, "stale_sets");
+            if (stale.Count > 0)
+            {
+                result.Warn(stale.Count + " set(s) del perfil siguen en el documento con la definición anterior: " +
+                            string.Join(", ", stale.Take(8).Select(s => Convert.ToString(s))) +
+                            (stale.Count > 8 ? "…" : "") + ". Los conteos planeados no aplican a ellos.");
+                result.Preserved += stale.Count;
+            }
+            var blockedFolders = Json.Arr(setsSummary, "blocked_folders");
+            result.Blocked += blockedFolders.Count;
             result.FingerprintAfter = DocumentContext.Fingerprint(doc);
             return result.ToJson();
         }
@@ -423,6 +540,28 @@ namespace NavisCoord
                     .Count(v => v.TryGetValue("exists", out var e) && e is bool b && b);
                 summary["verified_in_document"] = verified;
             }
+
+            // The counts above are what the NEW criteria would capture. What
+            // the document holds is re-read set by set; only a set whose
+            // definition is current contributes its count. A folder kept
+            // because tests point at it keeps the old sets — same names, old
+            // search — and its planned count would be a claim about a set
+            // that is not there.
+            summary["planned_matches"] = summary["matches"];
+            if (raw.TryGetValue("sets_in_document", out var rawInDoc) && rawInDoc is List<object> inDoc)
+            {
+                var rows = inDoc.OfType<Dictionary<string, object>>().ToList();
+                summary["matches"] = rows.Sum(r => Json.Num(r, "matches", 0));
+                summary["current_sets"] = (double)rows.Count(r => Json.Bool(r, "current_definition"));
+                summary["sets_in_document"] = inDoc;
+            }
+            summary["stale_sets"] = Json.Arr(raw, "stale_sets");
+            summary["blocked_folders"] = Json.Arr(raw, "blocked")
+                .OfType<Dictionary<string, object>>()
+                .Select(b => (object)Json.Str(b, "folder"))
+                .ToList();
+            summary["blocked"] = Json.Arr(raw, "blocked");
+            summary["tests_pending_rebuild"] = Json.Arr(raw, "tests_pending_rebuild");
             return summary;
         }
 

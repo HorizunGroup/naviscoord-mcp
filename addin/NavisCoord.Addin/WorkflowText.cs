@@ -52,9 +52,22 @@ namespace NavisCoord
                 }
                 lines.Add("El responsable debe corregir las coordenadas compartidas en su Revit y republicar.");
             }
-            else
+            var mismatch = Json.Arr(payload, "reference_mismatch");
+            if (mismatch.Count > 0)
             {
-                lines.Add("✔ Ubicación: todos los modelos comparten volumen.");
+                lines.Add("⚠ PUNTO DE REFERENCIA DISTINTO aunque las cajas se solapan:");
+                foreach (var entry in Json.Arr(payload, "reference_differences").Take(6))
+                {
+                    lines.Add("   • " + Convert.ToString(entry, CultureInfo.InvariantCulture));
+                }
+            }
+            else if (misplaced.Count == 0)
+            {
+                lines.Add(Json.Bool(payload, "coordinates_verified", false)
+                    ? "✔ Ubicación: misma zona y mismos puntos de referencia publicados."
+                    : "✔ Todos los modelos ocupan la misma zona. ⚠ Coordenadas compartidas SIN verificar: " +
+                      "los NWC no publican el punto de reconocimiento y un modelo desplazado unos metros " +
+                      "sigue solapándose. Compáralo en Revit.");
             }
 
             var nameless = Json.Arr(payload, "without_discipline");
@@ -159,7 +172,26 @@ namespace NavisCoord
                 var summary = "Sets: " + Json.Num(sets, "folders", 0).ToString("N0", CultureInfo.InvariantCulture) +
                               " carpetas, " + Json.Num(sets, "sets", 0).ToString("N0", CultureInfo.InvariantCulture) +
                               " sets, " + Json.Num(sets, "matches", 0).ToString("N0", CultureInfo.InvariantCulture) +
-                              " elementos capturados";
+                              " elementos capturados en el documento";
+                var staleSets = Json.Arr(sets, "stale_sets")
+                    .Select(e => Convert.ToString(e, CultureInfo.InvariantCulture)).ToList();
+                if (staleSets.Count > 0)
+                {
+                    // The planned counts are about criteria that did not make
+                    // it into the document; saying so is the whole point.
+                    summary += "\n⚠ " + staleSets.Count + " set(s) NO se actualizaron y conservan la definición " +
+                               "anterior (las nuevas capturarían " +
+                               Json.Num(sets, "planned_matches", 0).ToString("N0", CultureInfo.InvariantCulture) +
+                               "): " + string.Join(", ", staleSets.Take(5)) +
+                               (staleSets.Count > 5 ? " y " + (staleSets.Count - 5) + " más" : "");
+                    var blockedFolders = Json.Arr(sets, "blocked_folders")
+                        .Select(e => Convert.ToString(e, CultureInfo.InvariantCulture)).ToList();
+                    if (blockedFolders.Count > 0)
+                    {
+                        summary += "\n   Carpetas conservadas porque tests con resultados (o fuera del perfil) las usan: " +
+                                   string.Join(", ", blockedFolders);
+                    }
+                }
                 if (Json.Num(sets, "matches", 0) == 0 && Json.Num(sets, "sets", 0) > 0)
                 {
                     summary += "\n⚠ NINGÚN set capturó elementos — revisar el perfil (ids/tab) antes de correr.";

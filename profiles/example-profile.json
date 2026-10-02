@@ -1,134 +1,288 @@
 {
   "$schema": "naviscoord.profile/v1",
   "name": "Ejemplo neutral",
-  "description": "Perfil de ejemplo del complemento NavisCoord. Cuatro disciplinas genéricas con nombres de categoría de Revit, para que el flujo 0-1-2-3 se pueda ejecutar de principio a fin sin configurar nada. NO es un perfil de producción: los CategoryId son los estándar de Revit y las tolerancias son valores de partida. Cópialo a %LOCALAPPDATA%\\NavisCoord\\naviscoord-profile.json y ajústalo al BEP de tu proyecto.",
+  "description": "Perfil de ejemplo del complemento NavisCoord. Cuatro disciplinas genéricas con nombres de categoría de Revit, para que el flujo 0-1-2-3 se pueda ejecutar de principio a fin sin configurar nada. NO es un perfil de producción: las tolerancias son valores de partida. Cópialo a %LOCALAPPDATA%\\NavisCoord\\naviscoord-profile.json y ajústalo al BEP de tu proyecto.",
   "units": "m",
   "version": "1.0.0",
-
   "_disciplinas": "Los códigos de disciplina NO están compilados en el complemento: son exactamente los nombres de carpeta de abajo. Cambiar 'ARC' por 'ARQ', o añadir una disciplina, es editar este archivo. El complemento reconoce el código dentro del nombre del modelo con el patrón -CODIGO-, así que 'PROY-ARC-TORRE1.rvt' es ARC.",
-
+  "_sets": "Cada set filtra por la pestaña Element > Category que publica Revit, con el nombre de categoría en el idioma del Revit que exportó (aquí, inglés). NO uses CategoryId: solo lo traen los agregados de ACC y en un NWC exportado localmente desde Revit captura cero elementos. Navisworks une las condiciones de un set con Y, no con O: un valor por set. 'scope_model_contains' limita cada carpeta a los modelos cuyo nombre lleva -CODIGO-.",
   "sets": {
     "folders": [
       {
         "folder": "ARC",
+        "scope_model_contains": "-ARC-",
         "_comment": "Arquitectura: la envolvente y los acabados.",
         "sets": [
           {
             "name": "ARC - Muros",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_Walls" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Walls"
+              }
+            ]
           },
           {
             "name": "ARC - Pisos",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_Floors" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Floors"
+              }
+            ]
           },
           {
             "name": "ARC - Techos",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_Ceilings" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Ceilings"
+              }
+            ]
           },
           {
-            "name": "ARC - Puertas y ventanas",
+            "name": "ARC - Puertas",
             "conditions": [
-              { "property": "CategoryId", "test": "equals", "value": "OST_Doors" },
-              { "property": "CategoryId", "test": "equals", "value": "OST_Windows" }
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Doors"
+              }
+            ]
+          },
+          {
+            "name": "ARC - Ventanas",
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Windows"
+              }
             ]
           }
         ]
       },
       {
         "folder": "STR",
+        "scope_model_contains": "-STR-",
         "_comment": "Estructura: lo que sostiene el edificio.",
         "sets": [
           {
             "name": "STR - Columnas",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_StructuralColumns" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Structural Columns"
+              }
+            ]
           },
           {
             "name": "STR - Vigas",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_StructuralFraming" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Structural Framing"
+              }
+            ]
           },
           {
             "name": "STR - Cimentación",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_StructuralFoundation" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Structural Foundations"
+              }
+            ]
           }
         ]
       },
       {
         "folder": "MEC",
+        "scope_model_contains": "-MEC-",
         "_comment": "Mecánica / HVAC: ductos y sus accesorios.",
         "sets": [
           {
             "name": "MEC - Ductos",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_DuctCurves" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Ducts"
+              }
+            ]
           },
           {
             "name": "MEC - Accesorios de ducto",
             "conditions": [
-              { "property": "CategoryId", "test": "equals", "value": "OST_DuctFitting" },
-              { "property": "CategoryId", "test": "equals", "value": "OST_DuctAccessory" }
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Duct Fittings"
+              }
+            ]
+          },
+          {
+            "name": "MEC - Elementos de ducto",
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Duct Accessories"
+              }
             ]
           },
           {
             "name": "MEC - Equipos",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_MechanicalEquipment" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Mechanical Equipment"
+              }
+            ]
           }
         ]
       },
       {
         "folder": "PLU",
+        "scope_model_contains": "-PLU-",
         "_comment": "Hidrosanitario: tubería y sus accesorios.",
         "sets": [
           {
             "name": "PLU - Tubería",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_PipeCurves" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Pipes"
+              }
+            ]
           },
           {
             "name": "PLU - Accesorios de tubería",
             "conditions": [
-              { "property": "CategoryId", "test": "equals", "value": "OST_PipeFitting" },
-              { "property": "CategoryId", "test": "equals", "value": "OST_PipeAccessory" }
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Pipe Fittings"
+              }
+            ]
+          },
+          {
+            "name": "PLU - Elementos de tubería",
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Pipe Accessories"
+              }
             ]
           },
           {
             "name": "PLU - Aparatos",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_PlumbingFixtures" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Plumbing Fixtures"
+              }
+            ]
           }
         ]
       },
       {
         "folder": "SITE",
+        "scope_model_contains": "-SITE-",
         "_comment": "Urbanismo / implantación. Declarada abajo como freestanding: sus modelos están lejos del edificio a propósito.",
         "sets": [
           {
             "name": "SITE - Topografía",
-            "conditions": [{ "property": "CategoryId", "test": "equals", "value": "OST_Topography" }]
+            "conditions": [
+              {
+                "tab": "Element",
+                "property": "Category",
+                "test": "equals",
+                "value": "Topography"
+              }
+            ]
           }
         ]
       }
     ]
   },
-
   "_alias": "Dos oficinas de diseño pueden etiquetar la misma disciplina con códigos distintos. Aquí se declara cuál manda: un modelo marcado HVA se evalúa como MEC en sets, whitelists y matriz.",
   "discipline_aliases": {
     "HVA": "MEC"
   },
-
   "_freestanding": "Disciplinas cuyos modelos legítimamente NO se solapan con el edificio. Sin esta lista, el Paso 0 las reporta como desplazadas — que es la respuesta honesta mientras nadie diga lo contrario.",
-  "freestanding_disciplines": ["SITE"],
-
+  "freestanding_disciplines": [
+    "SITE"
+  ],
   "clash": {
     "_comment": "La matriz. 'name_format' da el nombre del test cuando el par no trae uno propio. Las tolerancias son un punto de partida: Hard a 1 mm entre sólidos, y algo más flojo contra estructura, que es donde el recubrimiento real vive.",
     "name_format": "{0} VS {1}",
     "pairs": [
-      { "a": "STR", "b": "MEC", "test": "Hard", "tolerance_m": 0.001 },
-      { "a": "STR", "b": "PLU", "test": "Hard", "tolerance_m": 0.001 },
-      { "a": "ARC", "b": "MEC", "test": "Hard", "tolerance_m": 0.001 },
-      { "a": "ARC", "b": "PLU", "test": "Hard", "tolerance_m": 0.001 },
-      { "a": "MEC", "b": "PLU", "test": "Hard", "tolerance_m": 0.001 },
-      { "a": "ARC", "b": "STR", "test": "Hard", "tolerance_m": 0.010,
-        "name": "ARC VS STR (holgura 10 mm)" }
+      {
+        "a": "STR",
+        "b": "MEC",
+        "test": "Hard",
+        "tolerance_m": 0.001
+      },
+      {
+        "a": "STR",
+        "b": "PLU",
+        "test": "Hard",
+        "tolerance_m": 0.001
+      },
+      {
+        "a": "ARC",
+        "b": "MEC",
+        "test": "Hard",
+        "tolerance_m": 0.001
+      },
+      {
+        "a": "ARC",
+        "b": "PLU",
+        "test": "Hard",
+        "tolerance_m": 0.001
+      },
+      {
+        "a": "MEC",
+        "b": "PLU",
+        "test": "Hard",
+        "tolerance_m": 0.001
+      },
+      {
+        "a": "ARC",
+        "b": "STR",
+        "test": "Hard",
+        "tolerance_m": 0.01,
+        "name": "ARC VS STR (holgura 10 mm)"
+      }
     ]
   },
-
   "reglas": {
     "_comment": "Exclusiones que se aplican DESPUÉS de correr, sobre resultados que el estándar no considera un choque. El ejemplo está vacío a propósito: una regla heredada de otro proyecto oculta choques reales. Ver docs/PROFILES.md para los operadores disponibles (equals, not_equals, contains, not_contains, wildcard, not_wildcard, has).",
     "rules": []

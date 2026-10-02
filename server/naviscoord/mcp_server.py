@@ -24,6 +24,7 @@ from __future__ import annotations
 import functools
 import inspect
 import json
+import threading
 import time
 from collections import Counter
 from datetime import datetime
@@ -759,9 +760,17 @@ def navis_build_search_sets(
     Complementa `navis_build_sets`, no lo reemplaza: aquel congela QUÉ
     elementos se probaron, para que dos corridas de la matriz sigan siendo
     comparables; éste guarda la REGLA, de modo que la plantilla sobreviva a
-    una actualización del federado. El ancla recomendada es independiente del
-    idioma —alcance por modelo y `CategoryId` numérico— porque el nombre de
-    categoría cambia con el idioma del Revit que publicó.
+    una actualización del federado. Ancla: alcance por modelo
+    (`scope_model_contains`) y la categoría de Revit. En un NWC exportado
+    localmente desde Revit usa `{"tab": "Element", "property": "Category",
+    "value": "Walls"}` con el nombre en el idioma del Revit que publicó;
+    `CategoryId` solo existe en los agregados de ACC y en un NWC local captura
+    cero. Navisworks une las condiciones de un set con Y: un set por valor.
+
+    Un set que no captura nada se reporta en `empty_sets` con su causa
+    probable y la llamada no sale `completed`. «created/updated/unchanged» se
+    deciden releyendo el GUID de cada carpeta antes y después; una carpeta
+    que no se pudo reemplazar sale en `blocked` y sus sets en `stale_sets`.
 
     `folders`: [{"folder": "MEP", "scope_model_contains": "-MEP-",
                  "sets": [{"name": "Tubería", ...criterios}]}]
@@ -786,11 +795,11 @@ def navis_build_search_sets(
         "idempotency_key": idempotency_key,
     }
 
-    # The before-state comes from the document, so "created" and "updated" can
-    # be told apart honestly instead of both being reported as "written".
-    before = {
-        s.get("name") or "" for s in (STATE.bridge.list_sets().get("sets") or [])
-    } if not dry_run else set()
+    # The before-state comes from the document, by identity: a folder rebuilt
+    # gets a new GUID, one left alone keeps it. Name alone cannot tell
+    # "updated" from "untouched" — reporting every pre-existing folder as
+    # updated is how a refused replacement was announced as done.
+    before = _set_guids() if not dry_run else {}
 
     raw = STATE.bridge.run_route("sets/build_search", payload, run_async=run_async)
     if raw.get("job_id") and raw.get("state") in (None, "queued", "running"):
@@ -799,45 +808,142 @@ def navis_build_search_sets(
                 "note": "Consulta navis_job_status para el envelope final."}
 
     planned = raw.get("planned") or []
-    requested = sum(len(p.get("sets") or []) for p in planned if isinstance(p, dict))
     errors = [
         f"{p.get('folder')}: {p.get('error')}"
         for p in planned
         if isinstance(p, dict) and p.get("error")
     ]
+    warnings, empty = _empty_set_warnings(planned)
 
-    verified_rows = raw.get("verified_in_document") or []
-    verified = sum(
-        len(row.get("children") or []) for row in verified_rows if row.get("exists")
-    )
-    present = {row.get("folder") for row in verified_rows if row.get("exists")}
-    missing = [
-        row.get("folder") for row in verified_rows if not row.get("exists")
-    ]
+    if dry_run:
+        requested = sum(len(p.get("sets") or []) for p in planned if isinstance(p, dict))
+        return _envelope(
+            "sets/build_search", raw, dry_run=True, requested=requested, applied=0, verified=0,
+            failed=0, fingerprint=fingerprint, idempotency_key=idempotency_key,
+            warnings=warnings, errors=errors, created=[], updated=[], unchanged=[], blocked=[],
+            empty_sets=empty, planned=planned, observed_categories=raw.get("observed_categories"),
+            precedence=_SEARCH_SET_PRECEDENCE,
+        )
 
-    created = sorted(present - before)
-    touched = sorted(present & before)
+    after = _set_guids()
+    folders = [str(p.get("folder")) for p in planned if isinstance(p, dict) and not p.get("error")]
+    created = sorted(f for f in folders if f in after and f not in before)
+    updated = sorted(f for f in folders if f in after and f in before and after[f] != before[f])
+    unchanged = sorted(f for f in folders if f in after and f in before and after[f] == before[f])
+    missing = sorted(f for f in folders if f not in after)
+    blocked = [b for b in (raw.get("blocked") or []) if isinstance(b, dict)]
+    blocked_names = {str(b.get("folder")) for b in blocked}
+    for row in blocked:
+        warnings.append(
+            f"«{row.get('folder')}» NO se reemplazó: {row.get('reason')}. Conserva sus sets "
+            "anteriores (mismo nombre, definición vieja)."
+        )
+
+    # Verified per set, against the document: present AND searching for what
+    # was asked. Falls back to the folder listing for an older add-in.
+    rows = raw.get("sets_in_document")
+    if isinstance(rows, list):
+        requested = len(rows)
+        verified = sum(1 for r in rows if r.get("present") and r.get("current_definition"))
+        stale = [str(r.get("set")) for r in rows if not (r.get("present") and r.get("current_definition"))]
+    else:
+        requested = sum(len(p.get("sets") or []) for p in planned if isinstance(p, dict))
+        changed = set(created) | set(updated)
+        verified = sum(
+            len(p.get("sets") or []) for p in planned
+            if isinstance(p, dict) and str(p.get("folder")) in changed
+        )
+        stale = [f for f in unchanged if f in blocked_names]
+    if stale:
+        warnings.append(
+            f"{len(stale)} set(s) siguen en el documento con su definición anterior: "
+            + ", ".join(stale[:8]) + ("…" if len(stale) > 8 else "")
+            + ". Los conteos de 'planned' son de los criterios nuevos, no de lo que hay en el documento."
+        )
+    already_current = {
+        str(u.get("folder")) for u in (raw.get("untouched") or []) if isinstance(u, dict)
+    }
+    settled_folders = set(created) | set(updated) | (set(unchanged) & already_current)
+    if unchanged and not replace_existing:
+        warnings.append("replace_existing=false: las carpetas existentes se respetaron sin tocarlas.")
+
     return _envelope(
         "sets/build_search",
         raw,
         dry_run=dry_run,
         requested=requested,
-        applied=0 if dry_run else requested,
+        # Applied = sets in folders the document shows were (re)written. A
+        # blocked folder applied nothing, so it pulls the status to partial
+        # instead of hiding behind a pre-existing name.
+        # A folder left alone because it already matched counts as settled,
+        # the way the add-in counts it.
+        applied=sum(
+            len(p.get("sets") or []) for p in planned
+            if isinstance(p, dict) and str(p.get("folder")) in settled_folders
+        ),
         verified=verified,
-        failed=len(errors) + len(missing),
+        # An empty set was written but configures nothing: it keeps the call
+        # from reading `completed`.
+        failed=len(errors) + len(missing) + len(empty),
         fingerprint=fingerprint,
         idempotency_key=idempotency_key,
+        warnings=warnings,
         errors=errors + [f"{f}: no quedó en el documento" for f in missing],
-        created=created if not dry_run else [],
-        updated=touched if (not dry_run and replace_existing) else [],
-        unchanged=touched if (not dry_run and not replace_existing) else [],
-        precedence=(
-            "alcance por modelo (scope_model_contains) y luego los criterios de cada set; "
-            "el modo que ganó por set viaja en planned[].sets[].match_mode"
-        ),
+        created=created,
+        updated=updated,
+        unchanged=unchanged,
+        blocked=sorted(blocked_names),
+        stale_sets=stale,
+        empty_sets=empty,
+        sets_in_document=rows if isinstance(rows, list) else None,
+        verified_by="guid_reread",
+        precedence=_SEARCH_SET_PRECEDENCE,
         planned=planned,
         observed_categories=raw.get("observed_categories"),
     )
+
+
+_SEARCH_SET_PRECEDENCE = (
+    "alcance por modelo (scope_model_contains) y luego los criterios de cada set; "
+    "el modo que ganó por set viaja en planned[].sets[].match_mode"
+)
+
+
+def _set_guids() -> dict[str, str]:
+    """Saved items by path, re-read from the document."""
+    return {
+        str(s.get("name") or ""): str(s.get("guid") or "")
+        for s in (STATE.bridge.list_sets().get("sets") or [])
+        if isinstance(s, dict)
+    }
+
+
+def _empty_set_warnings(planned: list[Any]) -> tuple[list[str], list[str]]:
+    """One warning per set that captures nothing, with the add-in's diagnosis.
+
+    An empty set is not a success: the clash test built on it runs, finds
+    nothing and reads as a clean model. The «Comité de obra» profile captured
+    zero elements in every set (CategoryId on a local NWC) and the call
+    answered as if it had configured something.
+    """
+    warnings: list[str] = []
+    empty: list[str] = []
+    for folder in planned:
+        if not isinstance(folder, dict):
+            continue
+        for entry in folder.get("sets") or []:
+            if not isinstance(entry, dict) or float(entry.get("matches") or 0) > 0:
+                continue
+            path = f"{folder.get('folder')}/{entry.get('name')}"
+            empty.append(path)
+            hint = entry.get("hint") or "revisa pestaña, propiedad y valor tal como los muestra Navisworks"
+            warnings.append(f"«{path}» no captura ningún elemento: {hint}")
+    if empty and len(empty) == sum(
+        len(f.get("sets") or []) for f in planned if isinstance(f, dict)
+    ):
+        warnings.insert(0, "NINGÚN set capturó elementos: los clash tests sobre ellos darán cero y "
+                           "eso NO significa un modelo limpio. Corrige el perfil antes de seguir.")
+    return warnings, empty
 
 
 @mcp.tool(annotations=_destructive("Aplicar reglas de triaje a los cruces", idempotent=True))
@@ -1001,19 +1107,34 @@ def navis_build_sets(
     Con dry_run=True (por defecto) solo reporta cuántos elementos caerían en
     cada disciplina.
     """
-    fingerprint = STATE.require_mutable(expected_document_fingerprint)
     disciplines = []
     for code, rule in STATE.profile.disciplines.items():
         if code == "OTRO":
             continue
         sources = [f for f, d in STATE.overrides.items() if d == code]
+        categories = sorted(rule.selected_categories or rule.categories)
+        if not categories and not sources:
+            continue
         disciplines.append(
             {
                 "discipline": code,
-                "categories": sorted(rule.categories),
+                "categories": categories,
                 "source_files": sources,
             }
         )
+    if not disciplines:
+        # Refused here, with the reason, instead of sending an empty list the
+        # add-in rejects with a bare 500 «Se requiere 'disciplines'».
+        return {
+            "error": "argumento_invalido",
+            "detail": (
+                "El perfil activo no define disciplinas con categorías ni hay un mapeo "
+                "archivo→disciplina (navis_set_disciplines): no hay con qué armar sets."
+            ),
+            "profile": STATE.profile.name,
+            "hint": "Carga un perfil con 'disciplines' o con 'sets.folders', o fija el mapeo con navis_set_disciplines.",
+        }
+    fingerprint = STATE.require_mutable(expected_document_fingerprint)
     payload = STATE.bridge.build_sets(disciplines, prefix, dry_run, fingerprint, idempotency_key)
     payload.setdefault("document_fingerprint_before", fingerprint)
     return payload
@@ -1044,9 +1165,15 @@ def navis_build_clash_matrix(
     se comparara estructura contra sanitaria y que no haya sanitaria en el
     modelo son cosas distintas.
     """
-    pairs = STATE.profile.section("clash_matrix").get("pairs", [])
+    # `clash_matrix.pairs` (this server's format) or `clash.pairs` (the
+    # add-in's, the one navis_configure applies): the same profile must not
+    # be accepted by one step and refused by the next.
+    pairs = STATE.profile.clash_pairs()
     if not pairs:
-        return {"error": "El perfil no define clash_matrix.pairs."}
+        return {
+            "error": "argumento_invalido",
+            "detail": "El perfil no define pares de choque: ni clash_matrix.pairs ni clash.pairs.",
+        }
 
     # The guard first, before anything reaches the bridge. Reading the sets
     # is harmless in itself, but doing it ahead of the target check means an
@@ -1106,9 +1233,29 @@ def navis_run_tests(
 # ------------------------------------------------------------- analysis
 
 
+#: Held while one navis_analyze is inside this process. The MCP library runs
+#: synchronous tools on worker threads, so a client that times out and
+#: retries does NOT wait for the first call: it starts a second one beside it,
+#: and each sent its own full export to Navisworks' single UI thread. That
+#: queue is what left Navisworks unresponsive in the «Comité de obra» run.
+_ANALYZE_LOCK = threading.Lock()
+
+#: How long navis_analyze waits for the export job before handing back its
+#: id. Below the 60 s most MCP clients allow a call, with room to analyse.
+ANALYZE_WAIT_SECONDS = 40.0
+
+_TERMINAL_JOB_STATES = ("completed", "partial", "failed", "cancelled")
+
+
 @mcp.tool(annotations=_read_only("Analizar las interferencias"))
 @_guard
-def navis_analyze(tests: list[str] | None = None, limit: int = 0, top: int = 15) -> dict[str, Any]:
+def navis_analyze(
+    tests: list[str] | None = None,
+    limit: int = 0,
+    top: int = 15,
+    job_id: str = "",
+    wait_seconds: float = ANALYZE_WAIT_SECONDS,
+) -> dict[str, Any]:
     """Extrae los cruces de Navisworks y corre el motor de coordinación.
 
     Este es el comando central. Filtra ruido, colapsa cruces redundantes en
@@ -1118,6 +1265,15 @@ def navis_analyze(tests: list[str] | None = None, limit: int = 0, top: int = 15)
     Devuelve un resumen compacto — nunca la lista cruda — con los problemas
     mejor puntuados y las causas raíz. El resultado completo queda en memoria
     para navis_issue_detail, navis_apply_groups y el resto.
+
+    **Federaciones grandes.** La extracción corre en Navisworks como trabajo
+    (`clash/export`). Esta llamada espera hasta `wait_seconds` (40 s por
+    defecto, por debajo del límite de 60 s del cliente); si el trabajo no ha
+    terminado responde `state: "running"` con `job_id` y su avance. Entonces:
+    `navis_job_status(job_id)` para ver el avance, `navis_cancel_job(job_id)`
+    para detenerlo, y `navis_analyze(job_id=...)` para recoger el análisis
+    cuando termine. NO repitas navis_analyze sin `job_id` mientras tanto: se
+    une al trabajo en curso en vez de encolar otra extracción completa.
     """
     args = Arguments()
     names = args.id_list("tests", tests or [], max_items=500)
@@ -1125,23 +1281,145 @@ def navis_analyze(tests: list[str] | None = None, limit: int = 0, top: int = 15)
     # es lo que haría un slice de Python en silencio.
     cap = args.count("limit", limit, minimum=0, maximum=1000000)
     head = args.count("top", top, minimum=1, maximum=1000)
+    wait = args.positive("wait_seconds", wait_seconds or 0.001, maximum=50.0)
     args.raise_if_invalid()
 
+    if not _ANALYZE_LOCK.acquire(blocking=False):
+        return {
+            "error": "analysis_in_progress",
+            "detail": (
+                "Ya hay un navis_analyze en curso en este servidor. No lancé otro: cada "
+                "uno encola una extracción completa en el único hilo de Navisworks."
+            ),
+            "job_id": STATE.analysis_job.get("job_id", ""),
+            "hint": "Consulta navis_job_status con el job_id, o espera y llama navis_analyze(job_id=...).",
+        }
+    try:
+        return _analyze_locked(tests, limit, top, job_id.strip(), wait)
+    finally:
+        _ANALYZE_LOCK.release()
+
+
+def _analyze_locked(
+    tests: list[str] | None, limit: int, top: int, job_id: str, wait: float
+) -> dict[str, Any]:
     properties = list(STATE.profile.section("interop").get("harvest_properties", []))
     # The discovered key has to travel with the export or the tagger cannot
     # see it. Assumed lists never include a property nobody knew existed.
     if STATE.group_key and STATE.group_key not in properties:
         properties.append(STATE.group_key)
 
-    # Bind BEFORE analysing: the result must record which document it came
-    # from, so a later tool can refuse to answer about a different one.
-    fingerprint, title = STATE.live_fingerprint()
-    STATE.bind(fingerprint, title)
+    if job_id:
+        # Collecting a job started earlier. It was bound to its document
+        # when it was submitted; the fingerprint the export carries is
+        # checked against that binding below.
+        known = STATE.analysis_job
+        if known and known.get("job_id") != job_id:
+            return {
+                "error": "unknown_analysis_job",
+                "detail": f"El trabajo de análisis en curso es {known.get('job_id')}, no {job_id}.",
+                "job_id": known.get("job_id", ""),
+            }
+        if not known:
+            known = {"job_id": job_id, "top": top, "limit": limit}
+        started = time.monotonic()
+    else:
+        # Bind BEFORE analysing: the result must record which document it
+        # came from, so a later tool can refuse to answer about a different one.
+        fingerprint, title = STATE.live_fingerprint()
+        STATE.bind(fingerprint, title)
+        payload = STATE.bridge.export_payload(
+            properties=properties, tests=tests, limit=limit,
+            penetration_categories=STATE.profile.noise_param("pass_through_categories", []),
+            penetration_keywords=STATE.profile.noise_param("pass_through_keywords", []),
+        )
+        started = time.monotonic()
+        running = STATE.analysis_job
+        if running and running.get("fingerprint") == fingerprint and not _job_finished(running):
+            # A retry of a call that timed out: join the export already queued.
+            known = running
+        elif STATE.bridge.supports_job("clash/export"):
+            submitted = STATE.bridge.submit_job("clash/export", payload)
+            if not submitted.get("job_id"):
+                return {"error": "job_not_accepted", "detail": submitted}
+            known = {
+                "job_id": str(submitted["job_id"]),
+                "fingerprint": fingerprint,
+                "title": title,
+                "tests": list(tests or []),
+                "limit": limit,
+                "top": top,
+            }
+            STATE.analysis_job = known
+        else:
+            # An add-in older than the export job: the synchronous route.
+            raw = STATE.bridge.export_clashes(**payload)
+            return _finish_analysis(raw, title, limit, top, started)
 
-    raw = STATE.bridge.export_clashes(properties=properties, tests=tests, limit=limit,
-        penetration_categories=STATE.profile.noise_param("pass_through_categories", []),
-        penetration_keywords=STATE.profile.noise_param("pass_through_keywords", []))
+    status = _wait_for_job(known["job_id"], wait)
+    state = str(status.get("state") or "")
+    if state not in _TERMINAL_JOB_STATES:
+        return {
+            "state": state or "queued",
+            "job_id": known["job_id"],
+            "phase": status.get("phase", ""),
+            "message": status.get("message", ""),
+            "progress": status.get("progress", {}),
+            "waited_s": round(time.monotonic() - started, 1),
+            "note": (
+                "La extracción sigue en Navisworks. Consulta navis_job_status(job_id), "
+                "cancélala con navis_cancel_job(job_id) o recoge el análisis con "
+                "navis_analyze(job_id=...) cuando termine. No repitas navis_analyze sin job_id."
+            ),
+        }
 
+    STATE.analysis_job = {}
+    if state != "completed":
+        return {
+            "error": "export_" + state,
+            "job_id": known["job_id"],
+            "state": state,
+            "detail": (status.get("error") or {}).get("detail")
+            or status.get("message")
+            or "La extracción no terminó: no hay análisis nuevo y el anterior no se tocó.",
+        }
+    raw = STATE.bridge.checked_export(status.get("result") or {})
+    title = str(known.get("title") or STATE.document_title)
+    summary = _finish_analysis(raw, title, int(known.get("limit") or 0), int(known.get("top") or top), started)
+    summary["job_id"] = known["job_id"]
+    return summary
+
+
+def _job_finished(job: dict[str, Any]) -> bool:
+    try:
+        return str(STATE.bridge.job_status(job["job_id"]).get("state") or "") in _TERMINAL_JOB_STATES
+    except BridgeError:
+        # The add-in no longer knows the job — restarted or evicted. Nothing
+        # to join; a new export is the honest next step.
+        return True
+
+
+def _wait_for_job(job_id: str, wait: float) -> dict[str, Any]:
+    """Polls job/status, which the add-in answers off the UI thread."""
+    deadline = time.monotonic() + wait
+    delay = 0.25
+    while True:
+        status = STATE.bridge.job_status(job_id)
+        if str(status.get("state") or "") in _TERMINAL_JOB_STATES or time.monotonic() >= deadline:
+            return status
+        time.sleep(min(delay, max(0.0, deadline - time.monotonic())))
+        delay = min(delay * 2, 2.0)
+
+
+def _finish_analysis(raw: dict[str, Any], title: str, limit: int, top: int, started: float) -> dict[str, Any]:
+    exported_from = str(raw.get("document_fingerprint") or "")
+    if exported_from and STATE.document_fingerprint and exported_from != STATE.document_fingerprint:
+        STATE.forget_derived()
+        raise StateError(
+            "La extracción vino de un documento distinto del que estaba enlazado; no la analicé.",
+            hint="Corre navis_analyze de nuevo sobre el documento abierto.",
+        )
+    analysed_at = time.monotonic()
     export = ClashExport.from_json(raw)
     result = analyze(
         export,
@@ -1151,7 +1429,7 @@ def navis_analyze(tests: list[str] | None = None, limit: int = 0, top: int = 15)
         group_roles=STATE.group_roles,
     )
 
-    STATE.bind(str(raw.get("document_fingerprint") or fingerprint), title)
+    STATE.bind(exported_from or STATE.document_fingerprint, title)
     STATE.analysis_revision = str(raw.get("analysis_revision") or "")
     STATE.bridge.analysis_revision = STATE.analysis_revision
     STATE.export = export
@@ -1159,6 +1437,13 @@ def navis_analyze(tests: list[str] | None = None, limit: int = 0, top: int = 15)
 
     summary = result.summary(limit=top)
     summary["provenance"] = STATE.stamp()
+    # Where the time went, measured rather than guessed: the 2026-10-01 run
+    # blamed the discipline mapping for a minute that was all extraction.
+    summary["timings"] = {
+        "navisworks_export": raw.get("timings") or {},
+        "engine_ms": round((time.monotonic() - analysed_at) * 1000),
+        "total_s": round(time.monotonic() - started, 1),
+    }
     if raw.get("truncated"):
         summary.setdefault("warnings", []).append(
             f"La extracción se truncó en {limit} cruces: el análisis es parcial."
@@ -1969,6 +2254,13 @@ def navis_configure(
     discrepar. Nunca destruye resultados ya corridos en silencio; un test con
     definición cambiada pero con resultados se conserva y se reporta como
     desactualizado, para que la decisión sea humana.
+
+    Los conteos se releen del documento: `sets.matches` suma solo los sets
+    que quedaron con la definición pedida; los de una carpeta conservada
+    salen en `sets.stale_sets` (con `planned_matches` aparte) y bajan el
+    estado a `partial`. Un test SIN resultados que esta misma configuración
+    rehace ya no congela los sets viejos que usaba. `tests_not_in_profile` y
+    `folders_not_in_profile` nombran lo que el documento trae y el perfil no.
     """
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
     return _workflow(
@@ -2199,7 +2491,7 @@ def navis_exit(
     disposition: str,
     expected_document_fingerprint: str,
     dry_run: bool = True,
-    verify_timeout: float = 15.0,
+    verify_timeout: float = 40.0,
 ) -> dict[str, Any]:
     """Cierra el documento y sale de Navisworks de forma verificable.
 
@@ -2208,6 +2500,11 @@ def navis_exit(
     el PID terminó. Si Navisworks sigue abierto —por ejemplo, por un diálogo
     de otro complemento— devuelve `partial`, nunca un falso `completed`.
     Con `dry_run=true` no cierra nada.
+
+    Espera hasta `verify_timeout` segundos (40 por defecto, máximo 50):
+    descargar un federado tarda, y con 15 s un cierre en curso se reportaba
+    como rechazado. Si el proceso sigue vivo pero el puente ya no responde,
+    lo dice (`exit_in_progress: true`) en vez de sugerir un diálogo bloqueado.
     """
     session = STATE.bridge.resolve(for_mutation=True)
     fingerprint = ""

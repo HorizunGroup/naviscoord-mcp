@@ -215,6 +215,11 @@ namespace NavisCoord
             // pointer. These wait rather than read a tree in motion.
             Read(table, "clash/tests", ReadClass.IncompatibleWithMutation);
             Read(table, "clash/export", ReadClass.IncompatibleWithMutation);
+            // The one read long enough to need a job: a minute on a real
+            // federation, which is the MCP client's whole timeout. It walks
+            // clashes and inventory items, so it can stop between them.
+            table["clash/export"].SupportsJob = true;
+            table["clash/export"].Cancellable = true;
             Read(table, "analysis/revision", ReadClass.IncompatibleWithMutation);
             Read(table, "clash/image", ReadClass.IncompatibleWithMutation);
 

@@ -207,6 +207,8 @@ class TestRouteWiring:
         for route in (
             "workflow/configure", "workflow/run", "workflow/group_levels",
             "document/save", "document/save_as", "clash/run",
+            # A minute on the Comité federation: the MCP client's whole timeout.
+            "clash/export",
         ):
             assert route in jobs, f"{route} debería poder ejecutarse como trabajo"
 

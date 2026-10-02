@@ -114,6 +114,27 @@ Dos detalles no obvios:
   mismo set no tiene forma entera, y dejarle vetar el reintento fue cómo
   disciplinas completas volvieron con cero elementos.
 
+## Qué propiedad usar en los sets
+
+- **NWC exportado localmente desde Revit**: `{"tab": "Element", "property":
+  "Category", "value": "Walls"}`, con el nombre de categoría en el idioma del
+  Revit que publicó. Así está escrito el perfil de ejemplo.
+- **`CategoryId`** solo existe en los agregados de ACC. En un NWC local no
+  está, y un set que lo usa captura **cero** elementos (medido en el ejercicio
+  «Comité de obra», 2026-10-01: ni `OST_Walls` ni `-2000011` encontraron nada).
+- **Una condición por valor.** Navisworks une las condiciones de un set con
+  **Y**: `Category = Doors` y `Category = Windows` en el mismo set no lo cumple
+  ningún elemento. Haz un set por valor.
+- Un set que no captura nada **no es un éxito**: `navis_build_search_sets` lo
+  devuelve en `empty_sets` con su causa probable (`category_id_absent`,
+  `conditions_are_and` o `no_match`) y la llamada no sale `completed`.
+
+Las disciplinas del servidor salen de `disciplines` si el perfil la trae; si
+no, de `sets.folders` (como hace el complemento): código = token de
+`scope_model_contains` (`-EST-` → `EST`), etiqueta = nombre de carpeta. Los
+pares de choque se leen de `clash_matrix.pairs` **o** de `clash.pairs`, y sus
+lados pueden nombrar la carpeta («Estructura») o el código.
+
 ## Checksum
 
 Cada perfil produce un checksum que viaja en el estado y en los resultados,

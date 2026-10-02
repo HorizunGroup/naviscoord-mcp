@@ -27,6 +27,13 @@ from .sessions import select as select_session
 
 DEFAULT_TIMEOUT = 180.0
 
+#: Longest navis_exit waits for the process to end. Navisworks unloading a
+#: three-model federation took longer than the old 15 s default, so the exit
+#: was reported partial while it was in fact closing. Below the 60 s most MCP
+#: clients allow a call, with room for the close itself.
+EXIT_VERIFY_DEFAULT = 40.0
+EXIT_VERIFY_CAP = 50.0
+
 # Kept as aliases: `Session` and `session_file` were the public names before
 # the registry, and third-party scripts import them.
 Session = SessionInfo
@@ -301,7 +308,8 @@ class Bridge:
             "workflow/group_levels", "workflow/rules", "document/save", "document/save_as",
             "document/close", "application/exit"}
         operation = body_payload.get("route", "") if route == "job/submit" else route
-        writes = mutating or operation in write_routes or (route == "job/submit" and operation != "workflow/audit_models")
+        read_jobs = {"workflow/audit_models", "clash/export"}
+        writes = mutating or operation in write_routes or (route == "job/submit" and operation not in read_jobs)
         if readonly and writes and inner.get("dry_run") is not True:
             raise BridgeError("Read-only mode refuses this write.", code="read_only")
         self._retry_key = str(body_payload.get("idempotency_key") or "")
@@ -332,7 +340,14 @@ class Bridge:
                 message = ""
                 if isinstance(detail, dict):
                     code = str(detail.get("error") or "")
-                    message = str(detail.get("detail") or code or "")
+                    # A refused mutation answers with an envelope whose reason
+                    # is in `errors`, not `detail`; without this the caller
+                    # read «El complemento respondió 422» instead of «la
+                    # carpeta no existe».
+                    errors = detail.get("errors")
+                    first_error = errors[0] if isinstance(errors, list) and errors else ""
+                    message = str(detail.get("detail") if isinstance(detail.get("detail"), str) else "") \
+                        or str(first_error or "") or code
 
                 if exc.code in _NEVER_RETRY:
                     # A refusal the addin meant. Retrying cannot change a
@@ -520,7 +535,7 @@ class Bridge:
         expected_fingerprint: str,
         *,
         dry_run: bool = True,
-        verify_timeout: float = 15.0,
+        verify_timeout: float = EXIT_VERIFY_DEFAULT,
     ) -> dict[str, Any]:
         """Ask Navisworks to exit, then verify the process actually ended."""
         self.require("application/exit", since="0.2.3")
@@ -537,22 +552,46 @@ class Bridge:
         if dry_run or not result.get("exit_requested"):
             return result
 
-        deadline = time.monotonic() + max(0.1, min(float(verify_timeout), 60.0))
+        started = time.monotonic()
+        deadline = started + max(0.1, min(float(verify_timeout), EXIT_VERIFY_CAP))
         while time.monotonic() < deadline and is_alive(session):
-            time.sleep(0.1)
+            time.sleep(0.25)
 
         exited = not is_alive(session)
         result["application_exit_verified"] = exited
         result["verification_source"] = "process_liveness"
+        result["exit_waited_s"] = round(time.monotonic() - started, 1)
         result["status"] = "completed" if exited else "partial"
         if not exited:
+            # Still the honest answer — the process is there — but say which
+            # kind of "there": a Navisworks unloading a federation keeps its
+            # PID for a while after it stopped answering, and the 2026-10-01
+            # run read that as a refused close when it closed seconds later.
+            listening = self._still_listening(session)
+            result["bridge_answering"] = listening
             warnings = result.setdefault("warnings", [])
-            warnings.append(
-                "Navisworks sigue abierto. Puede haber un diálogo de otro complemento o "
-                "la ventana principal rechazó el cierre; no se reporta como completado."
-            )
+            if listening:
+                warnings.append(
+                    "Navisworks sigue abierto y su puente responde: puede haber un diálogo de otro "
+                    "complemento o la ventana principal rechazó el cierre. No se reporta como completado."
+                )
+            else:
+                result["exit_in_progress"] = True
+                warnings.append(
+                    f"El proceso sigue vivo tras {result['exit_waited_s']} s pero el puente ya no "
+                    "responde: Navisworks está cerrando. No se reporta como completado hasta que el "
+                    "proceso termine; compruébalo con navis_sessions."
+                )
         self.invalidate()
         return result
+
+    def _still_listening(self, session: SessionInfo) -> bool:
+        """Whether the bridge still answers the anonymous liveness GET."""
+        try:
+            with urllib.request.urlopen(f"{session.base_url}/health", timeout=2.0) as response:
+                return response.status == 200
+        except Exception:  # noqa: BLE001 - any failure means "not answering"
+            return False
 
     # --------------------------------------------------------- workflow
 
@@ -600,8 +639,19 @@ class Bridge:
     def analysis_state(self) -> dict[str, Any]:
         return self.call("analysis/revision")
 
-    def export_clashes(
-        self,
+    def supports_job(self, route: str) -> bool:
+        """Whether the connected add-in runs ``route`` as a background job.
+
+        False on any doubt — an add-in too old to say, or no add-in at all —
+        so callers fall back to the synchronous route they always had.
+        """
+        try:
+            return route in (self.capabilities().get("job_routes") or [])
+        except BridgeError:
+            return False
+
+    @staticmethod
+    def export_payload(
         properties: list[str] | None = None,
         tests: list[str] | None = None,
         statuses: list[str] | None = None,
@@ -609,20 +659,29 @@ class Bridge:
         penetration_categories: list[str] | None = None,
         penetration_keywords: list[str] | None = None,
     ) -> dict[str, Any]:
-        result = self.call(
-            "clash/export",
-            {
-                "properties": properties or [],
-                "tests": tests or [],
-                "statuses": statuses or [],
-                "limit": limit,
-                "penetration_categories": penetration_categories or [],
-                "penetration_keywords": penetration_keywords or [],
-            },
-        )
+        return {
+            "properties": properties or [],
+            "tests": tests or [],
+            "statuses": statuses or [],
+            "limit": limit,
+            "penetration_categories": penetration_categories or [],
+            "penetration_keywords": penetration_keywords or [],
+        }
+
+    @staticmethod
+    def checked_export(result: dict[str, Any]) -> dict[str, Any]:
+        """An export that can be analysed, or the reason it cannot."""
+        if result.get("cancelled") or str(result.get("status") or "") == "cancelled":
+            raise BridgeError(
+                "La exportación de cruces se canceló: no hay un conjunto completo que analizar.",
+                code="export_cancelled",
+            )
         if not result.get("analysis_revision"):
             raise BridgeError("The add-in cannot track analysis freshness. Update the NavisCoord add-in.", code="analysis_revision_required")
         return result
+
+    def export_clashes(self, **kwargs: Any) -> dict[str, Any]:
+        return self.checked_export(self.call("clash/export", self.export_payload(**kwargs)))
 
     def clash_image(
         self,

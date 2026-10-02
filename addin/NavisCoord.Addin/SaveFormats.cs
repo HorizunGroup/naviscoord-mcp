@@ -19,6 +19,28 @@ namespace NavisCoord
         /// <summary>Formats <c>Document.SaveFile</c> can actually write.</summary>
         public static readonly string[] Writable = { ".nwf", ".nwd" };
 
+        /// <summary>
+        /// Why a destination cannot be written because its folder is missing,
+        /// or null when the folder exists.
+        /// </summary>
+        /// <remarks>
+        /// <c>SaveFile</c> does not create folders: pointed at a subfolder that
+        /// does not exist it returns false, and the only message the operator
+        /// got was «Navisworks devolvió false», which names neither the cause
+        /// nor the fix. Checked before the call, on the dry run as well, so the
+        /// rehearsal already says what the real run would hit.
+        /// </remarks>
+        public static string MissingFolderProblem(string destination, Func<string, bool> folderExists)
+        {
+            if (string.IsNullOrWhiteSpace(destination) || folderExists == null) return null;
+            string folder;
+            try { folder = Path.GetDirectoryName(destination); }
+            catch (ArgumentException) { return null; }
+            if (string.IsNullOrWhiteSpace(folder) || folderExists(folder)) return null;
+            return "La carpeta «" + folder + "» no existe y Navisworks no crea carpetas al guardar. " +
+                   "Créala (dentro de una raíz permitida) o elige otra ruta; no se escribió nada.";
+        }
+
         /// <summary>The extension a document hosted in ACC carries locally.</summary>
         public const string Cloud = ".nwfacc";
 

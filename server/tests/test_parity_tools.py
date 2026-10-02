@@ -263,11 +263,26 @@ RULES_OK = {
 
 
 class TestEnvelope:
+    @staticmethod
+    def _rereading(double: "BridgeDouble", before: list, after: list) -> None:
+        """sets/list answers the state before the build, then the state after."""
+        states = [{"sets": before}, {"sets": after}]
+        original = double.call
+
+        def call(route, payload=None):
+            if route == "sets/list":
+                double.calls.append((route, dict(payload or {})))
+                return states.pop(0) if len(states) > 1 else states[0]
+            return original(route, payload)
+
+        double.call = call
+
     def test_build_reports_created_updated_and_failed(self, monkeypatch) -> None:
-        double = BridgeDouble(answers={
-            "sets/list": {"sets": [{"name": "ARQ", "is_group": True}]},
-            "sets/build_search": BUILD_OK,
-        })
+        double = BridgeDouble(answers={"sets/build_search": BUILD_OK})
+        self._rereading(double,
+                        before=[{"name": "ARQ", "guid": "g-arq", "is_group": True}],
+                        after=[{"name": "ARQ", "guid": "g-arq", "is_group": True},
+                               {"name": "MEP", "guid": "g-mep", "is_group": True}])
         monkeypatch.setattr(M.STATE, "bridge", double)
 
         out = M.navis_build_search_sets(
@@ -286,11 +301,13 @@ class TestEnvelope:
         assert out["errors"], "el motivo del fallo tiene que viajar"
         assert out["precedence"]
 
-    def test_an_existing_folder_is_an_update_not_a_creation(self, monkeypatch) -> None:
+    def test_an_existing_folder_rebuilt_is_an_update_not_a_creation(self, monkeypatch) -> None:
         double = BridgeDouble(answers={
-            "sets/list": {"sets": [{"name": "MEP", "is_group": True}]},
             "sets/build_search": {**BUILD_OK, "planned": BUILD_OK["planned"][:1]},
         })
+        self._rereading(double,
+                        before=[{"name": "MEP", "guid": "g-old", "is_group": True}],
+                        after=[{"name": "MEP", "guid": "g-new", "is_group": True}])
         monkeypatch.setattr(M.STATE, "bridge", double)
 
         out = M.navis_build_search_sets(
@@ -298,8 +315,37 @@ class TestEnvelope:
             dry_run=False, replace_existing=True, expected_document_fingerprint="fp-live",
         )
         assert out["created"] == []
-        assert out["updated"] == ["MEP"]
+        assert out["updated"] == ["MEP"], "el GUID cambió: la carpeta se reescribió"
         assert out["status"] == "completed"
+
+    def test_same_guid_is_never_reported_as_updated(self, monkeypatch) -> None:
+        """Comité de obra: «updated» with nothing changed in the document."""
+        double = BridgeDouble(answers={
+            "sets/build_search": {
+                **BUILD_OK, "planned": BUILD_OK["planned"][:1],
+                "blocked": [{"folder": "MEP", "action": "blocked",
+                             "reason": "la usan 2 conjunto(s) que 3 test(s) referencian"}],
+                "sets_in_document": [
+                    {"set": "MEP/Tubo", "present": True, "current_definition": False, "matches": 0},
+                    {"set": "MEP/Ducto", "present": True, "current_definition": False, "matches": 0},
+                ],
+                "stale_sets": ["MEP/Tubo", "MEP/Ducto"],
+            },
+        })
+        same = [{"name": "MEP", "guid": "g-same", "is_group": True}]
+        self._rereading(double, before=same, after=same)
+        monkeypatch.setattr(M.STATE, "bridge", double)
+
+        out = M.navis_build_search_sets(
+            folders=[{"folder": "MEP", "sets": [{"name": "Tubo"}, {"name": "Ducto"}]}],
+            dry_run=False, replace_existing=True, expected_document_fingerprint="fp-live",
+        )
+        assert out["updated"] == [], "mismo GUID antes y después: no se actualizó nada"
+        assert out["unchanged"] == ["MEP"]
+        assert out["blocked"] == ["MEP"]
+        assert out["stale_sets"] == ["MEP/Tubo", "MEP/Ducto"]
+        assert out["verified"] == 0 and out["status"] != "completed"
+        assert any("NO se reemplazó" in w for w in out["warnings"])
 
     def test_dry_run_never_claims_verification(self, monkeypatch) -> None:
         double = BridgeDouble(answers={"sets/build_search": {**BUILD_OK, "dry_run": True,

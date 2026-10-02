@@ -61,6 +61,14 @@ namespace NavisCoord
                     var model = doc.Models[i];
                     parts.Add(i.ToString(CultureInfo.InvariantCulture));
                     parts.Add(model.SourceFileName ?? model.FileName ?? string.Empty);
+                    // Content, not just location: see DocumentFingerprint.ModelContent.
+                    var root = model.RootItem;
+                    var box = NavisContext.SafeBoundingBox(root);
+                    parts.Add(DocumentFingerprint.ModelContent(
+                        model.Creator,
+                        root == null ? -1 : root.Children.Count(),
+                        box == null || box.IsEmpty ? null : new[] { box.Min.X, box.Min.Y, box.Min.Z },
+                        box == null || box.IsEmpty ? null : new[] { box.Max.X, box.Max.Y, box.Max.Z }));
                 }
                 catch
                 {

@@ -5,6 +5,45 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+Defectos de la corrida real del ejercicio «Comité de obra» (2026-10-01).
+**Requiere el complemento nuevo** para los puntos marcados (C#); el servidor
+sigue funcionando con un complemento 1.0.0, por la vía síncrona de antes.
+
+- `navis_analyze` ya no deja Navisworks ocupado. El cuello de botella no era
+  el mapeo de disciplinas (el motor tarda <1 s con 5.549 cruces): era el
+  inventario de pasos, que recorría todos los nodos de los tres modelos en el
+  hilo de UI aunque el perfil no declarara reglas (C#). Ahora se omite sin
+  reglas y, con reglas, prueba la categoría antes de leer propiedades. La
+  extracción corre como trabajo (`clash/export`, C#) con avance por cruce y
+  cancelación; `navis_analyze` espera como mucho 40 s, devuelve `job_id` si
+  no terminó, se recoge con `navis_analyze(job_id=...)`, se une a la
+  extracción en curso en vez de encolar otra y rechaza llamadas concurrentes.
+  La respuesta trae `timings`.
+- Perfil de ejemplo con `Element > Category` y una condición por set: con
+  `CategoryId` (solo existe en agregados de ACC) capturaba cero en un NWC
+  local. Un set vacío sale en `empty_sets` con su causa (C#) y no es
+  `completed`.
+- `navis_configure` informa los conteos releídos del documento: los sets de
+  una carpeta conservada salen en `stale_sets` y no suman a `matches` (C#).
+  Un test sin resultados que la misma configuración rehace ya no congela los
+  sets viejos (C#). `navis_build_search_sets` decide created/updated/unchanged
+  por GUID releído antes y después: «updated» sin cambios no vuelve a salir.
+- `navis_build_clash_matrix` acepta `clash.pairs` además de
+  `clash_matrix.pairs`; `navis_build_sets` rechaza con motivo en vez de un 500.
+- `navis_load_profile` deriva las disciplinas de `sets.folders` cuando el
+  perfil no trae `disciplines` (antes respondía `["OTRO"]`).
+- `navis_audit_models`: el solape de cajas ya no se presenta como
+  «co-ubicado»; se compara el punto de referencia cuando el NWC lo publica y,
+  si no, se dice que las coordenadas no se verificaron. La pureza de vistas
+  se evalúa por nombre de categoría y reconoce `-ARQ-` en una carpeta
+  «Arquitectura» (C#).
+- La huella del documento incluye el contenido cargado de cada modelo (caja,
+  elementos de primer nivel, herramienta de origen), no solo rutas (C#).
+- `navis_exit` espera hasta 40 s y distingue un Navisworks que está cerrando
+  de uno que rechazó el cierre. `navis_save_as` a una carpeta inexistente lo
+  dice en vez de «Navisworks devolvió false» (C#), y el motivo de un 422 llega
+  al llamador.
+
 ## [1.0.0] — 2026-09-07
 
 - Require explicit host/contact evidence before suppressing category-based contacts.

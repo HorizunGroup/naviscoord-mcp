@@ -112,7 +112,7 @@ class MatrixCoverage:
                 out.ran += 1
 
         if profile is not None:
-            for entry in profile.section("clash_matrix").get("pairs", []) or []:
+            for entry in profile.clash_pairs():
                 if not isinstance(entry, dict):
                     continue
                 a, b = str(entry.get("a", "")), str(entry.get("b", ""))
@@ -332,7 +332,13 @@ def analyze(
         if cause.kind == "missing_penetration":
             cause.evidence["inventory_scope"] = inventory.get("scope", "clash_export")
             cause.evidence["inventory_complete"] = inventory.get("complete", False)
-    if inventory and not inventory.get("complete"):
+    if inventory and inventory.get("scope") == "not_configured":
+        result.warnings.append(
+            "El perfil no declara reglas de pasos (noise_filter.pass_through_categories / "
+            "pass_through_keywords), así que no se buscaron pasos en el modelo: «pasos por "
+            "verificar» significa que no se comprobó, no que falten."
+        )
+    elif inventory and not inventory.get("complete"):
         result.warnings.append("Opening inventory could not read every item; inspect inventory errors before accepting missing openings.")
     _attach_root_causes(issues, result.root_causes)
 

@@ -7,6 +7,7 @@ and noticing when the document under a cached analysis has been swapped.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 from pathlib import Path
@@ -277,14 +278,42 @@ class TestExitVerification:
     ) -> None:
         bridge = self._bridge(monkeypatch)
         monkeypatch.setattr("naviscoord.bridge.is_alive", lambda _session: True)
-        moments = iter((0.0, 1.0))
+        monkeypatch.setattr(bridge, "_still_listening", lambda _session: True)
+        moments = itertools.count(0.0, 1.0)
         monkeypatch.setattr("naviscoord.bridge.time.monotonic", lambda: next(moments))
+        monkeypatch.setattr("naviscoord.bridge.time.sleep", lambda _s: None)
         result = bridge.exit_application(
             "discard", "fp", dry_run=False, verify_timeout=0.1
         )
         assert result["status"] == "partial"
         assert result["application_exit_verified"] is False
         assert "sigue abierto" in result["warnings"][0]
+
+    def test_a_closing_navisworks_is_told_apart_from_a_refused_close(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Comité de obra: «partial» while Navisworks was already closing."""
+        bridge = self._bridge(monkeypatch)
+        monkeypatch.setattr("naviscoord.bridge.is_alive", lambda _session: True)
+        monkeypatch.setattr(bridge, "_still_listening", lambda _session: False)
+        moments = itertools.count(0.0, 1.0)
+        monkeypatch.setattr("naviscoord.bridge.time.monotonic", lambda: next(moments))
+        monkeypatch.setattr("naviscoord.bridge.time.sleep", lambda _s: None)
+        result = bridge.exit_application("discard", "fp", dry_run=False, verify_timeout=0.1)
+        assert result["status"] == "partial", "sin PID terminado no hay completed"
+        assert result["exit_in_progress"] is True
+        assert result["bridge_answering"] is False
+        assert "está cerrando" in result["warnings"][0]
+
+    def test_exit_waits_long_enough_for_a_federation_to_unload(self) -> None:
+        import inspect
+
+        from naviscoord import mcp_server as M
+        from naviscoord.bridge import EXIT_VERIFY_CAP, EXIT_VERIFY_DEFAULT
+
+        assert EXIT_VERIFY_DEFAULT >= 40, "15 s no alcanzó para cerrar el federado del comité"
+        assert EXIT_VERIFY_CAP < 60, "por debajo del límite de 60 s del cliente MCP"
+        assert inspect.signature(M.navis_exit).parameters["verify_timeout"].default >= 40
 
 
 class TestDocumentScopedState:

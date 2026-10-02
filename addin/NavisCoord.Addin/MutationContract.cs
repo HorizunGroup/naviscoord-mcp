@@ -45,6 +45,34 @@ namespace NavisCoord
         /// </remarks>
         private const string Separator = "\u001f";
 
+        /// <summary>
+        /// What one loaded model holds, reduced to a comparable string.
+        /// </summary>
+        /// <remarks>
+        /// The fingerprint used to be paths and titles only, so a DIFFERENT
+        /// document opened under the same title and path — a re-exported NWC,
+        /// a colleague's copy — fingerprinted identically, and a plan computed
+        /// for the first was accepted against the second. The geometry each
+        /// model brings is what a path id actually addresses, so its extent
+        /// (rounded well below any real edit, to absorb float noise), the
+        /// size of its top level and its authoring tool join the identity.
+        /// All three are read from the loaded model, not from the file on
+        /// disk: rewriting the NWC under an open document changes nothing
+        /// that document addresses until it is reloaded.
+        /// </remarks>
+        public static string ModelContent(string creator, int topLevelItems, double[] boxMin, double[] boxMax)
+        {
+            string Box(double[] point) => point == null || point.Length < 3
+                ? "-"
+                : string.Join(",", point.Take(3).Select(v =>
+                    double.IsNaN(v) || double.IsInfinity(v)
+                        ? "?"
+                        : Math.Round(v, 3).ToString("0.000", CultureInfo.InvariantCulture)));
+            return "creator=" + (creator ?? string.Empty) +
+                   ";items=" + topLevelItems.ToString(CultureInfo.InvariantCulture) +
+                   ";min=" + Box(boxMin) + ";max=" + Box(boxMax);
+        }
+
         /// <summary>Stable 16-hex-char digest of the identity parts.</summary>
         public static string Compute(IEnumerable<string> parts)
         {
