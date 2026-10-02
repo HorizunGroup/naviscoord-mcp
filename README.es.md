@@ -6,7 +6,7 @@
 
 [English](README.md) · [Instalación](docs/INSTALL.md) · [Evidencia de verificación](docs/RELEASE-1.0-VERIFICATION.md) · [Descargas](https://github.com/HorizunGroup/naviscoord-mcp/releases/latest)
 
-**La versión estable 1.1.1 ya es pública:** [descarga](https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v1.1.1) · [registro MCP oficial](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.HorizunGroup%2Fnaviscoord-mcp/versions/1.1.1) · [Smithery](https://smithery.ai/servers/pabloalejandrozg/naviscoord-mcp).
+**La versión estable 1.1.1 ya es pública:** [descarga](https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v1.1.1) · [registro MCP oficial](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.HorizunGroup%2Fnaviscoord-mcp/versions/1.1.1).
 
 ![De interferencias a decisiones](docs/assets/naviscoord-flow.svg)
 
