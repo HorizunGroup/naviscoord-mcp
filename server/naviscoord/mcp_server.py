@@ -2655,7 +2655,7 @@ def navis_snapshot(path: str, overwrite: bool = False) -> dict[str, Any]:
     """Guarda todas las incidencias con IDs persistentes, perfil y revisión del modelo."""
     from .history import snapshot
     result = STATE.require_fresh_result()
-    data = snapshot(result, STATE.stamp())
+    data = snapshot(result, STATE.stamp(), getattr(STATE, "export", None))
     target = output_policy().resolve_file(path, overwrite=overwrite)
     with target.staged_write() as staging:
         staging.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -2664,11 +2664,28 @@ def navis_snapshot(path: str, overwrite: bool = False) -> dict[str, Any]:
 
 @mcp.tool(annotations=_read_only("Comparar entregas de coordinación"))
 @_guard
-def navis_compare_snapshot(path: str) -> dict[str, Any]:
-    """Compara una revisión guardada con el análisis vigente: nuevos, persistentes y cambios."""
+def navis_compare_snapshot(path: str, current_path: str = "", tolerance_m: float = 0.5,
+                           include_matches: bool = False) -> dict[str, Any]:
+    """Compara dos corridas: qué se resolvió, qué es nuevo, qué sigue y qué cambió.
+
+    Hecha para «la semana siguiente»: los modelos SÍ cambian entre corridas y
+    eso no impide comparar. Empareja cada problema por, en este orden: el mismo
+    id, los mismos elementos de Revit (ElementId de los dos lados, por archivo,
+    en la misma pareja de disciplinas), un GUID de cruce que Navisworks conservó
+    y, al final, la posición (misma pareja a menos de `tolerance_m`). Dice qué
+    modelos cambiaron y cuántos emparejamientos fueron solo por posición.
+
+    `path` es la foto anterior (navis_snapshot). Sin `current_path` compara
+    contra el análisis vigente; con él, compara dos fotos guardadas sin
+    necesitar Navisworks. `include_matches` agrega la lista anterior→actual.
+    """
     from .history import snapshot, compare, load_snapshot
     previous = load_snapshot(path)
-    return compare(previous, snapshot(STATE.require_fresh_result(), STATE.stamp()))
+    if current_path:
+        current = load_snapshot(current_path)
+    else:
+        current = snapshot(STATE.require_fresh_result(), STATE.stamp(), getattr(STATE, "export", None))
+    return compare(previous, current, tolerance_m=tolerance_m, include_matches=include_matches)
 
 
 def main() -> None:

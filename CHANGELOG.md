@@ -34,6 +34,23 @@ servidor (Python): el complemento 1.1.1 sirve tal cual.
   complemento, que rechaza `appearance/color` y `appearance/reset` sin ella
   (409 «fingerprint_required»). No se veía mientras todo salía «low» y no
   había nada que mandar. Comprobado en vivo con Navisworks 2026.
+- **`navis_compare_snapshot` se negaba a comparar la semana 1 con la 2.**
+  Exigía la misma huella del documento, y tras recibir los NWC corregidos la
+  huella cambia siempre: rechazaba justo el caso para el que existe (clase C6
+  del curso, 2026-10-04). Ahora compara aunque los modelos hayan cambiado y
+  empareja cada problema, en este orden y uno a uno: mismo id, mismos
+  elementos de Revit (ElementId/UniqueId de los dos lados, por archivo y
+  pareja de disciplinas, con deriva de hasta 2 m), un GUID de cruce que
+  Navisworks conservó, y por último la posición (misma pareja a menos de
+  `tolerance_m`, 0,5 m por defecto, avisando cuántos fueron así). Devuelve
+  resueltas / nuevas / siguen / cambiaron con su desglose, y qué modelos
+  cambiaron según la geometría de sus elementos en conflicto. Con
+  `current_path` compara dos fotos guardadas sin Navisworks. Sobre las fotos
+  reales de C6: 27 resueltas, 13 nuevas, 1.407 siguen. `navis_snapshot`
+  guarda ahora la identidad de los elementos de cada problema
+  (`match_keys`, `elements`, `models`); las fotos viejas se siguen leyendo.
+- `changed` miraba `max_penetration_m`, que la foto no trae (trae
+  `max_penetration_mm`): un cruce más profundo nunca salía como cambio.
 - `navis_set_disciplines` acepta el nombre de la carpeta («Estructura») y
   guarda el código (EST), que es con lo que se puntúa; avisa de una
   disciplina que el perfil no conoce.

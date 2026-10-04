@@ -762,7 +762,18 @@ quedaba gris.
 
 ## `navis_compare_snapshot`
 
-Compara una revisión guardada con el análisis vigente: nuevos, persistentes y cambios.
+Compara dos corridas: qué se resolvió, qué es nuevo, qué sigue y qué cambió.
+
+Hecha para «la semana siguiente»: los modelos SÍ cambian entre corridas y
+eso no impide comparar. Empareja cada problema por, en este orden: el mismo
+id, los mismos elementos de Revit (ElementId de los dos lados, por archivo,
+en la misma pareja de disciplinas), un GUID de cruce que Navisworks conservó
+y, al final, la posición (misma pareja a menos de `tolerance_m`). Dice qué
+modelos cambiaron y cuántos emparejamientos fueron solo por posición.
+
+`path` es la foto anterior (navis_snapshot). Sin `current_path` compara
+contra el análisis vigente; con él, compara dos fotos guardadas sin
+necesitar Navisworks. `include_matches` agrega la lista anterior→actual.
 
 ```json
 {
@@ -770,6 +781,21 @@ Compara una revisión guardada con el análisis vigente: nuevos, persistentes y 
     "path": {
       "title": "Path",
       "type": "string"
+    },
+    "current_path": {
+      "default": "",
+      "title": "Current Path",
+      "type": "string"
+    },
+    "tolerance_m": {
+      "default": 0.5,
+      "title": "Tolerance M",
+      "type": "number"
+    },
+    "include_matches": {
+      "default": false,
+      "title": "Include Matches",
+      "type": "boolean"
     }
   },
   "required": [
@@ -1976,7 +2002,9 @@ sesión: aquí se ven todas, con cuál está seleccionada.
 
 Fija el mapeo archivo → disciplina, sobrescribiendo la heurística.
 
-mapping: {"PROY-HVAC-T1.rvt": "HVAC", ...}
+mapping: {"PROY-HVAC-T1.rvt": "HVAC", ...}. Acepta el código o el nombre
+de la carpeta del perfil («Estructura» → EST): se guarda el código, que es
+con lo que se puntúa.
 
 ```json
 {
