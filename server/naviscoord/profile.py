@@ -657,7 +657,13 @@ _NODE_ARTEFACTS = {
 # "Id", so the handoff traced 0 of 1.434 issues back to Revit. A section the
 # profile does not declare is now read from the default profile; one it does
 # declare is used as written.
-INHERITED_SECTIONS = ("severity", "criticality_matrix", "movability", "interop")
+#
+# `noise_filter` decides which clashes count as active at all, and the same
+# gap applied: the Mirador profile of the Navisworks course (C6, 2026-10-04)
+# declares no noise filter, so `drop_statuses` read as empty and the week-2
+# run counted as open the 211 clashes Navisworks itself marked «Resuelto»
+# (1.420 issues instead of 1.335). Its absence now reads the default filter.
+INHERITED_SECTIONS = ("severity", "criticality_matrix", "movability", "interop", "noise_filter")
 
 _DEFAULT_RAW: dict[str, Any] | None = None
 
@@ -689,6 +695,10 @@ def _inherited_sections(
         elif name == "severity" and not isinstance(own.get("weights"), dict):
             # Bands or thresholds without weights still score everything 0.
             out[name] = {**own, "weights": fallback.get("weights", {})}
+        elif name == "noise_filter" and "drop_statuses" not in own:
+            # A filter written without it would count Approved and Resolved
+            # clashes as open. A profile that wants them kept says [] itself.
+            out[name] = {**own, "drop_statuses": list(fallback.get("drop_statuses") or [])}
     if disciplines and ("criticality_matrix" in out or "movability" in out):
         _extend_for_own_codes(out, defaults, disciplines)
     return out

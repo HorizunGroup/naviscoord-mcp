@@ -46,7 +46,8 @@ servidor (Python): el complemento 1.1.1 sirve tal cual.
   resueltas / nuevas / siguen / cambiaron con su desglose, y qué modelos
   cambiaron según la geometría de sus elementos en conflicto. Con
   `current_path` compara dos fotos guardadas sin Navisworks. Sobre las fotos
-  reales de C6: 27 resueltas, 13 nuevas, 1.407 siguen. `navis_snapshot`
+  reales de C6: 27 resueltas, 13 nuevas, 1.407 siguen (con los «Resuelto»
+  de Navisworks aún contados: ver abajo). `navis_snapshot`
   guarda ahora la identidad de los elementos de cada problema
   (`match_keys`, `elements`) y el inventario de cada modelo (`models`: conteo,
   caja y categorías, del censo); las fotos viejas se siguen leyendo. Con los
@@ -54,6 +55,15 @@ servidor (Python): el complemento 1.1.1 sirve tal cual.
   menos), MEP cambió (20.001 → 15.645 elementos, sin muros cortina, 8 de sus
   elementos en conflicto movidos), EST sin cambios. Sin inventario en las dos
   fotos no dice «sin cambios»: lo deja indeterminado.
+- **Los cruces que Navisworks marca «Resuelto» seguían contando como
+  problemas abiertos.** Un perfil en el formato del complemento no declara
+  `noise_filter`, así que `drop_statuses` quedaba vacío: en C6 la corrida de la
+  semana 2 contó los 211 cruces «Resuelto» del Clash Detective (59 de EST VS
+  MEP y 152 de ARQ VS MEP) y dio 1.420 problemas en vez de 1.335. El filtro de
+  ruido se hereda ahora del perfil por defecto cuando el perfil no lo declara,
+  como la puntuación y la trazabilidad; si lo declara sin `drop_statuses`, se
+  completa con Approved y Resolved (quien quiera conservarlos escribe `[]`).
+  Cifras corregidas de C6: 1.434 → 1.335; 106 resueltas, 7 nuevas, 1.328 siguen.
 - `changed` miraba `max_penetration_m`, que la foto no trae (trae
   `max_penetration_mm`): un cruce más profundo nunca salía como cambio.
 - `navis_set_disciplines` acepta el nombre de la carpeta («Estructura») y
