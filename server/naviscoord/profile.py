@@ -330,6 +330,10 @@ class Profile:
     raw: dict[str, Any]
     disciplines: dict[str, DisciplineRule]
     _category_index: dict[str, str] = field(default_factory=dict)
+    #: Engine sections this profile does not declare and reads from the
+    #: default profile instead (see ``INHERITED_SECTIONS``). ``raw`` is never
+    #: touched, so the checksum the add-in agrees on stays the file's own.
+    _inherited: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # ---------------------------------------------------------------- load
 
@@ -379,13 +383,22 @@ class Profile:
             raw=raw,
             disciplines=disciplines,
             _category_index=category_index,
+            _inherited=_inherited_sections(raw, disciplines),
         )
 
     # ------------------------------------------------------------- lookups
 
     def section(self, name: str) -> dict[str, Any]:
+        inherited = self._inherited.get(name)
+        if inherited is not None:
+            return inherited
         value = self.raw.get(name)
         return value if isinstance(value, dict) else {}
+
+    @property
+    def inherited_sections(self) -> list[str]:
+        """Engine sections read from the default profile, for the caller to see."""
+        return sorted(self._inherited)
 
     def discipline_for_category(self, category: str) -> str | None:
         if not category:
@@ -446,6 +459,16 @@ class Profile:
             if text.lower() in (code.lower(), rule.label.lower()):
                 return code
         return text.upper()
+
+    def known_code(self, name: str) -> str:
+        """The code for a code, folder label or alias the profile knows; else ``name`` as given.
+
+        Unlike :meth:`discipline_code` an unknown name is not upper-cased: it is
+        the caller's own discipline and stays as they wrote it.
+        """
+        text = str(name or "").strip()
+        code = self.discipline_code(text)
+        return code if code in self.disciplines else text
 
     def clash_pairs(self) -> list[dict[str, Any]]:
         """The pairs to compare, from ``clash_matrix.pairs`` or ``clash.pairs``.
@@ -516,8 +539,11 @@ class Profile:
 
     def criticality(self, a: str, b: str) -> float:
         matrix = self.section("criticality_matrix")
-        key = "|".join(sorted((a, b)))
-        value = matrix.get(key)
+        # Either order: default.json writes "EST|ARQ", "SAN|ELE", "RCI|ELE"…
+        # and a sorted-only lookup read those pairs as the neutral 0.5.
+        value = matrix.get(f"{a}|{b}")
+        if value is None:
+            value = matrix.get(f"{b}|{a}")
         if value is None:
             return 0.5
         return float(value)
@@ -620,6 +646,119 @@ _NODE_ARTEFACTS = {
     "körper", "gruppe", "ebene", "geometrie", "datei", "linie",
     "sólido composto", "camada", "arquivo", "linha",
 }
+
+
+# The engine's scoring and traceability criteria. A profile written in the
+# add-in's format (sets, clash pairs, rules) declares none of them, and the
+# engine used to read their absence as zeros: every severity weight 0.0, so
+# all 1.434 issues of the «Comité de obra» scored 0 and came out «low» —
+# navis_color_by_priority then had nothing to paint — and the Element Id was
+# looked up only under "Element Id", while a local Revit NWC publishes it as
+# "Id", so the handoff traced 0 of 1.434 issues back to Revit. A section the
+# profile does not declare is now read from the default profile; one it does
+# declare is used as written.
+INHERITED_SECTIONS = ("severity", "criticality_matrix", "movability", "interop")
+
+_DEFAULT_RAW: dict[str, Any] | None = None
+
+
+def _default_raw() -> dict[str, Any]:
+    global _DEFAULT_RAW
+    if _DEFAULT_RAW is None:
+        _DEFAULT_RAW = loads_strict(DEFAULT_PROFILE.read_text(encoding="utf-8"))
+    return _DEFAULT_RAW
+
+
+def _inherited_sections(
+    raw: dict[str, Any], disciplines: dict[str, DisciplineRule] | None = None
+) -> dict[str, dict[str, Any]]:
+    try:
+        defaults = _default_raw()
+    except (OSError, ValueError):
+        return {}
+    if raw is defaults:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for name in INHERITED_SECTIONS:
+        fallback = defaults.get(name)
+        if not isinstance(fallback, dict):
+            continue
+        own = raw.get(name)
+        if not isinstance(own, dict):
+            out[name] = fallback
+        elif name == "severity" and not isinstance(own.get("weights"), dict):
+            # Bands or thresholds without weights still score everything 0.
+            out[name] = {**own, "weights": fallback.get("weights", {})}
+    if disciplines and ("criticality_matrix" in out or "movability" in out):
+        _extend_for_own_codes(out, defaults, disciplines)
+    return out
+
+
+def _extend_for_own_codes(
+    out: dict[str, dict[str, Any]],
+    defaults: dict[str, Any],
+    disciplines: dict[str, DisciplineRule],
+) -> None:
+    """Give the profile's own codes a row in the inherited tables.
+
+    The default tables are keyed by the default trades (EST, ARQ, HVAC, HID…).
+    A profile can name its own — a BEP that delivers every installation in
+    one model calls it MEP — and a code missing from the tables scores as the
+    neutral 0.5 on both, so «a duct through a beam» weighed like «two
+    unknowns meet». Each own code is read through the default trades its
+    categories belong to: the worst criticality of any of them, and the
+    least movable of them. Only the inherited copy is extended; a table the
+    profile writes itself is used as written.
+    """
+    index: dict[str, str] = {}
+    for code, spec in (defaults.get("disciplines") or {}).items():
+        if not isinstance(spec, dict):
+            continue
+        for category in spec.get("categories", []):
+            index.setdefault(str(category).strip().lower(), code)
+    default_codes = set(defaults.get("disciplines") or {})
+    equivalents: dict[str, set[str]] = {}
+    for code, rule in disciplines.items():
+        if code in default_codes or code == UNCLASSIFIED:
+            continue
+        mapped = {index[c] for c in (rule.selected_categories or rule.categories) if c in index}
+        if mapped:
+            equivalents[code] = mapped
+    if not equivalents:
+        return
+
+    def expand(code: str) -> set[str]:
+        return equivalents.get(code, {code})
+
+    if "criticality_matrix" in out:
+        matrix = dict(out["criticality_matrix"])
+        codes = sorted(set(equivalents) | default_codes)
+        for a in codes:
+            for b in codes:
+                if a not in equivalents and b not in equivalents:
+                    continue
+                key = "|".join(sorted((a, b)))
+                if key in matrix or f"{b}|{a}" in matrix:
+                    continue
+                values = [
+                    float(matrix.get(f"{x}|{y}", matrix.get(f"{y}|{x}")))
+                    for x in expand(a) for y in expand(b)
+                    if f"{x}|{y}" in matrix or f"{y}|{x}" in matrix
+                ]
+                if values:
+                    matrix[key] = max(values)
+        out["criticality_matrix"] = matrix
+    if "movability" in out:
+        movability = dict(out["movability"])
+        by_discipline = dict(movability.get("by_discipline") or {})
+        gravity = list(movability.get("gravity_disciplines") or [])
+        for code, mapped in equivalents.items():
+            values = [float(by_discipline[m]) for m in mapped if m in by_discipline]
+            if values and code not in by_discipline:
+                by_discipline[code] = min(values)
+        movability["by_discipline"] = by_discipline
+        movability["gravity_disciplines"] = gravity
+        out["movability"] = movability
 
 
 def _scope_tokens(scope: str) -> list[str]:

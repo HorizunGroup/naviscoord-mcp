@@ -138,7 +138,12 @@ class DisciplineTagger:
         self.declarations = declarations or {}
         self._how = ""
         # source_file -> discipline, set by the user when heuristics are wrong.
-        self.overrides = {k.strip().lower(): v for k, v in (overrides or {}).items()}
+        # A label («Estructura») is read as its code (EST): the scoring tables
+        # — criticality, movability, "structure does not move" — are keyed by
+        # code, and a label slipped past all of them.
+        self.overrides = {
+            k.strip().lower(): profile.known_code(v) for k, v in (overrides or {}).items()
+        }
         # A grouping discovered by reading the model: the property that
         # actually separates trades in THIS model, plus what each of its
         # values turned out to be. Takes precedence over the built-in

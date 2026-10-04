@@ -5,6 +5,34 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+Defectos de la corrida grabada del «Comité de obra» (2026-10-03). Solo
+servidor (Python): el complemento 1.1.1 sirve tal cual.
+
+- **Todas las incidencias salían «low» y `navis_color_by_priority` no pintaba
+  nada.** Un perfil en el formato del complemento (sets, pares de choque,
+  reglas) no declara `severity`, `criticality_matrix` ni `movability`, y el
+  motor leía su ausencia como ceros: los 1.434 problemas puntuaban 0,0. Las
+  secciones de puntuación y de trazabilidad que el perfil no declara se leen
+  ahora del perfil por defecto (`inherited_from_default` en
+  `navis_load_profile`); el checksum sigue siendo el del archivo. Los códigos
+  propios del perfil (p. ej. `MEP`, todas las redes en un modelo) toman la
+  fila de los oficios a los que pertenecen sus categorías. Sobre el comité:
+  33 críticas, 664 altas, 147 medias y 590 bajas; la peor (un ducto 376 mm
+  dentro de la viga 124796) es crítica.
+- **El handoff trazaba 0 de 1.434 incidencias a Revit.** Un NWC exportado
+  desde Revit en local publica el ElementId como `Id`, y sin sección
+  `interop` solo se buscaba `Element Id`. Ahora se buscan los dos, como en el
+  perfil por defecto: 1.434 de 1.434 rastreables.
+- **El piso de las interferencias profundas era plano.** 666 problemas
+  quedaban empatados en 71,0 y ninguno llegaba a crítico. Ahora crece con la
+  profundidad; solo un par crítico (estructura × instalaciones) pasa a la
+  banda crítica, un tabique dentro de una losa no.
+- `criticality_matrix` se lee en los dos órdenes: `default.json` escribe
+  `EST|ARQ`, `SAN|ELE`, `RCI|ELE`… y esos pares caían al neutro 0,5.
+- `navis_set_disciplines` acepta el nombre de la carpeta («Estructura») y
+  guarda el código (EST), que es con lo que se puntúa; avisa de una
+  disciplina que el perfil no conoce.
+
 ## [1.1.1] — 2026-10-01
 
 - **Los ZIP del complemento traen la cinta.** `Build-Release.ps1` empaquetaba

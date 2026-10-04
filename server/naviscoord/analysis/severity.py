@@ -33,6 +33,17 @@ from ..profile import Profile
 from .cluster import ClashCluster
 
 
+# The graded floor for deep interferences (see SeverityScorer.score). Kept
+# out of the profile on purpose: the profile contract is closed and mirrored
+# by the add-in, and these only shape the ranking INSIDE the bands the
+# profile already sets. Depth at which the floor reaches its top; how far past
+# «critical» the top of a critical pair goes; and the pair criticality that
+# counts as critical (structure against installations is 0.95).
+_DEEP_FULL_M = 0.45
+_DEEP_HEADROOM = 5.0
+_DEEP_CRITICAL_PAIR = 0.9
+
+
 @dataclass(slots=True)
 class SeverityVerdict:
     score: float
@@ -103,9 +114,29 @@ class SeverityScorer:
         if deep > 0.0 and cluster.max_penetration >= deep:
             if self._effective_movability(immovable) <= 0.2:
                 bands = self.profile.section("severity").get("priority_bands") or {}
-                minimum = float(bands.get("high", 71.0))
+                high = float(bands.get("high", 71.0))
+                critical = float(bands.get("critical", 75.0))
+                # The floor grows with depth and with how bad this pair of
+                # trades meeting is. A flat floor put 666 issues of the
+                # «Comité de obra» on exactly 71.0: a duct 376 mm inside a
+                # beam tied with a partition 16 cm into a slab, and nothing
+                # reached critical. Now the deepest hits against structure
+                # cross into critical and the ranking inside the band means
+                # something.
+                full = max(deep + 0.01, _DEEP_FULL_M)
+                depth_ratio = min((cluster.max_penetration - deep) / (full - deep), 1.0)
+                depth_ratio = max(0.0, depth_ratio)
+                # Inside the high band for any pair; past it, into critical,
+                # only where the pair itself is critical (structure against
+                # installations, 0.95). A partition deep in a slab is still a
+                # decision before pouring, but it does not stop the works the
+                # way a duct through a beam does, and it must not crowd it
+                # out of the short critical list.
+                minimum = high + (critical - high - 0.01) * depth_ratio
+                if components["criticality"] >= _DEEP_CRITICAL_PAIR:
+                    minimum += _DEEP_HEADROOM * depth_ratio
                 if total < minimum:
-                    total = minimum
+                    total = min(100.0, minimum)
                     why.append(
                         f"Entra {cluster.max_penetration * 1000:.0f} mm en "
                         f"{self.profile.label(immovable.discipline).lower()}, que no se "

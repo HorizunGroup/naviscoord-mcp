@@ -417,6 +417,7 @@ def navis_load_profile(path: str = "") -> dict[str, Any]:
         "checksum": STATE.profile_id,
         "bytes": size,
         "disciplines": sorted(profile.disciplines),
+        "inherited_from_default": profile.inherited_sections,
         "problems": [],
         "invalidated_analysis": changed,
         "addin": addin,
@@ -609,10 +610,28 @@ def navis_propose_disciplines() -> dict[str, Any]:
 def navis_set_disciplines(mapping: dict[str, str]) -> dict[str, Any]:
     """Fija el mapeo archivo → disciplina, sobrescribiendo la heurística.
 
-    mapping: {"PROY-HVAC-T1.rvt": "HVAC", ...}
+    mapping: {"PROY-HVAC-T1.rvt": "HVAC", ...}. Acepta el código o el nombre
+    de la carpeta del perfil («Estructura» → EST): se guarda el código, que es
+    con lo que se puntúa.
     """
-    STATE.overrides = {k: v for k, v in mapping.items()}
-    return {"overrides": STATE.overrides, "note": "Se aplicarán en el próximo navis_analyze."}
+    profile = STATE.profile
+    STATE.overrides = {k: profile.known_code(v) for k, v in mapping.items()}
+    renamed = {
+        k: {"given": v, "code": STATE.overrides[k]}
+        for k, v in mapping.items()
+        if str(v).strip() != STATE.overrides[k]
+    }
+    unknown = sorted({c for c in STATE.overrides.values() if c not in profile.disciplines})
+    out: dict[str, Any] = {"overrides": STATE.overrides, "note": "Se aplicarán en el próximo navis_analyze."}
+    if renamed:
+        out["normalised"] = renamed
+    if unknown:
+        out["unknown_disciplines"] = unknown
+        out["note"] += (
+            " Ojo: " + ", ".join(unknown) + " no es una disciplina del perfil; se puntúa "
+            "con los valores por omisión (criticidad y movilidad 0,5)."
+        )
+    return out
 
 
 # ------------------------------------------------- envelope de las rutas crudas

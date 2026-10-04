@@ -64,7 +64,7 @@ def build_targets(
 ) -> list[dict[str, Any]]:
     """Every element involved in an issue, with its cross-tool identities."""
     interop = profile.section("interop")
-    id_keys = interop.get("revit_element_id_keys") or ["Element Id"]
+    id_keys = interop.get("revit_element_id_keys") or ["Element Id", "Id"]
     budget_keys = interop.get("budget_code_keys") or []
     class_keys = interop.get("classification_keys") or []
 
