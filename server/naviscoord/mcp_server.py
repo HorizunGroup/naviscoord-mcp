@@ -2649,13 +2649,26 @@ def navis_analysis_state() -> dict[str, Any]:
             "fresh": bool(STATE.analysis_revision and current.get("analysis_revision") == STATE.analysis_revision)}
 
 
+def _census_for_snapshot() -> dict[str, Any] | None:
+    """The model inventory a snapshot keeps to tell later which model changed.
+
+    Best effort: a snapshot without it is still a valid snapshot, and the
+    comparison says when it could not decide.
+    """
+    try:
+        census = STATE.bridge.census()
+    except Exception:  # noqa: BLE001 - the snapshot must not fail for this
+        return None
+    return census if isinstance(census, dict) else None
+
+
 @mcp.tool(annotations=_additive("Guardar una revisión de análisis"))
 @_guard
 def navis_snapshot(path: str, overwrite: bool = False) -> dict[str, Any]:
     """Guarda todas las incidencias con IDs persistentes, perfil y revisión del modelo."""
     from .history import snapshot
     result = STATE.require_fresh_result()
-    data = snapshot(result, STATE.stamp(), getattr(STATE, "export", None))
+    data = snapshot(result, STATE.stamp(), getattr(STATE, "export", None), _census_for_snapshot())
     target = output_policy().resolve_file(path, overwrite=overwrite)
     with target.staged_write() as staging:
         staging.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -2684,7 +2697,8 @@ def navis_compare_snapshot(path: str, current_path: str = "", tolerance_m: float
     if current_path:
         current = load_snapshot(current_path)
     else:
-        current = snapshot(STATE.require_fresh_result(), STATE.stamp(), getattr(STATE, "export", None))
+        current = snapshot(STATE.require_fresh_result(), STATE.stamp(), getattr(STATE, "export", None),
+                           _census_for_snapshot())
     return compare(previous, current, tolerance_m=tolerance_m, include_matches=include_matches)
 
 

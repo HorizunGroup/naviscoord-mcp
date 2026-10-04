@@ -21,7 +21,13 @@ def element(path, discipline, revit_id, source, lo=(0., 0., 0.), hi=(1., 1., 1.)
                       bbox_min=lo, bbox_max=hi, props={"Id": str(revit_id)})
 
 
-def run(fingerprint, cases):
+def census(**models):
+    """models: source_file -> (item_count, {category: count})."""
+    return {"models": [{"source_file": name, "item_count": count, "bbox_min": [0, 0, 0], "bbox_max": [60, 10, 12],
+                        "top_categories": categories} for name, (count, categories) in models.items()]}
+
+
+def run(fingerprint, cases, inventory=None):
     """cases: (issue_id, guid, duct, beam, centroid, penetration_m)."""
     clashes, issues = [], []
     for issue_id, guid, duct, beam, centroid, penetration in cases:
@@ -32,7 +38,7 @@ def run(fingerprint, cases):
                             max_penetration_m=penetration, representative_clash_id=guid,
                             elements_a=[beam.path_id], elements_b=[duct.path_id]))
     result = AnalysisResult(issues=issues, filtering=FilterResult(kept=clashes))
-    return snapshot(result, {"document_fingerprint": fingerprint, "profile_checksum": "p"})
+    return snapshot(result, {"document_fingerprint": fingerprint, "profile_checksum": "p"}, census=inventory)
 
 
 BEAM = element("1/2/3", "EST", 200, "MIR-EST.rvt", (0, -5, 3), (0.3, 5, 3.6))
@@ -44,15 +50,18 @@ def duct(path, revit_id, x, z=3.2):
     return element(path, "MEP", revit_id, "MIR-MEP.rvt", (x - 2, -0.2, z - 0.2), (x + 2, 0.2, z + 0.2))
 
 
-def week_one():
+EST_INVENTORY = (500, {"Structural Framing": 300, "Floors": 200})
+
+
+def week_one(inventory=True):
     return run("semana-1", [
         ("ISS-moved", "g-1", duct("0/1/1", 100, 0.0), BEAM, (0.15, 0.0, 3.2), 0.20),
         ("ISS-fixed", "g-2", duct("0/1/2", 101, 20.0), OTHER_BEAM, (20.15, 0.0, 3.2), 0.20),
         ("ISS-same", "g-3", duct("0/1/3", 102, 45.0), SLAB, (45.0, 0.0, 3.2), 0.10),
-    ])
+    ], census(**{"MIR-EST.rvt": EST_INVENTORY, "MIR-MEP.rvt": (900, {"Ducts": 600, "Walls": 300})}) if inventory else None)
 
 
-def week_two():
+def week_two(inventory=True):
     # MEP republished: new Navisworks paths, new clash GUIDs, new issue ids.
     # Duct 100 dropped 0.8 m (still hits the beam: same two Revit elements),
     # duct 101 was rerouted clear, duct 102 is untouched, and a new crossing
@@ -62,7 +71,7 @@ def week_two():
         ("ISS-same", "g-3", duct("0/9/3", 102, 45.0), SLAB, (45.0, 0.0, 3.2), 0.10),
         ("ISS-new", "h-9", duct("0/9/9", 103, 60.0), replace(SLAB, path_id="1/7/2", props={"Id": "301"}),
          (60.0, 0.0, 3.2), 0.05),
-    ])
+    ], census(**{"MIR-EST.rvt": EST_INVENTORY, "MIR-MEP.rvt": (600, {"Ducts": 600})}) if inventory else None)
 
 
 def test_compares_runs_whose_models_changed():
@@ -89,8 +98,27 @@ def test_pairs_by_revit_element_ids_when_ids_guids_and_position_change():
 def test_reports_which_models_changed_instead_of_refusing():
     models = compare(week_one(), week_two())["models"]
     assert models["changed"] == ["MIR-MEP.rvt"]
-    est = next(m for m in models["per_model"] if m["model"] == "MIR-EST.rvt")
-    assert est["changed"] is False and est["elements_compared"] >= 2
+    assert models["unchanged"] == ["MIR-EST.rvt"]
+    mep = next(m for m in models["per_model"] if m["model"] == "MIR-MEP.rvt")
+    assert mep["inventory"]["item_count"] == [900, 600]
+    assert mep["inventory"]["categories"] == {"Walls": [300, 0]}
+
+
+def test_a_model_change_outside_the_conflicts_is_seen_through_the_inventory():
+    # C6: MEP was republished without the architecture it used to carry. None
+    # of the elements that still collide moved, so only the inventory shows it.
+    before, after = week_one(), week_two()
+    for snap in (before, after):
+        for entry in snap["elements"].values():
+            entry["bbox"] = [0, 0, 0, 1, 1, 1]
+    models = compare(before, after)["models"]
+    assert models["changed"] == ["MIR-MEP.rvt"]
+
+
+def test_without_an_inventory_an_unseen_change_is_not_called_unchanged():
+    models = compare(week_one(inventory=False), week_two(inventory=False))["models"]
+    assert models["changed"] == ["MIR-MEP.rvt"]  # duct 100 moved: seen in the conflicts
+    assert models["undetermined"] == ["MIR-EST.rvt"] and models["unchanged"] == []
 
 
 def legacy(issue_id, guid, centroid, pair=("ARQ", "MEP")):

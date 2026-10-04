@@ -105,7 +105,25 @@ def _element_inventory(clashes: Iterable[Any]) -> dict[str, dict[str, Any]]:
     return inventory
 
 
-def snapshot(result, provenance: dict[str, Any], export=None) -> dict[str, Any]:
+def model_signatures(census: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """What a census says about each model, kept to tell later which one changed.
+
+    Item count, bounding box and category histogram are independent of the
+    clashes: a model republished without half its elements changes here even
+    when none of what is left collides with anything.
+    """
+    out = []
+    for model in (census or {}).get("models") or []:
+        if not isinstance(model, dict) or not model.get("source_file"):
+            continue
+        out.append({"source_file": model["source_file"], "source_path": model.get("source_path", ""),
+                    "item_count": model.get("item_count"), "truncated": bool(model.get("truncated")),
+                    "bbox": [round(float(v), 3) for v in [*(model.get("bbox_min") or ()), *(model.get("bbox_max") or ())]],
+                    "top_categories": dict(model.get("top_categories") or {})})
+    return out
+
+
+def snapshot(result, provenance: dict[str, Any], export=None, census: dict[str, Any] | None = None) -> dict[str, Any]:
     clashes = _clash_index(result)
     issues = []
     for issue in result.issues:
@@ -119,7 +137,10 @@ def snapshot(result, provenance: dict[str, Any], export=None) -> dict[str, Any]:
                          "noise": result.filtering.to_json() if result.filtering else {}},
             "warnings": list(result.warnings),
             "elements": _element_inventory(clashes.values())}
-    if export is not None:
+    signatures = model_signatures(census)
+    if signatures:
+        data["models"] = signatures
+    elif export is not None:
         data["models"] = [{"source_file": m.source_file, "source_path": m.source_path} for m in export.models]
     return data
 
@@ -259,47 +280,101 @@ def _ranked(issues: list[dict]) -> list[dict]:
     return sorted(issues, key=lambda i: (-(i.get("severity") or 0), i["issue_id"]))
 
 
-def _model_changes(previous: dict, current: dict) -> dict[str, Any]:
-    """Which models moved between the runs, from the elements in conflict."""
-    before, after = previous.get("elements"), current.get("elements")
+def _census_difference(a: dict, b: dict) -> dict[str, Any] | None:
+    """How a model's inventory differs between runs; None when it cannot tell."""
+    if a.get("item_count") is None or b.get("item_count") is None:
+        return None
     out: dict[str, Any] = {}
-    names_before = {m.get("source_file") for m in previous.get("models") or [] if isinstance(m, dict)}
-    names_after = {m.get("source_file") for m in current.get("models") or [] if isinstance(m, dict)}
-    if names_before and names_after:
-        out["added"] = sorted(n for n in names_after - names_before if n)
-        out["removed"] = sorted(n for n in names_before - names_after if n)
-    if not isinstance(before, dict) or not isinstance(after, dict):
-        out["per_model"] = []
-        out["note"] = ("La foto anterior no trae la identidad de los elementos (es de una versión previa): "
-                       "no se puede decir qué modelo cambió, solo que el federado cambió.")
-        return out
-    models: dict[str, Counter] = {}
-    for key in before.keys() | after.keys():
-        a, b = before.get(key), after.get(key)
-        model = (b or a).get("model") or key.split(":", 1)[0]
-        tally = models.setdefault(model, Counter())
-        if a and b:
-            tally["compared"] += 1
-            if any(abs(x - y) > BBOX_CHANGE_M for x, y in zip(a.get("bbox") or (), b.get("bbox") or ())):
-                tally["geometry_changed"] += 1
-        elif a:
-            tally["only_before"] += 1
-        else:
-            tally["only_after"] += 1
+    if a["item_count"] != b["item_count"]:
+        out["item_count"] = [a["item_count"], b["item_count"]]
+    box_a, box_b = a.get("bbox") or [], b.get("bbox") or []
+    if len(box_a) == len(box_b) == 6 and any(abs(x - y) > BBOX_CHANGE_M for x, y in zip(box_a, box_b)):
+        out["bbox"] = [box_a, box_b]
+    cats_a, cats_b = a.get("top_categories") or {}, b.get("top_categories") or {}
+    deltas = {c: [cats_a.get(c, 0), cats_b.get(c, 0)] for c in cats_a.keys() | cats_b.keys()
+              if cats_a.get(c, 0) != cats_b.get(c, 0)}
+    if deltas:
+        ranked = sorted(deltas.items(), key=lambda kv: (-abs(kv[1][1] - kv[1][0]), kv[0]))
+        out["categories"] = dict(ranked[:8])
+    return out
+
+
+def _model_changes(previous: dict, current: dict) -> dict[str, Any]:
+    """Which models changed between the runs, and on what evidence.
+
+    Two sources, both stated: the model inventory (count, box, categories)
+    taken with the snapshot, and the geometry of the same ElementIds among
+    the elements in conflict. Without an inventory, "no change seen among the
+    conflicts" is not "unchanged" - the verdict is then left open.
+    """
+    def by_name(snap):
+        return {str(m.get("source_file")).casefold(): m for m in snap.get("models") or []
+                if isinstance(m, dict) and m.get("source_file")}
+    models_before, models_after = by_name(previous), by_name(current)
+    out: dict[str, Any] = {}
+    if models_before and models_after:
+        out["added"] = sorted(models_after[n]["source_file"] for n in models_after.keys() - models_before.keys())
+        out["removed"] = sorted(models_before[n]["source_file"] for n in models_before.keys() - models_after.keys())
+
+    before, after = previous.get("elements"), current.get("elements")
+    tallies: dict[str, Counter] = {}
+    names: dict[str, str] = {}
+    if isinstance(before, dict) and isinstance(after, dict):
+        for key in before.keys() | after.keys():
+            a, b = before.get(key), after.get(key)
+            model = (b or a).get("model") or key.split(":", 1)[0]
+            names.setdefault(model.casefold(), model)
+            tally = tallies.setdefault(model.casefold(), Counter())
+            if a and b:
+                tally["compared"] += 1
+                if any(abs(x - y) > BBOX_CHANGE_M for x, y in zip(a.get("bbox") or (), b.get("bbox") or ())):
+                    tally["geometry_changed"] += 1
+            elif a:
+                tally["only_before"] += 1
+            else:
+                tally["only_after"] += 1
+    for name in models_before.keys() & models_after.keys():
+        names.setdefault(name, models_after[name]["source_file"])
+
     per_model = []
-    for model, tally in sorted(models.items()):
-        changed = tally["geometry_changed"] > 0
-        per_model.append({
-            "model": model, "changed": changed,
-            "elements_compared": tally["compared"], "elements_geometry_changed": tally["geometry_changed"],
-            "elements_only_before": tally["only_before"], "elements_only_after": tally["only_after"],
-            "verdict": (f"cambió: {tally['geometry_changed']} de sus elementos en conflicto tienen otra geometría"
-                        if changed else "sin cambios en la geometría de sus elementos en conflicto"),
-        })
+    for name in sorted(names):
+        tally = tallies.get(name, Counter())
+        inventory = (_census_difference(models_before[name], models_after[name])
+                     if name in models_before and name in models_after else None)
+        evidence = []
+        if inventory:
+            if "item_count" in inventory:
+                evidence.append(f"{inventory['item_count'][0]} -> {inventory['item_count'][1]} elementos en el modelo")
+            if "categories" in inventory:
+                evidence.append("cambió el número de elementos por categoría")
+            if "bbox" in inventory:
+                evidence.append("cambió la caja del modelo")
+        if tally["geometry_changed"]:
+            evidence.append(f"{tally['geometry_changed']} de sus elementos en conflicto tienen otra geometría")
+        if evidence:
+            changed, verdict = True, "cambió: " + "; ".join(evidence)
+        elif inventory is not None:
+            changed, verdict = False, "sin cambios: mismo inventario y misma geometría en sus elementos en conflicto"
+        else:
+            changed = None
+            verdict = ("no se vio cambio en la geometría de sus elementos en conflicto, pero sin inventario del "
+                       "modelo en las dos fotos no se puede afirmar que no cambió")
+        entry = {"model": names[name], "changed": changed, "verdict": verdict,
+                 "elements_compared": tally["compared"], "elements_geometry_changed": tally["geometry_changed"],
+                 "elements_only_before": tally["only_before"], "elements_only_after": tally["only_after"]}
+        if inventory:
+            entry["inventory"] = inventory
+        per_model.append(entry)
     out["per_model"] = per_model
     out["changed"] = [m["model"] for m in per_model if m["changed"]]
-    out["note"] = ("Se juzga por los elementos que aparecen en algún conflicto, comparando su caja por "
-                   "ElementId: un cambio fuera de los conflictos no se ve aquí.")
+    out["unchanged"] = [m["model"] for m in per_model if m["changed"] is False]
+    out["undetermined"] = [m["model"] for m in per_model if m["changed"] is None]
+    if not per_model:
+        out["note"] = ("La foto anterior no trae inventario de modelos ni identidad de elementos (es de una "
+                       "versión previa): no se puede decir qué modelo cambió, solo que el federado cambió.")
+    else:
+        out["note"] = ("Inventario = conteo, caja y categorías de cada modelo al tomar la foto; geometría = la "
+                       "caja de cada ElementId que aparece en algún conflicto en las dos corridas.")
     return out
 
 

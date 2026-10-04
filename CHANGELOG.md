@@ -48,7 +48,12 @@ servidor (Python): el complemento 1.1.1 sirve tal cual.
   `current_path` compara dos fotos guardadas sin Navisworks. Sobre las fotos
   reales de C6: 27 resueltas, 13 nuevas, 1.407 siguen. `navis_snapshot`
   guarda ahora la identidad de los elementos de cada problema
-  (`match_keys`, `elements`, `models`); las fotos viejas se siguen leyendo.
+  (`match_keys`, `elements`) y el inventario de cada modelo (`models`: conteo,
+  caja y categorías, del censo); las fotos viejas se siguen leyendo. Con los
+  NWC reales de C6 dice: ARQ cambió (255 columnas y 50 vigas de estructura
+  menos), MEP cambió (20.001 → 15.645 elementos, sin muros cortina, 8 de sus
+  elementos en conflicto movidos), EST sin cambios. Sin inventario en las dos
+  fotos no dice «sin cambios»: lo deja indeterminado.
 - `changed` miraba `max_penetration_m`, que la foto no trae (trae
   `max_penetration_mm`): un cruce más profundo nunca salía como cambio.
 - `navis_set_disciplines` acepta el nombre de la carpeta («Estructura») y
