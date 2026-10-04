@@ -29,6 +29,11 @@ servidor (Python): el complemento 1.1.1 sirve tal cual.
   banda crítica, un tabique dentro de una losa no.
 - `criticality_matrix` se lee en los dos órdenes: `default.json` escribe
   `EST|ARQ`, `SAN|ELE`, `RCI|ELE`… y esos pares caían al neutro 0,5.
+- **`navis_color_by_priority` y `navis_reset_appearance` nunca llegaban a
+  pintar.** Comprobaban la huella del documento pero no la mandaban al
+  complemento, que rechaza `appearance/color` y `appearance/reset` sin ella
+  (409 «fingerprint_required»). No se veía mientras todo salía «low» y no
+  había nada que mandar. Comprobado en vivo con Navisworks 2026.
 - `navis_set_disciplines` acepta el nombre de la carpeta («Estructura») y
   guarda el código (EST), que es con lo que se puntúa; avisa de una
   disciplina que el perfil no conoce.

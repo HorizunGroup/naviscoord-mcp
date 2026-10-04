@@ -2138,7 +2138,8 @@ def navis_color_by_priority(limit: int = 50, expected_document_fingerprint: str 
         unique = sorted(set(paths))
         if not unique:
             continue
-        applied.append({priority: STATE.bridge.color(unique, palette[priority])})
+        applied.append({priority: STATE.bridge.color(
+            unique, palette[priority], expected_document_fingerprint=fingerprint)})
 
     payload: dict[str, Any] = {
         "applied": applied,
@@ -2182,7 +2183,7 @@ def navis_reset_appearance(expected_document_fingerprint: str = "") -> dict[str,
     error y la única sin dry_run, así que la huella se comprueba igual.
     """
     fingerprint = STATE.require_mutable(expected_document_fingerprint)
-    payload = STATE.bridge.reset_appearance()
+    payload = STATE.bridge.reset_appearance(expected_document_fingerprint=fingerprint)
     payload.setdefault("document_fingerprint_before", fingerprint)
     return payload
 

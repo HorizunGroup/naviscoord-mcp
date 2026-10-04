@@ -128,3 +128,28 @@ class TestLabelsAreReadAsCodes:
         assert out["overrides"][FILES["MEP"]] == "MEP"
         assert out["normalised"][FILES["EST"]] == {"given": "Estructura", "code": "EST"}
         assert out["unknown_disciplines"] == ["Paisajismo"]
+
+
+class TestColouringCarriesTheFingerprint:
+    """The add-in refuses appearance/color and appearance/reset without one (409)."""
+
+    def _bridge(self, monkeypatch):
+        from naviscoord.bridge import Bridge
+        from naviscoord.sessions import SessionInfo
+
+        bridge = Bridge(session=SessionInfo(session_id="s", port=1, token="t" * 64))
+        sent: list[tuple[str, dict[str, Any]]] = []
+        monkeypatch.setattr(bridge, "call", lambda route, payload, **_: sent.append((route, payload)) or {})
+        return bridge, sent
+
+    def test_color_sends_the_fingerprint(self, monkeypatch) -> None:
+        bridge, sent = self._bridge(monkeypatch)
+        bridge.color(["0/1"], (220, 30, 30), expected_document_fingerprint="fp-1")
+        assert sent == [("appearance/color", {"path_ids": ["0/1"], "r": 220, "g": 30, "b": 30,
+                                              "transparency": -1.0,
+                                              "expected_document_fingerprint": "fp-1"})]
+
+    def test_reset_sends_the_fingerprint(self, monkeypatch) -> None:
+        bridge, sent = self._bridge(monkeypatch)
+        bridge.reset_appearance(expected_document_fingerprint="fp-1")
+        assert sent[0][1]["expected_document_fingerprint"] == "fp-1"

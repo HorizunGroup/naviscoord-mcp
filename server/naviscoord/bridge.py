@@ -795,15 +795,34 @@ class Bridge:
             _guarded({"viewpoints": viewpoints, "dry_run": dry_run}, fingerprint, idempotency_key),
         )
 
-    def color(self, path_ids: list[str], rgb: tuple[int, int, int], transparency: float = -1.0) -> dict[str, Any]:
-        r, g, b = rgb
-        return self.call(
-            "appearance/color",
-            {"path_ids": path_ids, "r": r, "g": g, "b": b, "transparency": transparency},
-        )
+    def color(
+        self,
+        path_ids: list[str],
+        rgb: tuple[int, int, int],
+        transparency: float = -1.0,
+        *,
+        expected_document_fingerprint: str = "",
+    ) -> dict[str, Any]:
+        """Colours elements — a mutation the add-in refuses without the fingerprint.
 
-    def reset_appearance(self, path_ids: list[str] | None = None) -> dict[str, Any]:
-        return self.call("appearance/reset", {"path_ids": path_ids or []})
+        It travelled without one, so ``navis_color_by_priority`` checked the
+        fingerprint here and then sent a request the add-in answered with 409
+        «fingerprint_required». It never showed while everything scored «low»
+        and nothing was sent; the first real priorities hit it.
+        """
+        r, g, b = rgb
+        payload = _guarded(
+            {"path_ids": path_ids, "r": r, "g": g, "b": b, "transparency": transparency},
+            expected_document_fingerprint,
+            "",
+        )
+        return self.call("appearance/color", payload, mutating=bool(expected_document_fingerprint))
+
+    def reset_appearance(
+        self, path_ids: list[str] | None = None, *, expected_document_fingerprint: str = ""
+    ) -> dict[str, Any]:
+        payload = _guarded({"path_ids": path_ids or []}, expected_document_fingerprint, "")
+        return self.call("appearance/reset", payload, mutating=bool(expected_document_fingerprint))
 
     def select(
         self,
