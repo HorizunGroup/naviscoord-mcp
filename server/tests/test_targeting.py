@@ -422,6 +422,7 @@ class TestMutationsRefuseAnAmbiguousTarget:
         "navis_reset_appearance": {},
         # Already guarded in 0.3.0; here so a refactor cannot quietly undo it.
         "navis_apply_groups": {"dry_run": False},
+        "navis_rename_by_priority": {"dry_run": False},
         "navis_set_status": {"issue_ids": ["I-001"], "dry_run": False},
         "navis_save_viewpoints": {"dry_run": False},
     }

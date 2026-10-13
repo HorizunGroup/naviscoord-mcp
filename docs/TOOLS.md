@@ -1,6 +1,6 @@
 # NavisCoord tool reference
 
-53 tools generated from the registered server. Names and input schemas are authoritative.
+54 tools generated from the registered server. Names and input schemas are authoritative.
 
 Document mutations check the intended document fingerprint. Where a tool exposes `dry_run`, inspect the preview before execution.
 
@@ -1560,6 +1560,80 @@ la propuesta se confirma antes de usarse.
 {
   "properties": {},
   "title": "navis_propose_disciplinesArguments",
+  "type": "object"
+}
+```
+
+## `navis_rename_by_priority`
+
+Numera y renombra los choques en Clash Detective por prioridad.
+
+Cambia «Conflicto1, Conflicto2…» por un consecutivo que ES el orden de
+atención del análisis en memoria (navis_analyze): prioridad primero
+(CRÍTICO, ALTO, MEDIO, BAJO) y puntaje dentro de cada una.
+
+- Un problema de varios choques queda como un grupo
+  `001 · CRÍTICO · EST × MEP · Losa vs Ducto · N03 · mueve MEP` y sus
+  choques se llaman `001.1`, `001.2`…
+- Un problema de un solo choque no amerita grupo: el choque lleva el
+  nombre completo.
+
+Nunca toca un nombre que escribió el coordinador: solo reemplaza los
+nombres por defecto («Clash N», «Conflicto N»). Los nombres que puso
+NavisCoord antes (`001 · …`, `001.1`, `[CRITICAL] ISS-…`) solo se
+reemplazan con `overwrite_naviscoord_names=true`, y entonces los grupos
+propios que queden vacíos se eliminan. Un choque dentro de un grupo que
+hizo el coordinador se queda en ese grupo.
+
+`sort_by_name` (por defecto) ordena cada test por nombre al final, para
+que la lista se lea 001, 002, 003 de arriba abajo; solo reordena.
+
+`dry_run=true` (por defecto) muestra el plan sin tocar nada. La corrida
+real verifica RELEYENDO los nombres del documento y cuenta cuántos
+nombres por defecto sobreviven. Con `run_async` (por defecto) corre como
+trabajo: consulta `navis_job_status`. `limit` (0 = todos) numera solo
+los N problemas más urgentes. Recuerda guardar después.
+
+```json
+{
+  "properties": {
+    "limit": {
+      "default": 0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "overwrite_naviscoord_names": {
+      "default": false,
+      "title": "Overwrite Naviscoord Names",
+      "type": "boolean"
+    },
+    "sort_by_name": {
+      "default": true,
+      "title": "Sort By Name",
+      "type": "boolean"
+    },
+    "dry_run": {
+      "default": true,
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "run_async": {
+      "default": true,
+      "title": "Run Async",
+      "type": "boolean"
+    },
+    "expected_document_fingerprint": {
+      "default": "",
+      "title": "Expected Document Fingerprint",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "default": "",
+      "title": "Idempotency Key",
+      "type": "string"
+    }
+  },
+  "title": "navis_rename_by_priorityArguments",
   "type": "object"
 }
 ```

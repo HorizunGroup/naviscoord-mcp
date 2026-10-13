@@ -78,6 +78,7 @@
       described as if nobody knew why.
     -->
     <Compile Include="..\NavisCoord.Addin\TextLimits.cs" Link="TextLimits.cs" />
+    <Compile Include="..\NavisCoord.Addin\ClashNaming.cs" Link="ClashNaming.cs" />
     <Compile Include="..\NavisCoord.Addin\WorkflowText.cs" Link="WorkflowText.cs" />
     <Compile Include="DispatcherTests.cs" />
     <Compile Include="FramingTests.cs" />
@@ -95,6 +96,7 @@
     <Compile Include="VocabularyTests.cs" />
     <Compile Include="WorkflowTextTests.cs" />
     <Compile Include="ComiteObraTests.cs" />
+    <Compile Include="RenameTests.cs" />
   </ItemGroup>
 
 </Project>

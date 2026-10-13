@@ -1173,10 +1173,7 @@ namespace NavisCoord
             };
         }
 
-        private static bool IsDefaultClashName(string name)
-            => System.Text.RegularExpressions.Regex.IsMatch(
-                name ?? string.Empty, @"^(Clash|Conflicto)\s*\d+$",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        private static bool IsDefaultClashName(string name) => ClashNaming.IsDefault(name);
 
         /// <summary>
         /// The same interference repeated across typical floors, plus the

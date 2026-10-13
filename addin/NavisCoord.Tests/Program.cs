@@ -66,6 +66,7 @@ namespace NavisCoord.Tests
             VocabularyTests.Run(Section, Eq, Check);
             WorkflowTextTests.Run(Section, Eq, Check);
             ComiteObraTests.Run(Section, Eq, Check);
+            RenameTests.Run(Section, Eq, Check);
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0

@@ -1918,6 +1918,361 @@ namespace NavisCoord
                 : null);
         }
 
+        // -------------------------------------------- numbering by priority
+
+        /// <summary>
+        /// Numbers and names results by the analysis' priority:
+        /// «001 · CRÍTICO · EST × MEP · …» for a problem, «001.1» for its clashes.
+        /// </summary>
+        /// <remarks>
+        /// What may be renamed is decided by <see cref="ClashNaming.Plan"/>
+        /// from names read once, before anything moves; this method only
+        /// executes that plan. Every handle is resolved by GUID immediately
+        /// before it is touched — a move rebuilds the clash tree and an edit
+        /// on a handle from before it is a native crash, not an exception.
+        /// The outcome is then read back from the document, name by name.
+        /// </remarks>
+        public static Dictionary<string, object> RenameByPriority(
+            Dictionary<string, object> payload, JobManager.Job job)
+        {
+            var refused = MutationPreflight("clash/rename", payload);
+            if (refused != null) return refused;
+
+            var doc = Router.RequireDocument();
+            var dryRun = Json.Bool(payload, "dry_run", true);
+            var overwriteOwn = Json.Bool(payload, "overwrite_naviscoord_names", false);
+            var sortByName = Json.Bool(payload, "sort_by_name", true);
+            var specs = new List<ClashNaming.IssueSpec>();
+            foreach (var raw in Json.Arr(payload, "issues"))
+            {
+                if (!(raw is Dictionary<string, object> spec)) continue;
+                specs.Add(new ClashNaming.IssueSpec
+                {
+                    Name = Json.Str(spec, "name"),
+                    Guids = Json.StrArr(spec, "clash_guids"),
+                    Names = Json.StrArr(spec, "clash_names")
+                });
+            }
+            if (specs.Count == 0) throw new ArgumentException("Se requiere 'issues'.");
+
+            job?.Phasing("leyendo nombres de Clash Detective");
+            var snapshot = SnapshotResults(doc.GetClash());
+            var plan = ClashNaming.Plan(specs, snapshot, overwriteOwn);
+            var defaultsBefore = snapshot.Values.Count(r => ClashNaming.IsDefault(r.Name));
+            var planBody = DescribeRenamePlan(plan, specs.Count, defaultsBefore);
+
+            if (dryRun)
+            {
+                planBody["action"] = "rename_by_priority";
+                return Sealed("clash/rename", payload, planBody,
+                    requested: plan.Renames.Count + plan.Groups.Sum(g => g.Moves.Count) + plan.Loosen.Count,
+                    applied: 0, verified: 0,
+                    verificationSource: VerificationSources.NotApplicable, dryRun: true);
+            }
+
+            var clash = doc.GetClash();
+            var warnings = new List<string>();
+            var total = plan.Groups.Sum(g => g.Moves.Count) + plan.Loosen.Count + plan.Renames.Count;
+            var done = 0;
+            var cancelled = false;
+            var failed = new List<string>();
+
+            // 1. Groups and moves into them.
+            var movedInto = new List<Tuple<string, string, string>>(); // guid, test, group
+            foreach (var step in plan.Groups)
+            {
+                if (job != null && job.CancelRequested) { cancelled = true; break; }
+                var groupGuid = EnsureGroup(doc, step.Test, step.Name);
+                if (groupGuid == Guid.Empty)
+                {
+                    warnings.Add("No pude crear el grupo «" + step.Name + "» en «" + step.Test + "».");
+                    continue;
+                }
+                foreach (var guid in step.Moves)
+                {
+                    if (job != null && job.CancelRequested) { cancelled = true; break; }
+                    job?.Progress("agrupando por problema", done, total, step.Name);
+                    try
+                    {
+                        var target = clash.TestsData.ResolveGuid(groupGuid) as GroupItem;
+                        if (target != null && MoveResult(clash, guid, target))
+                        {
+                            movedInto.Add(Tuple.Create(guid, step.Test, step.Name));
+                        }
+                        else failed.Add(guid);
+                    }
+                    catch (Exception ex)
+                    {
+                        failed.Add(guid);
+                        BridgeHost.Log("clash/rename: no se movió " + guid + ": " + ex.Message);
+                    }
+                    done++;
+                }
+                if (cancelled) break;
+            }
+
+            // 2. Single-clash problems leave an old NavisCoord group (opt-in).
+            var loosened = new List<string>();
+            foreach (var step in cancelled ? new List<ClashNaming.LoosenStep>() : plan.Loosen)
+            {
+                if (job != null && job.CancelRequested) { cancelled = true; break; }
+                job?.Progress("sacando de grupos viejos", done, total, step.From);
+                try
+                {
+                    var test = FindTest(doc, step.Test);
+                    if (test != null && MoveResult(clash, step.Guid, test)) loosened.Add(step.Guid);
+                    else failed.Add(step.Guid);
+                }
+                catch (Exception ex)
+                {
+                    failed.Add(step.Guid);
+                    BridgeHost.Log("clash/rename: no se soltó " + step.Guid + ": " + ex.Message);
+                }
+                done++;
+            }
+
+            // 3. Names. Re-resolved one by one: the moves above disposed every
+            // handle collected before them.
+            var renamed = new List<ClashNaming.RenameStep>();
+            foreach (var step in cancelled ? new List<ClashNaming.RenameStep>() : plan.Renames)
+            {
+                if (job != null && job.CancelRequested) { cancelled = true; break; }
+                if (done % 100 == 0) job?.Progress("renombrando", done, total, step.To);
+                try
+                {
+                    if (Guid.TryParse(step.Guid, out var parsed) &&
+                        clash.TestsData.ResolveGuid(parsed) is ClashResult live)
+                    {
+                        clash.TestsData.TestsEditDisplayName(live, step.To);
+                        renamed.Add(step);
+                    }
+                    else failed.Add(step.Guid);
+                }
+                catch (Exception ex)
+                {
+                    failed.Add(step.Guid);
+                    BridgeHost.Log("clash/rename: no se renombró " + step.Guid + ": " + ex.Message);
+                }
+                done++;
+            }
+
+            // 4. Old NavisCoord groups left empty by this run (opt-in only).
+            var removedGroups = overwriteOwn && !cancelled
+                ? RemoveEmptyOwnGroups(doc, plan.Groups.Select(g => g.Test).Concat(plan.Loosen.Select(l => l.Test)))
+                : new List<string>();
+
+            // 5. The list reads 001, 002, 003 top to bottom. Sorting only
+            // reorders; it is the one step that touches no name.
+            var sortedTests = new List<string>();
+            if (sortByName && !cancelled)
+            {
+                job?.Phasing("ordenando la lista por nombre");
+                var touched = plan.Groups.Select(g => g.Test)
+                    .Concat(plan.Loosen.Select(l => l.Test))
+                    .Concat(plan.Renames.Select(r => r.Test))
+                    .Distinct(StringComparer.OrdinalIgnoreCase);
+                foreach (var testName in touched)
+                {
+                    try
+                    {
+                        var test = FindTest(doc, testName);
+                        if (test == null) continue;
+                        doc.GetClash().TestsData.TestsSortResults(test, ClashResultSortMode.DisplayNameSort,
+                            ClashSortDirection.SortAscending, new Point3D(0, 0, 0));
+                        sortedTests.Add(testName);
+                    }
+                    catch (Exception ex)
+                    {
+                        warnings.Add("No pude ordenar «" + testName + "»: " + ex.Message);
+                    }
+                }
+            }
+
+            // 6. Verified by reading the document again, by GUID.
+            job?.Phasing("verificando: releyendo nombres");
+            var after = SnapshotResults(doc.GetClash());
+            var namesVerified = renamed.Count(r =>
+                after.TryGetValue(r.Guid, out var now) && string.Equals(now.Name, r.To, StringComparison.Ordinal));
+            var movesVerified = movedInto.Count(m =>
+                after.TryGetValue(m.Item1, out var now) && string.Equals(now.Parent, m.Item3, StringComparison.Ordinal));
+            var loosenVerified = loosened.Count(g => after.TryGetValue(g, out var now) && now.Parent.Length == 0);
+            var plannedGuids = new HashSet<string>(
+                specs.SelectMany(s => s.Guids), StringComparer.OrdinalIgnoreCase);
+            var stillDefaultPlanned = after.Values.Count(r =>
+                plannedGuids.Contains(r.Guid) && ClashNaming.IsDefault(r.Name));
+            var stillDefaultDocument = after.Values.Count(r => ClashNaming.IsDefault(r.Name));
+
+            var applied = movedInto.Count + loosened.Count + renamed.Count;
+            var verified = Math.Min(applied, movesVerified + loosenVerified + namesVerified);
+            if (cancelled) warnings.Add("Cancelado tras " + done + " de " + total + " cambios.");
+            if (verified < applied)
+            {
+                warnings.Add((applied - verified) + " cambio(s) aplicados no se ven al releer el documento.");
+            }
+            if (failed.Count > 0)
+            {
+                warnings.Add(failed.Count + " resultado(s) no se pudieron tocar (ya no estaban o el API lo rechazó).");
+            }
+
+            planBody["action"] = "rename_by_priority";
+            planBody["renamed"] = (double)renamed.Count;
+            planBody["renamed_verified"] = (double)namesVerified;
+            planBody["moved_into_groups"] = (double)movedInto.Count;
+            planBody["moved_verified"] = (double)movesVerified;
+            planBody["loosened"] = (double)loosened.Count;
+            planBody["loosened_verified"] = (double)loosenVerified;
+            planBody["groups_removed"] = removedGroups.Cast<object>().ToList();
+            planBody["sorted_tests"] = sortedTests.Cast<object>().ToList();
+            planBody["default_names_before"] = (double)defaultsBefore;
+            planBody["default_names_left"] = (double)stillDefaultDocument;
+            planBody["default_names_left_in_plan"] = (double)stillDefaultPlanned;
+            planBody["not_touched"] = failed.Take(20).Cast<object>().ToList();
+            planBody["cancelled"] = cancelled;
+            planBody["verification_source"] = "document_reread";
+            planBody["save_reminder"] =
+                "Nada de esto queda en disco hasta guardar: navis_save (o Ctrl+S).";
+
+            return Sealed("clash/rename", payload, planBody,
+                requested: total, applied: applied, verified: verified,
+                verificationSource: VerificationSources.DocumentReread,
+                warnings: warnings);
+        }
+
+        /// <summary>Every result's test, current name and holding group, read once.</summary>
+        private static Dictionary<string, ClashNaming.ResultSnapshot> SnapshotResults(DocumentClash clash)
+        {
+            var map = new Dictionary<string, ClashNaming.ResultSnapshot>(StringComparer.OrdinalIgnoreCase);
+            foreach (var saved in clash.TestsData.Tests)
+            {
+                if (!(saved is ClashTest test)) continue;
+                var testName = test.DisplayName ?? string.Empty;
+                foreach (var child in test.Children)
+                {
+                    if (child is ClashResultGroup group)
+                    {
+                        var groupName = group.DisplayName ?? string.Empty;
+                        foreach (var result in Router.EnumerateResults(group))
+                        {
+                            map[result.Guid.ToString()] = new ClashNaming.ResultSnapshot
+                            {
+                                Guid = result.Guid.ToString(), Test = testName,
+                                Name = result.DisplayName ?? string.Empty, Parent = groupName
+                            };
+                        }
+                    }
+                    else if (child is ClashResult single)
+                    {
+                        map[single.Guid.ToString()] = new ClashNaming.ResultSnapshot
+                        {
+                            Guid = single.Guid.ToString(), Test = testName,
+                            Name = single.DisplayName ?? string.Empty, Parent = string.Empty
+                        };
+                    }
+                }
+            }
+            return map;
+        }
+
+        private static Dictionary<string, object> DescribeRenamePlan(
+            ClashNaming.RenamePlan plan, int issues, int defaultsBefore)
+        {
+            var reasons = plan.Skipped
+                .GroupBy(s => s.Reason)
+                .ToDictionary(g => g.Key, g => (object)(double)g.Count());
+            return new Dictionary<string, object>
+            {
+                ["issues"] = (double)issues,
+                ["results_found"] = (double)plan.Found,
+                ["results_missing"] = (double)plan.Missing,
+                ["already_named"] = (double)plan.AlreadyNamed,
+                ["would_rename"] = (double)plan.Renames.Count,
+                ["would_create_groups"] = (double)plan.Groups.Count,
+                ["would_move"] = (double)plan.Groups.Sum(g => g.Moves.Count),
+                ["would_loosen"] = (double)plan.Loosen.Count,
+                ["skipped"] = reasons,
+                ["skipped_examples"] = plan.Skipped.Take(10).Select(s => (object)new Dictionary<string, object>
+                {
+                    ["guid"] = s.Guid,
+                    ["name"] = s.Name,
+                    ["reason"] = s.Reason
+                }).ToList(),
+                ["sample"] = plan.Renames.Take(10).Select(r => (object)new Dictionary<string, object>
+                {
+                    ["test"] = r.Test,
+                    ["from"] = r.From,
+                    ["to"] = r.To
+                }).ToList(),
+                ["default_names_before"] = (double)defaultsBefore
+            };
+        }
+
+        /// <summary>The group's GUID, creating it under the test if missing.</summary>
+        private static Guid EnsureGroup(Document doc, string testName, string groupName)
+        {
+            Guid Find()
+            {
+                var test = FindTest(doc, testName);
+                var existing = test?.Children.OfType<ClashResultGroup>()
+                    .LastOrDefault(g => string.Equals(g.DisplayName, groupName, StringComparison.Ordinal));
+                return existing?.Guid ?? Guid.Empty;
+            }
+
+            var found = Find();
+            if (found != Guid.Empty) return found;
+            var host = FindTest(doc, testName);
+            if (host == null) return Guid.Empty;
+            doc.GetClash().TestsData.TestsAddCopy(host, new ClashResultGroup { DisplayName = groupName });
+            return Find();
+        }
+
+        /// <summary>
+        /// Moves one result under <paramref name="target"/>, wherever it is now.
+        /// </summary>
+        /// <remarks>
+        /// The result is resolved by GUID and its current parent scanned for
+        /// its position: the index from any earlier read is wrong as soon as
+        /// one move has happened.
+        /// </remarks>
+        private static bool MoveResult(DocumentClash clash, string guid, GroupItem target)
+        {
+            if (!Guid.TryParse(guid, out var parsed)) return false;
+            if (!(clash.TestsData.ResolveGuid(parsed) is ClashResult live)) return false;
+            var parent = live.Parent;
+            if (parent == null) return false;
+            if (parent.Guid == target.Guid) return true;
+
+            var index = -1;
+            var i = 0;
+            foreach (var child in parent.Children)
+            {
+                if (child.Guid == parsed) { index = i; break; }
+                i++;
+            }
+            if (index < 0) return false;
+            clash.TestsData.TestsMove(parent, index, target, target.Children.Count);
+            return true;
+        }
+
+        /// <summary>Removes NavisCoord's own groups that this run left empty.</summary>
+        private static List<string> RemoveEmptyOwnGroups(Document doc, IEnumerable<string> testNames)
+        {
+            var removed = new List<string>();
+            foreach (var testName in testNames.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                for (var guard = 0; guard < 10000; guard++)
+                {
+                    var test = FindTest(doc, testName);
+                    var empty = test?.Children.OfType<ClashResultGroup>()
+                        .FirstOrDefault(g => g.Children.Count == 0 && ClashNaming.IsOwnGroupName(g.DisplayName));
+                    if (empty == null) break;
+                    var name = empty.DisplayName;
+                    doc.GetClash().TestsData.TestsRemove(test, empty);
+                    removed.Add(testName + " / " + name);
+                }
+            }
+            return removed;
+        }
+
         public static Dictionary<string, object> SetStatus(Dictionary<string, object> payload)
         {
             // Same policy as the job path: which document, and is it the one the
