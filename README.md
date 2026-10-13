@@ -35,7 +35,7 @@ NavisCoord pairs a native Navisworks add-in with an open-source MCP server. The 
 | “Connect this to Revit and Power BI.” | Authoring element IDs, structured handoff files and tables for downstream tools |
 | “Apply the reviewed plan.” | Targeted writes with document/revision checks and read-back verification |
 
-**53 tools. One server. Four clients.** [Explore the tool guide](docs/TOOLS.md).
+**54 tools. One server. Four clients.** [Explore the tool guide](docs/TOOLS.md).
 
 ## Choose your client
 

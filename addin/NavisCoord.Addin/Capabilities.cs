@@ -40,7 +40,7 @@ namespace NavisCoord
         {
             "census", "model_schema", "clash_export", "clash_image",
             "sets_explicit", "sets_search", "clash_matrix", "clash_run",
-            "clash_group", "clash_status", "clash_rules",
+            "clash_group", "clash_rename", "clash_status", "clash_rules",
             "viewpoints_save", "appearance_color", "appearance_reset", "selection_set",
             "workflow_audit_models", "workflow_configure", "workflow_run",
             "workflow_group_levels",

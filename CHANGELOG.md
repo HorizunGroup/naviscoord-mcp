@@ -5,6 +5,33 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+- **`navis_rename_by_priority`: Clash Detective numerado por prioridad.**
+  Pedido de Pablo (2026-10-13) frente a una lista de «Conflicto1,
+  Conflicto2…». Toma el análisis en memoria, ordena los problemas por
+  prioridad y puntaje, y renombra en Navisworks: un problema de varios choques
+  queda como el grupo `001 · CRÍTICO · EST × MEP · Losa vs Ducto · N03 · mueve MEP`
+  con sus choques `001.1`, `001.2`…; uno de un solo choque lleva el nombre
+  completo en el choque. Prioridad en español (CRÍTICO / ALTO / MEDIO / BAJO),
+  disciplinas en el orden «lo que se queda × lo que se mueve», tipos de
+  elemento con la palabra de obra (Floors de EST = Losa, de ARQ = Piso; Revit
+  en inglés o en español), nivel abreviado solo cuando es un número
+  («03 - Floor» → N03; «Sótano 1» se deja) y quién mueve. Al final ordena
+  cada test por nombre, así la lista se lee 001, 002, 003.
+  - Ruta nueva del complemento `clash/rename` (C#): ensayo por defecto,
+    huella del documento, `idempotency_key`, revisión del análisis, trabajo
+    cancelable. **Requiere el complemento nuevo.**
+  - Nunca toca un nombre que escribió el coordinador: solo los por defecto
+    («Clash N», «Conflicto N»). Los nombres previos de NavisCoord (`001 · …`,
+    `001.1`, `[CRITICAL] ISS-…`) solo con `overwrite_naviscoord_names=true`,
+    que además vacía y elimina sus grupos viejos. Un choque dentro de un grupo
+    del coordinador se queda ahí (sí se numera si tenía nombre por defecto).
+    La decisión vive en `ClashNaming` (C#, sin Autodesk) con sus pruebas.
+  - Verifica RELEYENDO el documento por GUID: nombres, pertenencia a grupos y
+    cuántos nombres por defecto sobreviven (`default_names_left`). Cada
+    resultado se re-resuelve por GUID justo antes de editarlo.
+  - `RenameDefaultClashes` del flujo de reglas usa la misma regla de «nombre
+    por defecto».
+
 ## [1.1.1] — 2026-10-01
 
 - **Los ZIP del complemento traen la cinta.** `Build-Release.ps1` empaquetaba

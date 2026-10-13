@@ -12,7 +12,7 @@
 
 > «Analiza el modelo abierto, explica cuáles son los problemas prioritarios y prepara el plan de trabajo. Muéstrame los cambios propuestos antes de aplicarlos».
 
-**53 herramientas, un servidor y cuatro clientes.** El paquete de escritorio incluye su runtime: no necesitas instalar Python ni proporcionar una clave de API para ejecutar el MCP local. Navisworks y el cliente de IA mantienen sus propios requisitos de licencia y cuenta.
+**54 herramientas, un servidor y cuatro clientes.** El paquete de escritorio incluye su runtime: no necesitas instalar Python ni proporcionar una clave de API para ejecutar el MCP local. Navisworks y el cliente de IA mantienen sus propios requisitos de licencia y cuenta.
 
 | Cliente | Instalación |
 |---|---|

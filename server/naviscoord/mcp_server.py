@@ -49,6 +49,7 @@ from . import __version__
 from .analysis import analyze, hotspots
 from .bridge import BridgeError, CapabilityError
 from .interop import write_handoff
+from . import naming
 from .model import ClashExport
 from .paths import PathPolicyError
 from .paths import policy as output_policy
@@ -2024,6 +2025,68 @@ def navis_apply_groups(
         groups, dry_run, fingerprint=fingerprint, idempotency_key=idempotency_key
     )
     payload.setdefault("document_fingerprint_before", fingerprint)
+    return payload
+
+
+@mcp.tool(annotations=_destructive("Renombrar los choques por prioridad", idempotent=True))
+@_guard
+def navis_rename_by_priority(
+    limit: int = 0,
+    overwrite_naviscoord_names: bool = False,
+    sort_by_name: bool = True,
+    dry_run: bool = True,
+    run_async: bool = True,
+    expected_document_fingerprint: str = "",
+    idempotency_key: str = "",
+) -> dict[str, Any]:
+    """Numera y renombra los choques en Clash Detective por prioridad.
+
+    Cambia «Conflicto1, Conflicto2…» por un consecutivo que ES el orden de
+    atención del análisis en memoria (navis_analyze): prioridad primero
+    (CRÍTICO, ALTO, MEDIO, BAJO) y puntaje dentro de cada una.
+
+    - Un problema de varios choques queda como un grupo
+      `001 · CRÍTICO · EST × MEP · Losa vs Ducto · N03 · mueve MEP` y sus
+      choques se llaman `001.1`, `001.2`…
+    - Un problema de un solo choque no amerita grupo: el choque lleva el
+      nombre completo.
+
+    Nunca toca un nombre que escribió el coordinador: solo reemplaza los
+    nombres por defecto («Clash N», «Conflicto N»). Los nombres que puso
+    NavisCoord antes (`001 · …`, `001.1`, `[CRITICAL] ISS-…`) solo se
+    reemplazan con `overwrite_naviscoord_names=true`, y entonces los grupos
+    propios que queden vacíos se eliminan. Un choque dentro de un grupo que
+    hizo el coordinador se queda en ese grupo.
+
+    `sort_by_name` (por defecto) ordena cada test por nombre al final, para
+    que la lista se lea 001, 002, 003 de arriba abajo; solo reordena.
+
+    `dry_run=true` (por defecto) muestra el plan sin tocar nada. La corrida
+    real verifica RELEYENDO los nombres del documento y cuenta cuántos
+    nombres por defecto sobreviven. Con `run_async` (por defecto) corre como
+    trabajo: consulta `navis_job_status`. `limit` (0 = todos) numera solo
+    los N problemas más urgentes. Recuerda guardar después.
+    """
+    fingerprint = STATE.require_mutable(expected_document_fingerprint)
+    result = STATE.require_fresh_result()
+    plan = naming.build_plan(result.issues, STATE.export, limit=max(0, int(limit or 0)))
+    if not plan:
+        raise ValueError("El análisis en memoria no tiene problemas con choques que numerar.")
+    payload = STATE.bridge.rename_by_priority(
+        plan,
+        dry_run=dry_run,
+        overwrite_naviscoord_names=overwrite_naviscoord_names,
+        sort_by_name=sort_by_name,
+        fingerprint=fingerprint,
+        idempotency_key=idempotency_key,
+        run_async=run_async,
+    )
+    payload.setdefault("document_fingerprint_before", fingerprint)
+    payload["issues_named"] = len(plan)
+    payload["clashes_named"] = sum(len(p["clash_guids"]) for p in plan)
+    payload["preview"] = [
+        {k: p[k] for k in ("issue_id", "name", "clash_names")} for p in plan[:15]
+    ]
     return payload
 
 

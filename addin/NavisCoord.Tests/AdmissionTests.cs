@@ -681,7 +681,7 @@ namespace NavisCoord.Tests
             {
                 "health", "census", "model/schema", "clash/tests", "clash/export", "clash/image",
                 "sets/build", "sets/build_search", "sets/list", "clash/matrix", "clash/run",
-                "clash/group", "clash/status", "clash/apply_rules", "viewpoints/save",
+                "clash/group", "clash/rename", "clash/status", "clash/apply_rules", "viewpoints/save",
                 "appearance/color", "appearance/reset", "selection/set",
                 "workflow/audit_models", "workflow/configure", "workflow/run",
                 "workflow/group_levels", "workflow/rules",

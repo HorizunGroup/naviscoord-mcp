@@ -232,6 +232,9 @@ namespace NavisCoord
             Mutation(table, "clash/matrix", VerificationSources.SelectionSourceReread, job: true, dryRun: true);
             Mutation(table, "clash/run", VerificationSources.ClashTestStatusReread, job: true);
             Mutation(table, "clash/group", VerificationSources.GroupMembershipReread, job: true, dryRun: true);
+            // Names are read back by GUID after the edit; a counter of calls
+            // made proves nothing about what the API applied.
+            Mutation(table, "clash/rename", VerificationSources.DocumentReread, job: true, cancellable: true, dryRun: true);
             Mutation(table, "clash/status", VerificationSources.ResultStatusReread, dryRun: true);
             Mutation(table, "clash/apply_rules", VerificationSources.ResultStatusReread, job: true, dryRun: true);
             Mutation(table, "viewpoints/save", VerificationSources.SavedViewpointReread);

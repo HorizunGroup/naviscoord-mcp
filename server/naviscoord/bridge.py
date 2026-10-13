@@ -287,7 +287,7 @@ class Bridge:
         against the same dead endpoint would only mask a real outage.
         """
         payload = dict(payload or {})
-        derived_routes = {"clash/group", "clash/status", "viewpoints/save", "appearance/color", "selection/set"}
+        derived_routes = {"clash/group", "clash/rename", "clash/status", "viewpoints/save", "appearance/color", "selection/set"}
         revision = getattr(self, "analysis_revision", "")
         if route in derived_routes and revision:
             payload["expected_analysis_revision"] = revision
@@ -765,6 +765,39 @@ class Bridge:
             "clash/group",
             _guarded({"groups": groups, "dry_run": dry_run}, fingerprint, idempotency_key),
         )
+
+    def rename_by_priority(
+        self,
+        issues: list[dict[str, Any]],
+        *,
+        dry_run: bool,
+        overwrite_naviscoord_names: bool = False,
+        sort_by_name: bool = True,
+        fingerprint: str = "",
+        idempotency_key: str = "",
+        run_async: bool = False,
+    ) -> dict[str, Any]:
+        """Numbers and names the results in Clash Detective (`clash/rename`).
+
+        The add-in decides which names it may replace, against the names it
+        reads at that moment; this side only proposes them. Two thousand
+        renames hold the UI thread for longer than a client waits, so the
+        real run goes through `job/submit` when `run_async`.
+        """
+        self.require("clash/rename", since="1.2.0")
+        payload = _guarded(
+            {
+                "issues": issues,
+                "dry_run": dry_run,
+                "overwrite_naviscoord_names": overwrite_naviscoord_names,
+                "sort_by_name": sort_by_name,
+            },
+            fingerprint,
+            idempotency_key,
+        )
+        if run_async and not dry_run:
+            return self.submit_job("clash/rename", payload)
+        return self.call("clash/rename", payload)
 
     def set_status(
         self,

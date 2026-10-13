@@ -68,6 +68,7 @@ EXPECTED_TOOLS = {
     "navis_clash_image",
     # write-back
     "navis_apply_groups",
+    "navis_rename_by_priority",
     "navis_set_status",
     "navis_save_viewpoints",
     "navis_color_by_priority",
@@ -150,6 +151,7 @@ def test_mutating_tools_accept_the_fingerprint_guard(tools):
     """
     mutating = {
         "navis_apply_groups",
+    "navis_rename_by_priority",
         "navis_set_status",
         "navis_save_viewpoints",
         "navis_color_by_priority",
