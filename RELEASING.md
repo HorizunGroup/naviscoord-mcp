@@ -1,5 +1,7 @@
 # Publicación de NavisCoord
 
+**Una aprobación por versión: conecta SimplySign Desktop → Approve en `firma-certum` → listo.**
+
 La versión y el CHANGELOG se actualizan en una rama de release. Tras integrar
 los cambios y verificar la CI, se crea una release de GitHub en **borrador**
 con todos los assets y `SHA256SUMS.txt`.

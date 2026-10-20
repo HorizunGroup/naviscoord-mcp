@@ -1,5 +1,7 @@
 # Guía de release
 
+**Una aprobación por versión: conecta SimplySign Desktop → Approve en `firma-certum` → listo.**
+
 Esta guía describe el procedimiento para la siguiente versión; la versión
 vigente y el estado histórico viven en `CHANGELOG.md` y en los releases de
 GitHub, no se duplican aquí.
