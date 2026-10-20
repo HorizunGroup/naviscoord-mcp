@@ -5,6 +5,16 @@ Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-10-19
+
+- Binarios firmados con el certificado de HORIZUN GROUP S.A.S. (Certum). Sin
+  cambios de código funcional. Las releases publicadas son inmutables en
+  GitHub, así que los binarios de 1.1.1 no se pudieron firmar en su sitio:
+  1.1.2 es la misma base con `NavisCoord.dll` (tres ZIP del complemento) y
+  `naviscoord-mcp.exe` (runtime, escritorio y MCPB) firmados. El flujo de
+  firma pasa a ser parte del release (`scripts/firmar-release.ps1` y el
+  workflow `firmar-release.yml`; ver `docs/RELEASING.md`).
+
 ## [1.1.1] — 2026-10-01
 
 - **Los ZIP del complemento traen la cinta.** `Build-Release.ps1` empaquetaba
@@ -713,7 +723,8 @@ el PDF.
 - La cancelación cooperativa existe en `workflow/audit_models` y
   `workflow/group_levels`; el resto es atómico y lo declara.
 
-[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/HorizunGroup/naviscoord-mcp/compare/v1.0.0...v1.1.0
 [0.4.1]: https://github.com/HorizunGroup/naviscoord-mcp/releases/tag/v0.4.1

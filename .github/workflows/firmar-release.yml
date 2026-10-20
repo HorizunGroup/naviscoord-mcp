@@ -1,0 +1,57 @@
+name: Firmar release
+
+# Firma con el certificado Certum de HORIZUN GROUP S.A.S. los binarios propios de
+# una release en BORRADOR y la publica. Ver docs/RELEASING.md (sección «Firma»).
+#
+# Ciclo: la release se construye y se sube como BORRADOR (ci.yml no crea
+# releases) -> se lanza este workflow con el tag -> el job queda esperando la
+# aprobación del environment `firma-certum` (revisor obligatorio: Pablo) ->
+# con SimplySign Desktop conectado, Pablo aprueba -> el job firma, verifica,
+# sube con --clobber y publica. Si algo falla, la release sigue en borrador.
+#
+# Las releases publicadas son inmutables: este workflow solo acepta borradores.
+#
+#   gh workflow run firmar-release.yml -R HorizunGroup/naviscoord-mcp -f tag=v1.1.2
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag de la release en borrador a firmar y publicar (p. ej. v1.1.2)
+        required: true
+        type: string
+
+# Nada por defecto; el job pide solo lo que necesita.
+permissions: {}
+
+concurrency:
+  group: firmar-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  firmar-y-publicar:
+    name: firmar-y-publicar
+    runs-on: [self-hosted, windows, horizun-sign]
+    environment: firma-certum
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - name: El tag tiene forma de versión
+        shell: pwsh
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "Tag no válido: '$($env:TAG)' (se espera vX.Y.Z)" }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 1
+
+      - name: Firmar, verificar y publicar
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: ./scripts/firmar-release.ps1 -Repo '${{ github.repository }}' -Tag $env:TAG
