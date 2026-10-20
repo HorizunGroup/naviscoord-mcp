@@ -73,6 +73,12 @@ Load a company profile to control disciplines, category/file mappings, tolerance
 
 NavisCoord produces evidence and proposed coordination actions. Engineering approval and edits in the authoring application remain with the project team. Handoff files carry the IDs needed to continue with tools such as [Horizun Revit MCP](https://github.com/HorizunGroup/horizun-revit-mcp) and [Horizun PBI MCP](https://github.com/HorizunGroup/horizun-pbi-mcp).
 
+## Learn to direct it
+
+Horizun Hub teaches, in Spanish, how to direct AI agents in real construction and design work — and how to review what they deliver before you sign it. A course for this MCP is in preparation; meanwhile, the [Academia](https://horizunhub.com/academia/?utm_source=github&utm_medium=readme&utm_campaign=naviscoord-mcp) covers directing agents in Revit, Microsoft Project and Power BI.
+
+New to agents? Level 1 of [Opera agentes de IA desde cero](https://horizunhub.com/academia/agentes-ia-desde-cero/?utm_source=github&utm_medium=readme&utm_campaign=naviscoord-mcp) is free with an account.
+
 ## Privacy Policy
 
 NavisCoord does not upload the complete model or send telemetry to a Horizun service. Requested tool outputs can include model names, element properties, coordinates and images; your AI client receives those outputs. [Read the privacy policy](docs/PRIVACY.md) and [security model](docs/SECURITY-MODEL.md).
