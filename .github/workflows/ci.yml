@@ -129,9 +129,11 @@ jobs:
         run: |
           cd server
           pip install -e ".[dev]"
-          pip install "mcp==1.14.*" "reportlab==4.0.4" "pillow==10.0.*"
+          # pydantic 2.14 quitó `eval_type_backport` de sus internos y mcp 1.14
+          # lo importa: con el suelo de mcp hay que quedarse en pydantic <2.14.
+          pip install "mcp==1.14.*" "reportlab==4.0.4" "pillow==10.0.*" "pydantic<2.14"
       - name: Versiones resueltas
-        run: pip show mcp reportlab pillow | grep -E "^(Name|Version)"
+        run: pip show mcp reportlab pillow pydantic | grep -E "^(Name|Version)"
       - name: Pruebas
         run: cd server && python -m pytest tests -q
 

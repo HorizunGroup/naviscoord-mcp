@@ -302,13 +302,36 @@ original (`sha256 6522bb21…`).
 
 Ambas corren también en el job `packaging` del CI.
 
-Adjuntar al release de GitHub, con los nombres que produce el script —no otros:
+Adjuntar al release de GitHub, **como borrador** (sección 9), con los nombres
+que producen los scripts —no otros—. Son trece assets:
 
-- `naviscoord-X.Y.Z-py3-none-any.whl` y `naviscoord-X.Y.Z.tar.gz`
 - `NavisCoord-X.Y.Z-addin-NW2024.zip`, `-NW2025`, `-NW2026` — los tres, o
   corregir la lista de versiones soportadas en el README. Prometer un ZIP que
-  no existe es peor que no prometerlo.
+  no existe es peor que no prometerlo. Cada uno lleva `NavisCoord.dll`.
+- `naviscoord-X.Y.Z-py3-none-any.whl` y `naviscoord-X.Y.Z.tar.gz`
+- `naviscoord-X.Y.Z-win-x64.mcpb` (runtime completo),
+  `naviscoord-runtime-X.Y.Z-win-x64.zip` y `naviscoord-desktop-X.Y.Z-win-x64.zip`
+- `naviscoord-X.Y.Z-win-x64-installer.mcpb` y su `.mcpb.sha256` (lanzador
+  pequeño que descarga el runtime de esta misma release)
+- `provenance.json` y `sbom.cdx.json`
 - `SHA256SUMS.txt`
+
+Quién produce cada uno, todo **desde el tag** (entorno limpio de Python 3.14
+con el lock; ver «Desktop runtime release gate» más abajo):
+
+| Asset | Origen |
+|---|---|
+| 3 ZIP del complemento | `scripts\Build-Release.ps1 -Ref vX.Y.Z` (Navisworks 2024/2025/2026 instalados) |
+| runtime ZIP, desktop ZIP y `SHA256SUMS.txt` parcial | `build_portable.py` -> `verify_stdio.py` -> `build_mcpb.py` -> `mcpb pack` -> `package_desktop.py` |
+| `win-x64.mcpb` | `npm exec --yes --package=@anthropic-ai/mcpb -- mcpb pack dist/mcpb dist/naviscoord-X.Y.Z-win-x64.mcpb` |
+| `installer.mcpb` y `.sha256` | `build_bootstrap_mcpb.py dist/naviscoord-X.Y.Z-win-x64.mcpb` y luego `mcpb pack dist/mcpb-bootstrap dist/naviscoord-X.Y.Z-win-x64-installer.mcpb` (necesita que el tag exista: toma los lanzadores del commit del tag) |
+| wheel, sdist, `sbom.cdx.json`, `provenance.json` | artifact `release-evidence` del run de CI **del tag** (`gh run download <run> -n release-evidence`) |
+
+El `SHA256SUMS.txt` de la release une las sumas de `package_desktop.py` (los
+seis paquetes de Windows) con las de la evidencia (wheel, sdist, SBOM y
+provenance); el `.sha256` del instalador va aparte. `provenance.json` y el SBOM
+**no contienen hashes de los binarios** (solo tag, commit, run y componentes de
+Python), así que la firma no los invalida: se suben tal cual.
 
 Cada ZIP del complemento lleva `LICENSE` y `NOTICE` dentro, y sus entradas son
 exactamente las `$ManagedFiles` de `Install-NavisCoord.ps1`:
@@ -331,7 +354,105 @@ así, los checksums publicados deben salir del build definitivo hecho desde el
 tag, nunca de un ensayo anterior. `-VerifyReproducible` construye en rutas
 distintas y exige hashes idénticos antes de aceptar los ZIP.
 
-## 9. Después
+## 9. Firma Certum: borrador -> aprobación -> publicada firmada
+
+Todo binario propio publicado va firmado con el certificado de HORIZUN GROUP
+S.A.S. (Certum). Las releases publicadas son **inmutables** en GitHub (no se
+pueden reemplazar assets), así que la firma ocurre **antes** de publicar y
+nunca se publica una release sin firmar.
+
+Qué se firma: `NavisCoord.dll` de cada ZIP del complemento y
+`naviscoord-mcp.exe` del runtime ZIP, del desktop ZIP y del `win-x64.mcpb`
+(cualquier `.exe`, `.dll` o `.msi` propio, también dentro de ZIP, MCPB y NuGet
+anidados). Las DLL de Autodesk y de terceros no se tocan.
+
+El ciclo:
+
+1. Terminar la sección 7 (merge del PR de release y tag anotado `vX.Y.Z`) y
+   esperar el CI del tag en verde. `ci.yml` **no crea releases**.
+2. Construir los trece assets de la sección 8 desde el tag y crear la release
+   como **borrador**:
+
+   ```bash
+   gh release create vX.Y.Z --draft --verify-tag --title "NavisCoord X.Y.Z" \
+     --notes-file <notas> <los trece assets>
+   ```
+
+3. Lanzar el workflow de firma (la CI deja el borrador; nada se publica aún):
+
+   ```bash
+   gh workflow run firmar-release.yml -R HorizunGroup/naviscoord-mcp -f tag=vX.Y.Z
+   ```
+
+4. El job `firmar-y-publicar` (runner `self-hosted, windows, horizun-sign`,
+   environment `firma-certum`) queda **esperando aprobación** de Pablo
+   (revisor obligatorio). GitHub avisa.
+5. Pablo conecta **SimplySign Desktop** (la clave Certum vive ahí) y aprueba
+   el environment en la pestaña **Actions** del run («Review deployments»).
+6. El job ejecuta `scripts/firmar-release.ps1`: comprueba que puede firmar
+   (archivo de prueba) antes de tocar nada, descarga el borrador, firma,
+   regenera `SHA256SUMS.txt`, el `.sha256` del instalador y los
+   `runtime-files.json` internos, verifica cada firma (`signtool verify /pa`,
+   estado `Valid`, emisor Certum y sello de tiempo Certum), sube con
+   `--clobber`, vuelve a descargar lo subido y compara, y **solo entonces
+   publica** el borrador. Si cualquier paso falla, la release sigue en
+   borrador y no se publica nada.
+
+### Hashes que cuidar (nada fijado puede contradecir los bytes firmados)
+
+| Dónde vive el hash | Qué pasa con la firma |
+|---|---|
+| `SHA256SUMS.txt` y `*.mcpb.sha256` (assets) | los regenera el script contra los archivos ya firmados |
+| `runtime-files.json` dentro del runtime ZIP, el desktop ZIP y el `win-x64.mcpb` | el script lo reescribe tras firmar el `.exe`; `Install-Runtime.ps1` y el lanzador lo usan para verificar |
+| `Install-Runtime.ps1` e `Install-NavisCoord.ps1` | no fijan nada: leen el hash del `SHA256SUMS.txt` **de la release** al instalar, así que aceptan los bytes firmados |
+| `provenance.json`, `sbom.cdx.json` | no contienen hashes de binarios: no cambian |
+| `server.json` -> `packages[0].fileSha256` (**en el repo**) | es el único pin en el árbol y apunta al `win-x64.mcpb`. El registro MCP verifica ese hash contra el asset publicado, así que tiene que ser el del MCPB **firmado**. No puede ir en el commit del tag (el MCPB firmado aún no existe): se actualiza **después** de publicar, en un PR posterior (como «Registrar X.Y.Z en el registro MCP oficial»), leyendo el hash del asset ya publicado |
+| `docs/PUBLISHING.md` | los hashes que cita son históricos de cada release; al registrar una nueva se escribe el del asset firmado y publicado |
+
+Tras publicar: hash del asset publicado -> PR que sube `server.json` (versión,
+URL y `fileSha256`) -> publicar en el registro MCP -> actualizar README y
+`docs/PUBLISHING.md`.
+
+### El runner de firma
+
+Hay un runner self-hosted con la etiqueta `horizun-sign` por repositorio, en
+`%USERPROFILE%\.horizun\sign-runners\naviscoord-mcp`. Tiene que correr en la
+sesión interactiva de Pablo para ver `Cert:\CurrentUser\My` (SimplySign
+Desktop). Lo arranca la tarea programada de usuario **Horizun Sign Runners**
+con `%USERPROFILE%\.horizun\sign-runners\iniciar-runners.ps1`, que lanza los
+que no estén en marcha. Para revisarlo: Settings -> Actions -> Runners del
+repo (debe verse *Idle* con las etiquetas `self-hosted`, `Windows` y
+`horizun-sign`), o a mano:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='Runner.Listener.exe'" | Select-Object ExecutablePath
+& "$env:USERPROFILE\.horizun\sign-runners\iniciar-runners.ps1"   # arranca los que falten
+```
+
+### Si el job falla por SimplySign desconectado
+
+El primer paso del script firma un archivo de prueba y, si no puede, aborta
+con «No se puede firmar (SimplySign desconectado o sesión caducada)» sin haber
+tocado la release. Reconectar SimplySign Desktop y pulsar **Re-run failed
+jobs** en el run; el environment pide aprobar otra vez. Si falla después de
+subir (la comparación remota) la release sigue en borrador y el script es
+idempotente: reintentar es seguro.
+
+### Ensayar el script sin firmar de verdad
+
+```powershell
+pwsh scripts/firmar-release.ps1 -Directorio <carpeta con los assets> -Salida <destino> `
+  -Prueba -Thumbprint <huella de un certificado de prueba autofirmado>
+```
+
+`-Prueba` acepta un certificado autofirmado (sin sello ni emisor Certum) y no
+sube nada: solo sirve para comprobar que ninguna referencia de hash queda
+obsoleta. Borrar el certificado de prueba al terminar.
+
+Si una release publicada resulta mal firmada o sin firmar, no se puede
+corregir: se sube una versión patch nueva.
+
+## 10. Después
 
 - Confirmar que `/plugin install naviscoord-mcp` trae el tag nuevo.
 - Confirmar que `docs/INSTALL.md` no promete nada que no esté publicado.

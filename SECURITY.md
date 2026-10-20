@@ -4,7 +4,8 @@
 
 | Versión | Soporte |
 |---|---|
-| 1.1.1 | Sí |
+| 1.1.2 | Sí |
+| 1.1.1 | Sí, pero sus binarios no están firmados; usa 1.1.2 |
 | 1.1.0 | No: sus ZIP del complemento no traen la cinta; usa 1.1.1 |
 | 1.0.0 | Sí |
 | 0.4.0 | Sí |
