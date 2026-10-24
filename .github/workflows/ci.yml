@@ -49,7 +49,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.14"
       - name: Install the tested dependency lock
@@ -93,7 +93,7 @@ jobs:
           # vacío y el pin concluiría que el tag no existe cuando sí existe.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
       - name: Instalar
@@ -119,7 +119,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           # El Python más viejo soportado con las dependencias más viejas
           # soportadas: la esquina donde una API "nueva" usada por descuido
@@ -152,7 +152,7 @@ jobs:
           # vacío y el pin concluiría que el tag no existe cuando sí existe.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Instalar
@@ -205,7 +205,7 @@ jobs:
           # vacío y el pin concluiría que el tag no existe cuando sí existe.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Herramienta de build
@@ -278,7 +278,7 @@ jobs:
           # reporting success for every run since it was written.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -403,7 +403,7 @@ jobs:
           # vacío y el pin concluiría que el tag no existe cuando sí existe.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
@@ -518,7 +518,7 @@ jobs:
           # vacío y el pin concluiría que el tag no existe cuando sí existe.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
@@ -586,7 +586,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           ref: ${{ inputs.release_tag || github.sha }}
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
